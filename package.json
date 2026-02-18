@@ -1,0 +1,17 @@
+{
+  "name": "alltech",
+  "version": "2.0.0",
+  "description": "ALLTECH - Sistema de Gestión Empresarial",
+  "scripts": {
+    "dev": "npx -y serve . -l 3000",
+    "start": "npx -y serve . -l 3000"
+  },
+  "keywords": [
+    "alltech",
+    "support",
+    "soporte",
+    "tecnico"
+  ],
+  "author": "ALLTECH",
+  "license": "MIT"
+}

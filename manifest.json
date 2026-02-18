@@ -1,0 +1,65 @@
+{
+    "name": "ALLTECH",
+    "short_name": "ALLTECH",
+    "description": "Sistema de Gestión Empresarial - ALLTECH",
+    "start_url": "./index.html",
+    "scope": "./",
+    "display": "standalone",
+    "display_override": [
+        "window-controls-overlay",
+        "standalone",
+        "minimal-ui"
+    ],
+    "orientation": "any",
+    "background_color": "#0f1629",
+    "theme_color": "#1a73e8",
+    "categories": [
+        "business",
+        "productivity",
+        "utilities"
+    ],
+    "lang": "es",
+    "dir": "ltr",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "assets/icons/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "assets/icons/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Clientes",
+            "short_name": "Clientes",
+            "description": "Ir al módulo de clientes",
+            "url": "./index.html?module=clientes"
+        },
+        {
+            "name": "Calendario",
+            "short_name": "Calendario",
+            "description": "Ver calendario de visitas",
+            "url": "./index.html?module=calendario"
+        },
+        {
+            "name": "Contratos",
+            "short_name": "Contratos",
+            "description": "Gestionar contratos",
+            "url": "./index.html?module=contratos"
+        }
+    ],
+    "related_applications": [],
+    "launch_handler": {
+        "client_mode": [
+            "navigate-existing",
+            "auto"
+        ]
+    }
+}

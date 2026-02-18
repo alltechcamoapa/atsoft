@@ -1,0 +1,423 @@
+/**
+ * ========================================
+ * REPORT EDITOR STYLES
+ * Visual report designer similar to Crystal Reports
+ * ========================================
+ */
+
+/* ========== MAIN CONTAINER ========== */
+.report-editor {
+    padding: 0;
+    min-height: auto;
+    width: 100%;
+}
+
+.report-editor__header {
+    margin-bottom: var(--spacing-xl);
+}
+
+.report-editor__title {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: var(--font-size-2xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.report-editor__subtitle {
+    color: var(--text-secondary);
+    font-size: var(--font-size-md);
+}
+
+/* ========== MODULE SELECTION ========== */
+.report-editor__modules {
+    margin-bottom: var(--spacing-xl);
+}
+
+.report-editor__section-title {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+}
+
+.report-editor__module-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.report-editor__module-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xl);
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.report-editor__module-btn:hover {
+    border-color: var(--color-primary-500);
+    background: var(--bg-tertiary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.report-editor__module-icon {
+    font-size: 2.5rem;
+    color: var(--color-primary-500);
+}
+
+.report-editor__module-name {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.report-editor__module-status {
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+}
+
+.report-editor__module-status.has-template {
+    background: var(--color-success-100);
+    color: var(--color-success-700);
+}
+
+/* ========== EDITOR WORKSPACE ========== */
+.report-editor__workspace {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.report-editor__toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.report-editor__toolbar-left,
+.report-editor__toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.report-editor__template-name {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+/* ========== MAIN LAYOUT ========== */
+.report-editor__main {
+    display: grid;
+    grid-template-columns: 240px 1fr 280px;
+    min-height: 600px;
+}
+
+/* ========== PANELS ========== */
+.report-editor__panel {
+    background: var(--bg-primary);
+    border-right: 1px solid var(--border-color);
+    padding: var(--spacing-md);
+    overflow-y: auto;
+    max-height: 700px;
+}
+
+.report-editor__panel--right {
+    border-right: none;
+    border-left: 1px solid var(--border-color);
+}
+
+.report-editor__panel-title {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.report-editor__panel-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+/* ========== FIELDS LIST ========== */
+.report-editor__fields-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.report-editor__field-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: grab;
+    font-size: var(--font-size-sm);
+    transition: all var(--transition-fast);
+}
+
+.report-editor__field-item:hover {
+    background: var(--color-primary-50);
+    border-color: var(--color-primary-300);
+}
+
+.report-editor__field-item:active {
+    cursor: grabbing;
+}
+
+.report-editor__field-icon {
+    font-size: var(--font-size-md);
+}
+
+.report-editor__field-label {
+    color: var(--text-primary);
+}
+
+/* ========== ELEMENTS LIST ========== */
+.report-editor__elements-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.report-editor__element-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    cursor: grab;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+}
+
+.report-editor__element-item:hover {
+    background: var(--color-info-50);
+    border-color: var(--color-info-300);
+}
+
+/* ========== CANVAS CONTAINER ========== */
+.report-editor__canvas-container {
+    background: var(--bg-tertiary);
+    padding: var(--spacing-xl);
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+}
+
+.report-editor__canvas {
+    width: 612px;
+    /* Letter size at 72 DPI */
+    background: white;
+    box-shadow: var(--shadow-lg);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+/* ========== REPORT SECTIONS ========== */
+.report-section {
+    position: relative;
+    min-height: 50px;
+    border-bottom: 1px dashed var(--color-gray-300);
+}
+
+.report-section--footer {
+    border-bottom: none;
+}
+
+.report-section__label {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.report-section--detail .report-section__label,
+.report-section--footer .report-section__label {
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.report-section__resize {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    background: transparent;
+    cursor: ns-resize;
+    transition: background var(--transition-fast);
+}
+
+.report-section__resize:hover {
+    background: var(--color-primary-300);
+}
+
+/* ========== REPORT ELEMENTS ========== */
+.report-element {
+    position: absolute;
+    cursor: move;
+    padding: 2px 4px;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    min-width: 20px;
+    min-height: 16px;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    white-space: nowrap;
+}
+
+.report-element:hover {
+    border-color: var(--color-primary-400);
+}
+
+.report-element.selected {
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 2px var(--color-primary-200);
+    z-index: 100;
+}
+
+.report-element--field {
+    background: rgba(26, 115, 232, 0.08);
+    border-style: dashed;
+}
+
+.report-element--line {
+    background: var(--color-gray-400);
+    border: none;
+    padding: 0;
+}
+
+.report-element--box {
+    border: 1px solid var(--color-gray-400);
+    background: transparent;
+}
+
+/* ========== PROPERTIES PANEL ========== */
+.property-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.property-label {
+    display: block;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.property-input {
+    width: 100%;
+    padding: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: border-color var(--transition-fast);
+}
+
+.property-input:focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 2px var(--color-primary-100);
+}
+
+.property-input[type="color"] {
+    height: 36px;
+    padding: 2px;
+    cursor: pointer;
+}
+
+.property-actions {
+    margin-top: var(--spacing-lg);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+}
+
+/* ========== DRAG & DROP FEEDBACK ========== */
+.report-section.drag-over {
+    background: rgba(26, 115, 232, 0.1) !important;
+    outline: 2px dashed var(--color-primary-400);
+    outline-offset: -2px;
+}
+
+.report-editor__field-item.dragging,
+.report-editor__element-item.dragging {
+    opacity: 0.5;
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 1200px) {
+    .report-editor__main {
+        grid-template-columns: 200px 1fr 240px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .report-editor__main {
+        grid-template-columns: 1fr;
+    }
+
+    .report-editor__panel {
+        display: none;
+    }
+
+    .report-editor__canvas-container {
+        padding: var(--spacing-md);
+    }
+
+    .report-editor__canvas {
+        transform: scale(0.8);
+        transform-origin: top center;
+    }
+}
+
+/* ========== DARK MODE ========== */
+[data-theme="dark"] .report-editor__canvas {
+    background: #1a1a2e;
+}
+
+[data-theme="dark"] .report-section__label {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+[data-theme="dark"] .report-element--field {
+    background: rgba(26, 115, 232, 0.15);
+}

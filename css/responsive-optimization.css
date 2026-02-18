@@ -1,0 +1,60 @@
+/**
+ * ============================================
+ * ALLTECH SUPPORT - Responsive Tokens & Base
+ * Device-specific CSS custom properties
+ * Core responsive foundation
+ * ============================================
+ */
+
+/* ========== DESKTOP DEFAULT TOKENS ========== */
+:root {
+    --icon-size-sm: 16px;
+    --icon-size-md: 20px;
+    --icon-size-lg: 24px;
+    --icon-size-xl: 32px;
+    --touch-target-min: 44px;
+    --device-type: 'desktop';
+}
+
+/* ========== TABLET TOKENS (768px - 1279px) ========== */
+@media (min-width: 768px) and (max-width: 1279px) {
+    :root {
+        --device-type: 'tablet';
+        --icon-size-sm: 18px;
+        --icon-size-md: 22px;
+        --icon-size-lg: 28px;
+        --icon-size-xl: 36px;
+        --touch-target-min: 48px;
+    }
+}
+
+/* ========== SMARTPHONE TOKENS (< 768px) ========== */
+@media (max-width: 767px) {
+    :root {
+        --device-type: 'smartphone';
+        --icon-size-sm: 18px;
+        --icon-size-md: 22px;
+        --icon-size-lg: 26px;
+        --icon-size-xl: 34px;
+        --touch-target-min: 44px;
+    }
+}
+
+/* ========== EXTRA SMALL TOKENS (< 400px) ========== */
+@media (max-width: 399px) {
+    :root {
+        --device-type: 'smartphone-small';
+    }
+}
+
+/* ========== LARGE DESKTOP (1920px+) ========== */
+@media (min-width: 1920px) {
+    :root {
+        --device-type: 'desktop-large';
+    }
+
+    .content {
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+}

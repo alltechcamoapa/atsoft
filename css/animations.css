@@ -1,0 +1,776 @@
+/**
+ * ALLTECH SUPPORT - Animations CSS
+ * Animaciones completas para toda la interfaz
+ */
+
+/* ========== KEYFRAMES ========== */
+
+/* Fade In */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* Fade In Up */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Fade In Down */
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Fade In Left */
+@keyframes fadeInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Fade In Right */
+@keyframes fadeInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Scale In */
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Bounce In */
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    70% {
+        transform: scale(0.9);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* Pulse */
+@keyframes pulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+/* Shake */
+@keyframes shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    25% {
+        transform: translateX(-5px);
+    }
+
+    75% {
+        transform: translateX(5px);
+    }
+}
+
+/* Spin */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Ripple Effect */
+@keyframes ripple {
+    0% {
+        width: 0;
+        height: 0;
+        opacity: 0.5;
+    }
+
+    100% {
+        width: 500px;
+        height: 500px;
+        opacity: 0;
+    }
+}
+
+.ripple-effect {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.4);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    animation: ripple 0.6s linear;
+}
+
+/* Ensure buttons can contain ripples */
+.btn,
+.sidebar__menu-link,
+.pwa-bottom-nav__item,
+.stat-card,
+.card--clickable {
+    position: relative;
+    overflow: hidden;
+}
+
+/* Enhanced Touch Feedback */
+.btn:active,
+.pwa-bottom-nav__item:active,
+.sidebar__menu-link:active {
+    transform: scale(0.95);
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.pwa-bottom-nav__item:active {
+    background: transparent;
+    /* Keep nav transparent but scale */
+}
+
+/* Glow Pulse */
+@keyframes glowPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 5px rgba(26, 115, 232, 0.3);
+    }
+
+    50% {
+        box-shadow: 0 0 20px rgba(26, 115, 232, 0.6);
+    }
+}
+
+/* Slide In From Top */
+@keyframes slideInTop {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Notification Bell Shake */
+@keyframes bellShake {
+
+    0%,
+    100% {
+        transform: rotate(0);
+    }
+
+    15% {
+        transform: rotate(15deg);
+    }
+
+    30% {
+        transform: rotate(-15deg);
+    }
+
+    45% {
+        transform: rotate(10deg);
+    }
+
+    60% {
+        transform: rotate(-10deg);
+    }
+
+    75% {
+        transform: rotate(5deg);
+    }
+}
+
+/* Counter Animation */
+@keyframes countUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Card Hover Lift */
+@keyframes cardLift {
+    from {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    to {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+    }
+}
+
+/* ========== ANIMATION CLASSES ========== */
+
+.animate-fadeIn {
+    animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-fadeInUp {
+    animation: fadeInUp 0.4s ease-out forwards;
+}
+
+.animate-fadeInDown {
+    animation: fadeInDown 0.4s ease-out forwards;
+}
+
+.animate-fadeInLeft {
+    animation: fadeInLeft 0.4s ease-out forwards;
+}
+
+.animate-fadeInRight {
+    animation: fadeInRight 0.4s ease-out forwards;
+}
+
+.animate-scaleIn {
+    animation: scaleIn 0.3s ease-out forwards;
+}
+
+.animate-bounceIn {
+    animation: bounceIn 0.5s ease-out forwards;
+}
+
+.animate-pulse {
+    animation: pulse 2s infinite;
+}
+
+.animate-shake {
+    animation: shake 0.5s ease-in-out;
+}
+
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+.animate-glow {
+    animation: glowPulse 2s infinite;
+}
+
+/* ========== STAGGER ANIMATION DELAYS ========== */
+
+.stagger-1 {
+    animation-delay: 0.05s;
+    opacity: 0;
+}
+
+.stagger-2 {
+    animation-delay: 0.1s;
+    opacity: 0;
+}
+
+.stagger-3 {
+    animation-delay: 0.15s;
+    opacity: 0;
+}
+
+.stagger-4 {
+    animation-delay: 0.2s;
+    opacity: 0;
+}
+
+.stagger-5 {
+    animation-delay: 0.25s;
+    opacity: 0;
+}
+
+.stagger-6 {
+    animation-delay: 0.3s;
+    opacity: 0;
+}
+
+.stagger-7 {
+    animation-delay: 0.35s;
+    opacity: 0;
+}
+
+.stagger-8 {
+    animation-delay: 0.4s;
+    opacity: 0;
+}
+
+/* ========== COMPONENT ANIMATIONS ========== */
+
+/* Dashboard */
+.dashboard {
+    animation: fadeIn 0.3s ease-out;
+}
+
+/* Stat Cards */
+.stat-card {
+    animation: fadeInUp 0.4s ease-out forwards;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stat-card:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.stat-card:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.stat-card:nth-child(3) {
+    animation-delay: 0.2s;
+}
+
+.stat-card:nth-child(4) {
+    animation-delay: 0.3s;
+}
+
+.stat-card:hover {
+    transform: translateY(-6px) scale(1.02);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.15);
+}
+
+.stat-card:active {
+    transform: translateY(-2px) scale(0.98);
+}
+
+.stat-card__value {
+    transition: transform 0.3s ease;
+}
+
+.stat-card:hover .stat-card__value {
+    transform: scale(1.1);
+}
+
+/* Cards */
+.card {
+    animation: fadeInUp 0.4s ease-out forwards;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Clickable Cards */
+.card--clickable {
+    cursor: pointer;
+}
+
+.card--clickable:hover {
+    transform: translateY(-2px);
+    border-color: var(--color-primary-300);
+}
+
+.card--clickable:active {
+    transform: translateY(0);
+}
+
+/* Buttons */
+.btn {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: width 0.4s, height 0.4s;
+}
+
+.btn:active::after {
+    width: 300px;
+    height: 300px;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+/* Primary Button Glow */
+.btn--primary:hover {
+    box-shadow: 0 4px 16px rgba(26, 115, 232, 0.4);
+}
+
+/* Sidebar */
+.sidebar {
+    animation: fadeInLeft 0.3s ease-out;
+}
+
+.sidebar__item {
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.sidebar__item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 3px;
+    height: 100%;
+    background: var(--color-primary-500);
+    transform: scaleY(0);
+    transition: transform 0.2s ease;
+}
+
+.sidebar__item:hover::before,
+.sidebar__item--active::before {
+    transform: scaleY(1);
+}
+
+.sidebar__item:hover {
+    background: rgba(26, 115, 232, 0.1);
+    transform: translateX(4px);
+}
+
+/* Header */
+.header {
+    animation: slideInTop 0.3s ease-out;
+}
+
+/* Header Avatar */
+.header__avatar-btn {
+    transition: transform 0.2s ease;
+}
+
+.header__avatar-btn:hover {
+    transform: scale(1.1);
+}
+
+/* Notification Bell */
+.notification-bell {
+    transition: all 0.2s ease;
+}
+
+.notification-bell:hover {
+    animation: bellShake 0.5s ease;
+}
+
+.notification-bell.has-notifications::after {
+    animation: pulse 1.5s infinite;
+}
+
+/* Notification Dropdown */
+.notification-dropdown {
+    animation: fadeInDown 0.2s ease-out;
+}
+
+/* Tables */
+.data-table tbody tr {
+    animation: fadeIn 0.3s ease-out;
+    transition: all 0.2s ease;
+}
+
+.data-table tbody tr:hover {
+    background: var(--bg-tertiary);
+    transform: scale(1.005);
+}
+
+/* Modal */
+.modal-overlay {
+    animation: fadeIn 0.2s ease-out;
+}
+
+.modal-overlay .modal {
+    animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Form Inputs */
+.form-input,
+.form-select,
+.form-textarea {
+    transition: all 0.2s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+    transform: scale(1.01);
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+}
+
+/* Badges */
+.badge {
+    transition: all 0.2s ease;
+}
+
+.badge:hover {
+    transform: scale(1.05);
+}
+
+/* Dropdowns */
+.dropdown__menu {
+    animation: fadeInDown 0.2s ease-out;
+    transform-origin: top right;
+}
+
+.dropdown__item {
+    transition: all 0.15s ease;
+}
+
+.dropdown__item:hover {
+    padding-left: calc(var(--spacing-md) + 4px);
+    background: var(--bg-tertiary);
+}
+
+/* Toast Notifications */
+.toast {
+    animation: slideInTop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.toast--exit {
+    animation: fadeInUp 0.3s ease-out reverse forwards;
+}
+
+/* Loading States */
+.loading-spinner {
+    animation: spin 1s linear infinite;
+}
+
+.skeleton {
+    background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Page Transitions */
+.module-container {
+    animation: fadeInUp 0.3s ease-out;
+}
+
+/* Visiting Cards Animation */
+.upcoming-visit-card {
+    animation: fadeInRight 0.4s ease-out forwards;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upcoming-visit-card:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.upcoming-visit-card:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.upcoming-visit-card:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+.upcoming-visit-card:nth-child(4) {
+    animation-delay: 0.2s;
+}
+
+.upcoming-visit-card:nth-child(5) {
+    animation-delay: 0.25s;
+}
+
+.upcoming-visit-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border-color: var(--color-primary-300);
+}
+
+/* Quick Action Buttons Stagger */
+.quick-actions .btn:nth-child(1) {
+    animation: fadeInUp 0.3s ease-out 0s forwards;
+}
+
+.quick-actions .btn:nth-child(2) {
+    animation: fadeInUp 0.3s ease-out 0.05s forwards;
+}
+
+.quick-actions .btn:nth-child(3) {
+    animation: fadeInUp 0.3s ease-out 0.1s forwards;
+}
+
+.quick-actions .btn:nth-child(4) {
+    animation: fadeInUp 0.3s ease-out 0.15s forwards;
+}
+
+.quick-actions .btn:nth-child(5) {
+    animation: fadeInUp 0.3s ease-out 0.2s forwards;
+}
+
+.quick-actions .btn:nth-child(6) {
+    animation: fadeInUp 0.3s ease-out 0.25s forwards;
+}
+
+/* Hover Effects for Icon Buttons */
+.btn--icon {
+    transition: all 0.2s ease;
+}
+
+.btn--icon:hover {
+    transform: scale(1.15);
+}
+
+.btn--icon:hover svg {
+    transition: transform 0.2s ease;
+}
+
+/* Chart Animation */
+.chart-bar {
+    transform-origin: bottom;
+    animation: growUp 0.5s ease-out forwards;
+}
+
+@keyframes growUp {
+    from {
+        transform: scaleY(0);
+    }
+
+    to {
+        transform: scaleY(1);
+    }
+}
+
+/* Counter Animation for Stats */
+.stat-card__value {
+    animation: countUp 0.6s ease-out forwards;
+}
+
+/* Empty State */
+.empty-state {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.empty-state__icon {
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Alert Messages */
+.alert {
+    animation: fadeInDown 0.3s ease-out;
+}
+
+/* Progress Bars */
+.progress-bar__fill {
+    animation: progressFill 1s ease-out forwards;
+}
+
+@keyframes progressFill {
+    from {
+        width: 0%;
+    }
+}
+
+/* Floating Action Button */
+.fab {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fab:hover {
+    transform: scale(1.1) rotate(90deg);
+    box-shadow: 0 8px 24px rgba(26, 115, 232, 0.4);
+}
+
+/* Avatar Hover */
+.header__avatar {
+    transition: all 0.2s ease;
+}
+
+.header__avatar:hover {
+    box-shadow: 0 0 0 3px var(--color-primary-300);
+}
+
+/* ========== REDUCE MOTION ========== */
+
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

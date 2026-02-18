@@ -1,0 +1,837 @@
+/**
+ * ============================================
+ * ALLTECH SUPPORT - PWA Styles
+ * Native-like app experience styling
+ * Following reglas-desarrollo.md tokenization rules
+ * ============================================
+ */
+
+/* ===== GLOBAL PWA OPTIMIZATIONS ===== */
+
+/* Full viewport coverage including notches */
+html {
+    /* Support for iOS safe areas */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+}
+
+/* Prevent overscroll bounce on body (app-like) */
+html,
+body {
+    overscroll-behavior-x: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Allow overscroll on main content for pull-to-refresh */
+.content {
+    overscroll-behavior-y: contain;
+}
+
+/* Prevent text selection on UI elements when installed */
+.pwa-installed .btn,
+.pwa-installed .sidebar__menu-link,
+.pwa-installed .header,
+.pwa-installed .card__header,
+.pwa-installed .tab,
+.pwa-installed .settings-tab {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+/* Allow text selection on content areas */
+.pwa-installed .card__body,
+.pwa-installed .content,
+.pwa-installed input,
+.pwa-installed textarea {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* Prevent zoom on double tap */
+.pwa-installed * {
+    touch-action: manipulation;
+}
+
+/* ===== STANDALONE MODE ADJUSTMENTS ===== */
+
+@media (display-mode: standalone) {
+
+    /* Extra padding for status bar */
+    .header {
+        padding-top: env(safe-area-inset-top);
+        height: calc(var(--header-height) + env(safe-area-inset-top));
+    }
+
+    /* Ensure content doesn't touch edges on notched devices */
+    .content {
+        padding-left: max(var(--spacing-md), env(safe-area-inset-left));
+        padding-right: max(var(--spacing-md), env(safe-area-inset-right));
+    }
+
+    /* Footer safe area */
+    .modal__footer {
+        padding-bottom: max(var(--spacing-lg), env(safe-area-inset-bottom));
+    }
+
+    /* Hide browser-specific elements */
+    .browser-only {
+        display: none !important;
+    }
+}
+
+/* ===== iOS SPECIFIC ===== */
+
+.is-ios .header {
+    /* Account for status bar */
+    padding-top: max(20px, env(safe-area-inset-top));
+}
+
+.is-ios .sidebar {
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* iOS home indicator spacing */
+.is-ios .modal__footer,
+.is-ios .content {
+    padding-bottom: max(var(--spacing-lg), calc(env(safe-area-inset-bottom) + 8px));
+}
+
+/* ===== INSTALL BANNER ===== */
+
+.pwa-install-banner {
+    position: fixed;
+    bottom: -100%;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, var(--color-primary-600), var(--color-primary-700));
+    color: white;
+    padding: var(--spacing-lg);
+    padding-bottom: max(var(--spacing-lg), env(safe-area-inset-bottom));
+    z-index: var(--z-modal);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+    transition: bottom var(--transition-base);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.pwa-install-banner--visible {
+    bottom: 0;
+}
+
+.pwa-install-banner__content {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.pwa-install-banner__logo {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--border-radius-md);
+    background: white;
+    padding: 4px;
+    object-fit: contain;
+}
+
+.pwa-install-banner__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pwa-install-banner__text strong {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+}
+
+.pwa-install-banner__text span {
+    font-size: var(--font-size-sm);
+    opacity: 0.9;
+}
+
+.pwa-install-banner__actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    justify-content: flex-end;
+}
+
+.pwa-install-banner__dismiss,
+.pwa-install-banner__install {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-radius: var(--border-radius-lg);
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: none;
+    min-height: 44px;
+}
+
+.pwa-install-banner__dismiss {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.pwa-install-banner__dismiss:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.pwa-install-banner__install {
+    background: white;
+    color: var(--color-primary-600);
+}
+
+.pwa-install-banner__install:hover {
+    background: var(--color-neutral-100);
+    transform: scale(1.02);
+}
+
+.pwa-install-banner__install:active {
+    transform: scale(0.98);
+}
+
+/* ===== iOS INSTALL BANNER ===== */
+
+.pwa-ios-banner {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius-xl);
+    box-shadow: var(--shadow-xl);
+    padding: var(--spacing-md) var(--spacing-lg);
+    z-index: var(--z-modal);
+    max-width: calc(100% - 32px);
+    animation: slideUp 0.3s ease;
+    border: 1px solid var(--border-color);
+}
+
+.pwa-ios-banner--hidden {
+    animation: slideDown 0.3s ease forwards;
+}
+
+.pwa-ios-banner__content {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.pwa-ios-banner__icon {
+    font-size: 2rem;
+}
+
+.pwa-ios-banner__text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.pwa-ios-banner__text strong {
+    font-size: var(--font-size-md);
+    color: var(--text-primary);
+}
+
+.pwa-ios-banner__text span {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.pwa-ios-banner__close {
+    position: absolute;
+    top: var(--spacing-sm);
+    right: var(--spacing-sm);
+    background: none;
+    border: none;
+    font-size: var(--font-size-lg);
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    min-width: 32px;
+    min-height: 32px;
+}
+
+/* ===== OFFLINE INDICATOR ===== */
+
+.pwa-offline-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, var(--color-warning), var(--color-warning-dark));
+    color: #000;
+    padding: var(--spacing-sm) var(--spacing-md);
+    padding-top: max(var(--spacing-sm), env(safe-area-inset-top));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+    z-index: calc(var(--z-modal) + 100);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    animation: slideDown-reverse 0.3s ease;
+}
+
+.pwa-offline-indicator--hidden {
+    animation: slideUp-reverse 0.3s ease forwards;
+}
+
+.pwa-offline-indicator__icon {
+    font-size: var(--font-size-md);
+}
+
+/* Adjust header when offline indicator is showing */
+.is-offline .header {
+    top: calc(var(--spacing-md) + var(--spacing-sm) + env(safe-area-inset-top));
+}
+
+/* ===== UPDATE NOTIFICATION ===== */
+
+.pwa-update-notification {
+    position: fixed;
+    bottom: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-primary-500);
+    color: white;
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--border-radius-full);
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-modal);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    transition: bottom var(--transition-base);
+}
+
+.pwa-update-notification--visible {
+    bottom: calc(var(--spacing-xl) + env(safe-area-inset-bottom));
+}
+
+.pwa-update-notification__content {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.pwa-update-notification__icon {
+    font-size: var(--font-size-lg);
+    animation: spin 2s linear infinite;
+}
+
+.pwa-update-notification__text {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+}
+
+.pwa-update-notification__button {
+    background: white;
+    color: var(--color-primary-600);
+    border: none;
+    border-radius: var(--border-radius-full);
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-weight: var(--font-weight-bold);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: transform var(--transition-fast);
+    min-height: 36px;
+}
+
+.pwa-update-notification__button:hover {
+    transform: scale(1.05);
+}
+
+/* ===== TOAST NOTIFICATIONS ===== */
+
+.pwa-toast {
+    position: fixed;
+    bottom: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-xl);
+    z-index: var(--z-modal);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    transition: bottom var(--transition-base);
+    border: 1px solid var(--border-color);
+}
+
+.pwa-toast--visible {
+    bottom: calc(var(--spacing-xl) + env(safe-area-inset-bottom));
+}
+
+.pwa-toast--success {
+    border-color: var(--color-success);
+    background: linear-gradient(135deg, var(--color-success-light), var(--bg-secondary));
+}
+
+.pwa-toast__icon {
+    font-size: var(--font-size-xl);
+}
+
+.pwa-toast__text {
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+}
+
+/* ===== ANIMATIONS ===== */
+
+@keyframes slideUp {
+    from {
+        transform: translateX(-50%) translateY(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+
+    to {
+        transform: translateX(-50%) translateY(100%);
+        opacity: 0;
+    }
+}
+
+@keyframes slideDown-reverse {
+    from {
+        transform: translateY(-100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideUp-reverse {
+    from {
+        transform: translateY(0);
+    }
+
+    to {
+        transform: translateY(-100%);
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ===== MOBILE NAVIGATION ENHANCEMENTS ===== */
+
+/* Mobile sidebar - show via hamburger menu, not hidden completely */
+@media (max-width: 767px) {
+
+    /* Sidebar starts hidden but can be opened */
+    .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Main content takes full width */
+    .main {
+        margin-left: 0;
+    }
+}
+
+/* PWA Standalone Mode - Show bottom nav AND allow sidebar toggle */
+/* PWA Standalone Mode - Show bottom nav AND allow sidebar toggle */
+@media (max-width: 767px) and (display-mode: standalone) {
+
+    /* Keep sidebar accessible via toggle, not hidden */
+    .sidebar {
+        transform: translateX(-100%);
+        z-index: calc(var(--z-fixed) + 10);
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    /* Show bottom navigation */
+    .pwa-bottom-nav {
+        display: flex !important;
+    }
+
+    /* Adjust main content for bottom nav */
+    .main {
+        margin-left: 0;
+        padding-bottom: calc(70px + env(safe-area-inset-bottom));
+    }
+
+    /* Show menu button in header always */
+    .header__menu-btn {
+        display: flex !important;
+    }
+}
+
+/* Overlay when sidebar is open */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: calc(var(--z-fixed) + 5);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.sidebar-overlay.active {
+    display: block;
+    opacity: 1;
+}
+
+.pwa-bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: calc(64px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    z-index: var(--z-fixed);
+    justify-content: space-around;
+    align-items: center;
+    padding-top: 0;
+}
+
+.pwa-bottom-nav__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+    min-width: 60px;
+    min-height: 52px;
+    border-radius: var(--border-radius-md);
+    -webkit-tap-highlight-color: transparent;
+    /* Button reset (changed from <a> to <button>) */
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.pwa-bottom-nav__item:active {
+    background: var(--bg-hover);
+    transform: scale(0.95);
+}
+
+.pwa-bottom-nav__item--active {
+    color: var(--color-primary-500);
+}
+
+.pwa-bottom-nav__item--active .pwa-bottom-nav__icon {
+    transform: scale(1.1);
+}
+
+.pwa-bottom-nav__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    transition: transform var(--transition-fast);
+}
+
+.pwa-bottom-nav__icon svg {
+    width: 26px;
+    height: 26px;
+}
+
+.pwa-bottom-nav__label {
+    line-height: 1;
+    text-transform: capitalize;
+}
+
+/* ===== PULL TO REFRESH INDICATOR ===== */
+
+.pwa-refresh-indicator {
+    position: fixed;
+    top: -50px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 40px;
+    background: var(--bg-secondary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-md);
+    transition: top var(--transition-fast);
+    z-index: var(--z-sticky);
+}
+
+.pwa-refresh-indicator--visible {
+    top: calc(var(--spacing-lg) + env(safe-area-inset-top));
+}
+
+.pwa-refresh-indicator svg {
+    width: 24px;
+    height: 24px;
+    color: var(--color-primary-500);
+}
+
+/* ===== SPLASH SCREEN (Browser support) ===== */
+
+.pwa-splash {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(135deg, var(--color-primary-700), var(--color-primary-900));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+}
+
+.pwa-splash__logo {
+    width: 120px;
+    height: 120px;
+    animation: pulse 2s infinite;
+}
+
+.pwa-splash__text {
+    margin-top: var(--spacing-lg);
+    color: white;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.05);
+        opacity: 0.8;
+    }
+}
+
+/* ===== GESTURE HINTS ===== */
+
+.pwa-gesture-hint {
+    position: fixed;
+    bottom: calc(100px + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-radius: var(--border-radius-full);
+    font-size: var(--font-size-sm);
+    z-index: var(--z-tooltip);
+    animation: fadeInOut 3s ease forwards;
+}
+
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(10px);
+    }
+
+    20% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+
+    80% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-10px);
+    }
+}
+
+/* ===== HAPTIC FEEDBACK SIMULATION ===== */
+
+.pwa-installed .btn:active,
+.pwa-installed .sidebar__menu-link:active {
+    animation: haptic 0.1s ease;
+}
+
+@keyframes haptic {
+
+    0%,
+    100% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(0.97);
+    }
+}
+
+/* ===== REFRESH BUTTON STYLES ===== */
+
+.header__refresh-btn {
+    position: relative;
+    transition: all var(--transition-fast);
+}
+
+.header__refresh-btn svg {
+    transition: transform 0.3s ease;
+}
+
+.header__refresh-btn:hover svg {
+    transform: rotate(180deg);
+}
+
+.header__refresh-btn.refreshing svg {
+    animation: refreshSpin 1s linear infinite;
+}
+
+.header__refresh-btn.refreshing {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+@keyframes refreshSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ===== PULL TO REFRESH ENHANCED ===== */
+
+.pwa-pull-refresh {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(to bottom, var(--bg-secondary), transparent);
+    opacity: 0;
+    transform: translateY(-100%);
+    transition: all var(--transition-base);
+    z-index: var(--z-sticky);
+    pointer-events: none;
+}
+
+.pwa-pull-refresh.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.pwa-pull-refresh__content {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius-full);
+    box-shadow: var(--shadow-md);
+}
+
+.pwa-pull-refresh__icon {
+    width: 24px;
+    height: 24px;
+    color: var(--color-primary-500);
+    transition: transform 0.3s ease;
+}
+
+.pwa-pull-refresh.pulling .pwa-pull-refresh__icon {
+    transform: rotate(180deg);
+}
+
+.pwa-pull-refresh.refreshing .pwa-pull-refresh__icon {
+    animation: refreshSpin 1s linear infinite;
+}
+
+.pwa-pull-refresh__text {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-secondary);
+}
+
+/* ===== SYNC STATUS INDICATOR ===== */
+
+.sync-status {
+    position: fixed;
+    top: calc(var(--spacing-md) + env(safe-area-inset-top));
+    right: var(--spacing-md);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius-full);
+    box-shadow: var(--shadow-sm);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    z-index: var(--z-tooltip);
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: all var(--transition-fast);
+    pointer-events: none;
+}
+
+.sync-status.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.sync-status__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-success);
+    animation: pulse 2s infinite;
+}
+
+.sync-status.syncing .sync-status__dot {
+    background: var(--color-primary-500);
+    animation: pulse 0.5s infinite;
+}

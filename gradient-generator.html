@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSS Gradient Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            color: #2d3748;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            color: #718096;
+            font-size: 1.1rem;
+        }
+
+        .generator-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 900px) {
+            .generator-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+        }
+
+        .panel h2 {
+            color: #2d3748;
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        /* Preview Section */
+        .preview-container {
+            margin-bottom: 25px;
+        }
+
+        .preview-box {
+            width: 100%;
+            height: 200px;
+            border-radius: 10px;
+            border: 3px solid #e2e8f0;
+            transition: background 0.3s ease;
+        }
+
+        .gradient-info {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .gradient-type {
+            display: flex;
+            gap: 10px;
+        }
+
+        .gradient-type button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .gradient-type .linear-btn {
+            background: #4a5568;
+            color: white;
+        }
+
+        .gradient-type .radial-btn {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .gradient-type button:hover {
+            transform: translateY(-2px);
+        }
+
+        .gradient-type button.active {
+            background: #3182ce;
+            color: white;
+        }
+
+        /* Controls Section */
+        .controls-section {
+            margin-bottom: 25px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            color: #4a5568;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .color-stops {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .color-stop {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f7fafc;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .color-stop input[type="color"] {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .color-stop input[type="range"] {
+            width: 80px;
+        }
+
+        .color-stop .stop-label {
+            font-size: 0.85rem;
+            color: #718096;
+            min-width: 30px;
+        }
+
+        .color-stop .remove-stop {
+            background: #fc8181;
+            color: white;
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .color-stop .remove-stop:hover {
+            background: #f56565;
+        }
+
+        .add-stop-btn {
+            background: #48bb78;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .add-stop-btn:hover {
+            background: #38a169;
+        }
+
+        .angle-control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .angle-control input[type="range"] {
+            flex: 1;
+        }
+
+        .angle-control input[type="number"] {
+            width: 70px;
+            padding: 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .angle-control span {
+            color: #718096;
+        }
+
+        /* Code Output */
+        .code-output {
+            background: #1a202c;
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+        }
+
+        .code-output pre {
+            color: #a0aec0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #3182ce;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #2b6cb0;
+        }
+
+        .copy-btn.copied {
+            background: #38a169;
+        }
+
+        /* Presets */
+        .presets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 10px;
+        }
+
+        .preset-item {
+            height: 60px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .preset-item:hover {
+            transform: scale(1.05);
+            border-color: #3182ce;
+        }
+
+        /* Export Options */
+        .export-options {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .export-btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .export-btn.primary {
+            background: #3182ce;
+            color: white;
+        }
+
+        .export-btn.primary:hover {
+            background: #2b6cb0;
+        }
+
+        .export-btn.secondary {
+            background: #718096;
+            color: white;
+        }
+
+        .export-btn.secondary:hover {
+            background: #4a5568;
+        }
+
+        /* Live Preview Text */
+        .preview-text {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-align: center;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Toast Notification */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2d3748;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 CSS Gradient Generator</h1>
+            <p>Create beautiful gradients and export them to your project</p>
+        </header>
+
+        <div class="generator-layout">
+            <!-- Left Panel - Controls -->
+            <div class="panel">
+                <h2>Gradient Controls</h2>
+
+                <div class="controls-section">
+                    <div class="control-group">
+                        <label>Gradient Type</label>
+                        <div class="gradient-type">
+                            <button class="linear-btn active" onclick="setGradientType('linear')">Linear</button>
+                            <button class="radial-btn" onclick="setGradientType('radial')">Radial</button>
+                        </div>
+                    </div>
+
+                    <div class="control-group" id="angleGroup">
+                        <label>Angle</label>
+                        <div class="angle-control">
+                            <input type="range" id="angleSlider" min="0" max="360" value="135" oninput="updateAngle()">
+                            <input type="number" id="angleInput" min="0" max="360" value="135"
+                                oninput="updateAngleFromInput()">
+                            <span>degrees</span>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>Color Stops</label>
+                        <div class="color-stops" id="colorStops"></div>
+                        <button class="add-stop-btn" onclick="addColorStop()">+ Add Color Stop</button>
+                    </div>
+                </div>
+
+                <h2>Preset Gradients</h2>
+                <div class="presets-grid" id="presetsGrid"></div>
+            </div>
+
+            <!-- Right Panel - Preview & Code -->
+            <div class="panel">
+                <h2>Live Preview</h2>
+                <div class="preview-container">
+                    <div class="preview-box" id="previewBox"></div>
+                    <div class="gradient-info">
+                        <span id="gradientName">Modern Blue</span>
+                    </div>
+                </div>
+
+                <div class="preview-text" id="previewText">
+                    Gradient Text
+                </div>
+
+                <h2 style="margin-top: 25px;">CSS Code</h2>
+                <div class="code-output">
+                    <button class="copy-btn" id="copyBtn" onclick="copyCode()">Copy Code</button>
+                    <pre id="cssCode"></pre>
+                </div>
+
+                <div class="export-options">
+                    <button class="export-btn primary" onclick="downloadCSS()">
+                        📥 Download CSS
+                    </button>
+                    <button class="export-btn secondary" onclick="downloadHTML()">
+                        📄 Download HTML
+                    </button>
+                    <button class="export-btn secondary" onclick="copyAsBackground()">
+                        📋 Copy as Background
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Copied to clipboard!</div>
+
+    <script>
+        // State
+        let gradientType = 'linear';
+        let colorStops = [
+            { color: '#667eea', position: 0 },
+            { color: '#764ba2', position: 100 }
+        ];
+        let angle = 135;
+        let currentPreset = 'Modern Blue';
+
+        // Presets
+        const presets = [
+            { name: 'Modern Blue', colors: ['#667eea', '#764ba2'] },
+            { name: 'Sunset', colors: ['#f093fb', '#f5576c'] },
+            { name: 'Ocean', colors: ['#4facfe', '#00f2fe'] },
+            { name: 'Forest', colors: ['#43e97b', '#38f9d7'] },
+            { name: 'Fire', colors: ['#fa709a', '#fee140'] },
+            { name: 'Purple', colors: ['#a18cd1', '#fbc2eb'] },
+            { name: 'Midnight', colors: ['#a1c4fd', '#c2e9fb'] },
+            { name: 'Candy', colors: ['#ffecd2', '#fcb69f'] },
+            { name: 'Cyber', colors: ['#667eea', '#764ba2'] },
+            { name: 'Spring', colors: ['#ff9a9e', '#fecfef'] },
+            { name: 'Deep Sea', colors: ['#0c3483', '#a2b6df'] },
+            { name: 'Peach', colors: ['#ffecd2', '#fcb69f'] }
+        ];
+
+        // Initialize
+        function init() {
+            renderColorStops();
+            renderPresets();
+            updatePreview();
+        }
+
+        // Render color stops
+        function renderColorStops() {
+            const container = document.getElementById('colorStops');
+            container.innerHTML = colorStops.map((stop, index) => `
+                <div class="color-stop">
+                    <input type="color" value="${stop.color}" onchange="updateStop(${index}, 'color', this.value)">
+                    <input type="range" min="0" max="100" value="${stop.position}" onchange="updateStop(${index}, 'position', this.value)">
+                    <span class="stop-label">${stop.position}%</span>
+                    ${colorStops.length > 2 ? `<button class="remove-stop" onclick="removeStop(${index})">×</button>` : ''}
+                </div>
+            `).join('');
+        }
+
+        // Render presets
+        function renderPresets() {
+            const container = document.getElementById('presetsGrid');
+            container.innerHTML = presets.map((preset, index) => `
+                <div class="preset-item" 
+                     style="background: linear-gradient(135deg, ${preset.colors.join(', ')})"
+                     onclick="applyPreset(${index})"
+                     title="${preset.name}"></div>
+            `).join('');
+        }
+
+        // Apply preset
+        function applyPreset(index) {
+            const preset = presets[index];
+            colorStops = preset.colors.map((color, i) => ({
+                color: color,
+                position: i === 0 ? 0 : 100
+            }));
+            currentPreset = preset.name;
+            document.getElementById('gradientName').textContent = preset.name;
+            renderColorStops();
+            updatePreview();
+        }
+
+        // Update color stop
+        function updateStop(index, field, value) {
+            if (field === 'position') {
+                colorStops[index].position = parseInt(value);
+                renderColorStops();
+            } else {
+                colorStops[index].color = value;
+            }
+            updatePreview();
+        }
+
+        // Add color stop
+        function addColorStop() {
+            const newPosition = colorStops.length > 1
+                ? Math.floor((colorStops[0].position + colorStops[colorStops.length - 1].position) / 2)
+                : 50;
+            colorStops.push({ color: '#888888', position: newPosition });
+            colorStops.sort((a, b) => a.position - b.position);
+            renderColorStops();
+            updatePreview();
+        }
+
+        // Remove color stop
+        function removeStop(index) {
+            if (colorStops.length > 2) {
+                colorStops.splice(index, 1);
+                renderColorStops();
+                updatePreview();
+            }
+        }
+
+        // Set gradient type
+        function setGradientType(type) {
+            gradientType = type;
+            document.querySelectorAll('.gradient-type button').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.${type}-btn`).classList.add('active');
+
+            const angleGroup = document.getElementById('angleGroup');
+            angleGroup.style.display = type === 'linear' ? 'block' : 'none';
+
+            updatePreview();
+        }
+
+        // Update angle
+        function updateAngle() {
+            angle = document.getElementById('angleSlider').value;
+            document.getElementById('angleInput').value = angle;
+            updatePreview();
+        }
+
+        function updateAngleFromInput() {
+            angle = document.getElementById('angleInput').value;
+            document.getElementById('angleSlider').value = angle;
+            updatePreview();
+        }
+
+        // Generate gradient string
+        function generateGradient() {
+            const sortedStops = [...colorStops].sort((a, b) => a.position - b.position);
+            const stopsString = sortedStops.map(s => `${s.color} ${s.position}%`).join(', ');
+
+            if (gradientType === 'linear') {
+                return `linear-gradient(${angle}deg, ${stopsString})`;
+            } else {
+                return `radial-gradient(circle, ${stopsString})`;
+            }
+        }
+
+        // Update preview
+        function updatePreview() {
+            const gradient = generateGradient();
+            const previewBox = document.getElementById('previewBox');
+            const previewText = document.getElementById('previewText');
+            const cssCode = document.getElementById('cssCode');
+
+            previewBox.style.background = gradient;
+            previewText.style.background = gradient;
+            previewText.style.webkitBackgroundClip = 'text';
+            previewText.style.webkitTextFillColor = 'transparent';
+
+            const code = `.gradient {\n  background: ${gradient};\n}`;
+            cssCode.textContent = code;
+        }
+
+        // Copy code
+        function copyCode() {
+            const code = document.getElementById('cssCode').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showToast('CSS copied to clipboard!');
+                const btn = document.getElementById('copyBtn');
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy Code';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+
+        // Copy as background
+        function copyAsBackground() {
+            const gradient = generateGradient();
+            navigator.clipboard.writeText(`background: ${gradient};`).then(() => {
+                showToast('Background property copied!');
+            });
+        }
+
+        // Download CSS
+        function downloadCSS() {
+            const gradient = generateGradient();
+            const cssContent = `/* Generated by CSS Gradient Generator */\n\n.gradient {\n  background: ${gradient};\n}\n\n.gradient-text {\n  background: ${gradient};\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  background-clip: text;\n  color: transparent;\n}`;
+
+            downloadFile('gradient.css', cssContent, 'text/css');
+        }
+
+        // Download HTML
+        function downloadHTML() {
+            const gradient = generateGradient();
+            const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gradient Preview</title>
+    <style>
+        .gradient {
+            background: ${gradient};
+        }
+    </style>
+</head>
+<body>
+    <div class="gradient" style="width: 100%; height: 200px;"></div>
+</body>
+</html>`;
+
+            downloadFile('gradient-preview.html', htmlContent, 'text/html');
+        }
+
+        // Download file helper
+        function downloadFile(filename, content, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`Downloaded ${filename}!`);
+        }
+
+        // Show toast
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+
+</html>

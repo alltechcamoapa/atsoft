@@ -1,0 +1,186 @@
+/* ========== PERMISSIONS CONFIGURATION ========== */
+.permissions-config {
+    padding: var(--spacing-lg);
+}
+
+.permissions-config__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+}
+
+.permissions-table-container {
+    overflow-x: auto;
+    border-radius: var(--border-radius-md);
+    border: 1px solid var(--border-color);
+    margin-bottom: var(--spacing-lg);
+}
+
+.permissions-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.permissions-table thead {
+    background-color: var(--bg-tertiary);
+}
+
+.permissions-table th {
+    padding: var(--spacing-md);
+    text-align: left;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-primary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+.permission-col {
+    text-align: center !important;
+    min-width: 90px;
+}
+
+.permission-col svg {
+    width: 16px;
+    height: 16px;
+    margin: 0 auto 4px;
+    display: block;
+    color: var(--text-muted);
+}
+
+.permission-col span {
+    display: block;
+    font-size: var(--font-size-xs);
+}
+
+.permissions-table tbody tr {
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color var(--transition-fast);
+}
+
+.permissions-table tbody tr:hover {
+    background-color: var(--bg-primary);
+}
+
+.permissions-table td {
+    padding: var(--spacing-md);
+}
+
+.module-name {
+    font-weight: var(--font-weight-medium);
+    color: var(--text-primary);
+}
+
+.permission-cell {
+    text-align: center;
+}
+
+.checkbox-wrapper {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    gap: var(--spacing-sm);
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.checkbox-custom {
+    position: relative;
+    height: 20px;
+    width: 20px;
+    background-color: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    transition: all var(--transition-fast);
+}
+
+.checkbox-wrapper input[type="checkbox"]:checked~.checkbox-custom {
+    background-color: var(--color-primary-500);
+    border-color: var(--color-primary-500);
+}
+
+.checkbox-wrapper input[type="checkbox"]:checked~.checkbox-custom::after {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    width: 4px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.checkbox-wrapper:hover .checkbox-custom {
+    border-color: var(--color-primary-500);
+}
+
+.permissions-config__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    background-color: var(--bg-primary);
+    border-radius: var(--border-radius-md);
+}
+
+.general-config,
+.usuarios-config {
+    padding: var(--spacing-lg);
+}
+
+/* ========== TABS ========== */
+.tabs {
+    background: var(--bg-surface);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+}
+
+.tabs__header {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-tertiary);
+}
+
+.tabs__tab {
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.tabs__tab:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
+}
+
+.tabs__tab--active {
+    color: var(--color-primary-500);
+    border-bottom-color: var(--color-primary-500);
+    background-color: var(--bg-surface);
+}
+
+.tabs__tab svg {
+    width: 16px;
+    height: 16px;
+}
+
+.tabs__content {
+    min-height: 400px;
+}
+
+.module--configuracion .module__header {
+    margin-bottom: var(--spacing-lg);
+}
