@@ -2053,6 +2053,7 @@ const SupabaseDataService = (() => {
         getAusenciasByEmpleado,
         getAllAusencias,
         createAusencia,
+        updateAusencia,
         deleteAusencia,
 
         // Gestión de Técnicos

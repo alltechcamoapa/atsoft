@@ -677,7 +677,7 @@ const ConfigModule = (() => {
         </div>
         <div class="card__body">
           <div class="about-info">
-            <img src="assets/logo.png" alt="ALLTECH Logo" class="about-logo-img" style="max-width: 180px; height: auto; margin-bottom: var(--spacing-md); filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));">
+            <img src="assets/logo.png" alt="ALLTECH Logo" class="about-logo-img" style="display: block; margin: 0 auto var(--spacing-md) auto; max-width: 180px; height: auto; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));">
             <h3>ALLTECH</h3>
             <p class="text-muted">Sistema de Gestión Empresarial</p>
             <p class="text-sm">Versión 1.0.1</p>

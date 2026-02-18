@@ -1126,7 +1126,7 @@ const App = (() => {
       const success = await DataService.refreshData();
 
       if (success) {
-        showNotification('¡Datos actualizados!', 'success');
+        showNotification('¡Díatos actualizados!', 'success');
         // Re-render current module with fresh data
         render();
       } else {

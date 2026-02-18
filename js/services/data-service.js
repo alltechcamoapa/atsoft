@@ -20,6 +20,7 @@ const DataService = (() => {
         users: [],
         nominas: [],
         pagosTecnicos: [],
+        ausencias: [],
         config: {
             monedaPrincipal: 'USD',
             tipoCambio: 36.5,
@@ -94,7 +95,8 @@ const DataService = (() => {
                 nominas,
                 software,
                 users,
-                pagosTecnicos
+                pagosTecnicos,
+                ausencias
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -107,7 +109,8 @@ const DataService = (() => {
                 SupabaseDataService.getRecentNominas?.() || Promise.resolve([]),
                 SupabaseDataService.getSoftwareSync(),
                 SupabaseDataService.getUsersSync(),
-                SupabaseDataService.getPagosTecnicos()
+                SupabaseDataService.getPagosTecnicos(),
+                SupabaseDataService.getAllAusencias?.() || Promise.resolve([])
             ]);
 
             // Normalizar y almacenar en caché
@@ -166,6 +169,11 @@ const DataService = (() => {
                 tecnicoNombre: p.tecnico?.full_name || 'Desconocido'
             }));
 
+            cache.ausencias = (ausencias || []).map(a => ({
+                ...normalizeSupabaseData('ausencias', a),
+                empleadoNombre: a.empleado?.nombre || 'Desconocido'
+            }));
+
             // Cargar permisos por defecto (hardcoded por seguridad)
             cache.permissions = loadDefaultPermissions();
 
@@ -202,14 +210,16 @@ const DataService = (() => {
                 equipos,
                 visitas,
                 nominas,
-                software
+                software,
+                ausencias
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
                 SupabaseDataService.getEquiposSync(),
                 SupabaseDataService.getVisitasSync(),
                 SupabaseDataService.getRecentNominas?.() || Promise.resolve([]),
-                SupabaseDataService.getSoftwareSync()
+                SupabaseDataService.getSoftwareSync(),
+                SupabaseDataService.getAllAusencias?.() || Promise.resolve([])
             ]);
 
             // Actualizar caché
@@ -219,6 +229,10 @@ const DataService = (() => {
             cache.visitas = (visitas || []).map(v => normalizeSupabaseData('visitas', v));
             cache.nominas = (nominas || []).map(n => ({ ...n, empleadoNombre: n.empleado?.nombre || 'Desconocido', empleadoCargo: n.empleado?.cargo || '-' }));
             cache.software = (software || []).map(s => ({ ...normalizeSupabaseData('software', s), cliente: s.cliente ? normalizeSupabaseData('clientes', s.cliente) : null }));
+            cache.ausencias = (ausencias || []).map(a => ({
+                ...normalizeSupabaseData('ausencias', a),
+                empleadoNombre: a.empleado?.nombre || 'Desconocido'
+            }));
 
             console.log(`✅ DataService: Refresh completo (${cache.clientes.length} Clientes)`);
 
@@ -669,6 +683,59 @@ const DataService = (() => {
             return true;
         }
         throw new Error(res.error || 'Error al eliminar visita');
+    };
+
+    const deleteNomina = async (id) => {
+        const res = await SupabaseDataService.deleteNomina(id);
+        if (res.success) {
+            cache.nominas = cache.nominas.filter(n => n.id !== id);
+            LogService.log('prestaciones', 'delete', id, `Nómina eliminada: ${id}`);
+            return true;
+        }
+        throw new Error(res.error || 'Error al eliminar nómina');
+    };
+
+    // ========== CRUD AUSENCIAS ==========
+    const getAllAusencias = () => [...cache.ausencias];
+    const getAusenciaById = (id) => cache.ausencias.find(a => a.id === id);
+
+    const createAusencia = async (data) => {
+        const res = await SupabaseDataService.createAusencia(data);
+        if (res.success) {
+            const item = {
+                ...normalizeSupabaseData('ausencias', res.data),
+                empleadoNombre: getEmpleadoById(data.empleadoId)?.nombre || 'Desconocido'
+            };
+            cache.ausencias.unshift(item);
+            LogService.log('prestaciones', 'create', item.id, `Ausencia creada para: ${item.empleadoNombre}`);
+            return item;
+        }
+        throw new Error(res.error || 'Error al crear ausencia');
+    };
+
+    const updateAusencia = async (id, data) => {
+        const res = await SupabaseDataService.updateAusencia(id, data);
+        if (res.success) {
+            const item = {
+                ...normalizeSupabaseData('ausencias', res.data),
+                empleadoNombre: getEmpleadoById(data.empleadoId || res.data.empleado_id)?.nombre || 'Desconocido'
+            };
+            const idx = cache.ausencias.findIndex(a => a.id === id);
+            if (idx !== -1) cache.ausencias[idx] = { ...cache.ausencias[idx], ...item };
+            LogService.log('prestaciones', 'update', id, `Ausencia actualizada`);
+            return true;
+        }
+        throw new Error(res.error || 'Error al actualizar ausencia');
+    };
+
+    const deleteAusencia = async (id) => {
+        const res = await SupabaseDataService.deleteAusencia(id);
+        if (res.success) {
+            cache.ausencias = cache.ausencias.filter(a => a.id !== id);
+            LogService.log('prestaciones', 'delete', id, `Ausencia eliminada`);
+            return true;
+        }
+        throw new Error(res.error || 'Error al eliminar ausencia');
     };
 
     const getVisitasStats = () => {
@@ -1506,41 +1573,16 @@ const DataService = (() => {
             throw new Error(res.error);
         },
         getNominasSync: () => [...(cache.nominas || [])],
+        getRecentNominas: () => cache.nominas.slice(0, 5), // Assuming 'nominas' is already sorted by date or similar
+        getAllNominas: () => SupabaseDataService.getAllNominas(),
+        deleteNomina,
 
         // Ausencias
-        getAusenciasByEmpleado: (id) => SupabaseDataService.getAusenciasByEmpleado(id),
-        getAllAusencias: () => SupabaseDataService.getAllAusencias(),
-        createAusencia: async (data) => {
-            const res = await SupabaseDataService.createAusencia(data);
-            if (res.success) {
-                // Si se descuenta de vacaciones, actualizar cache local
-                if (data.tipoDescuento === 'vacaciones') {
-                    const emp = getEmpleadoById(data.empleadoId);
-                    if (emp) emp.vacacionesTomadas = (emp.vacacionesTomadas || 0) + data.dias;
-                }
-                return res.data;
-            }
-            throw new Error(res.error);
-        },
-        updateAusencia: async (id, data) => {
-            const res = await SupabaseDataService.updateAusencia(id, data);
-            if (res.success) return res.data;
-            throw new Error(res.error);
-        },
-        deleteAusencia: async (id) => {
-            const res = await SupabaseDataService.deleteAusencia(id);
-            if (res.success) return true;
-            throw new Error(res.error);
-        },
-
-        // All Nominas (history)
-        getAllNominas: () => SupabaseDataService.getAllNominas(),
-        createNomina: async (data) => {
-            const res = await SupabaseDataService.createNomina(data);
-            if (res.success) return res.data;
-            throw new Error(res.error);
-        },
-        deleteNomina: (id) => SupabaseDataService.deleteNomina(id),
+        getAllAusencias,
+        getAusenciaById,
+        createAusencia,
+        updateAusencia,
+        deleteAusencia,
 
         // Gestión de Técnicos
         getPagosTecnicos: (id) => {
