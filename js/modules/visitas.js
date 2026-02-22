@@ -406,7 +406,12 @@ const VisitasModule = (() => {
               </div>
               <div class="detail-item">
                 <div class="detail-item__label">Técnico</div>
-                <div class="detail-item__value">${visita.usuarioSoporte}</div>
+                <div class="detail-item__value">
+                  ${(() => {
+        const tech = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync().find(u => u.id === visita.usuarioSoporte) : null;
+        return tech ? (tech.name || tech.username) : (visita.usuarioSoporte || 'N/A');
+      })()}
+                </div>
               </div>
               <div class="detail-item">
                 <div class="detail-item__label">Costo</div>
@@ -592,7 +597,10 @@ const VisitasModule = (() => {
                   <td>${v.tipoVisita}</td>
                   ${filters.incluirEquipos ? `<td>${eq ? eq.nombreEquipo : '-'}</td>` : ''}
                   <td>${v.descripcionTrabajo}</td>
-                  <td>${v.usuarioSoporte}</td>
+                  <td>${(() => {
+          const tech = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync().find(u => u.id === v.usuarioSoporte) : null;
+          return tech ? (tech.name || tech.username) : (v.usuarioSoporte || 'N/A');
+        })()}</td>
                   <td><span class="badge badge-${v.trabajoRealizado ? 'success' : 'warning'}">${v.trabajoRealizado ? 'Completado' : 'Pendiente'}</span></td>
                 </tr>
               `;
@@ -856,8 +864,8 @@ const VisitasModule = (() => {
     try {
       if (data.visitaId && data.visitaId.toString().trim() !== '' && data.visitaId !== 'undefined') {
         await DataService.updateVisita(data.visitaId, data);
-        if (typeof ConfigModule !== 'undefined' && ConfigModule.showToast) {
-          ConfigModule.showToast('Visita actualizada', 'success');
+        if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+          NotificationService.showToast('Visita actualizada', 'success');
         }
       } else {
         // Eliminar ID temporal si existe, dejar que DB genere
@@ -866,8 +874,8 @@ const VisitasModule = (() => {
         const result = await DataService.createVisita(data);
         if (result && result.error) throw new Error(result.error);
 
-        if (typeof ConfigModule !== 'undefined' && ConfigModule.showToast) {
-          ConfigModule.showToast('Visita creada exitosamente', 'success');
+        if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+          NotificationService.showToast('Visita creada exitosamente', 'success');
         }
       }
       closeModal();
@@ -893,8 +901,8 @@ const VisitasModule = (() => {
         fechaFin: now
       });
 
-      if (typeof ConfigModule !== 'undefined' && ConfigModule.showToast) {
-        ConfigModule.showToast('Visita finalizada correctamente', 'success');
+      if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+        NotificationService.showToast('Visita finalizada correctamente', 'success');
       }
       App.refreshCurrentModule();
     } catch (error) {
@@ -907,8 +915,8 @@ const VisitasModule = (() => {
     if (confirm('¿Estás seguro de eliminar esta visita?')) {
       DataService.deleteVisita(id).then(success => {
         if (success) {
-          if (typeof ConfigModule !== 'undefined' && ConfigModule.showToast) {
-            ConfigModule.showToast('Visita eliminada', 'success');
+          if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+            NotificationService.showToast('Visita eliminada', 'success');
           }
           App.refreshCurrentModule();
         } else {

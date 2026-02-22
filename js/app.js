@@ -980,6 +980,28 @@ const App = (() => {
   // ========== EVENT LISTENERS ==========
 
   function attachEventListeners() {
+    // Forzar mayúsculas en todos los inputs de texto excepto campos sensibles y numéricos
+    if (!window.uppercaseListenerAttached) {
+      document.addEventListener('input', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+          const type = e.target.type ? e.target.type.toLowerCase() : '';
+          // Ignorar contraseñas, emails y tipos donde el cursor o el valor fallaría al convertir
+          if (!['password', 'email', 'url', 'color', 'date', 'time', 'number', 'month', 'week', 'file'].includes(type)) {
+            const start = e.target.selectionStart;
+            const end = e.target.selectionEnd;
+            e.target.value = e.target.value.toUpperCase();
+            // Evitar perder la posición del cursor en inputs de texto normal
+            try {
+              if (e.target.setSelectionRange) {
+                e.target.setSelectionRange(start, end);
+              }
+            } catch (err) { }
+          }
+        }
+      });
+      window.uppercaseListenerAttached = true;
+    }
+
     // Navigation links (sidebar)
     document.querySelectorAll('.sidebar__menu-link').forEach(link => {
       link.addEventListener('click', (e) => {

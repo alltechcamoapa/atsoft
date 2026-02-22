@@ -286,11 +286,27 @@ const SoftwareModule = (() => {
               </div>
               <div class="detail-item">
                 <div class="detail-item__label">Licencia Empresa</div>
-                <div class="detail-item__value font-mono" style="word-break: break-all;">${software.numeroLicencia}</div>
+                <div class="detail-item__value font-mono" style="word-break: break-all; display: flex; align-items: center; justify-content: space-between;">
+                  <span>${software.numeroLicencia}</span>
+                  <button class="btn btn--ghost btn--icon btn--sm" 
+                          onclick="navigator.clipboard.writeText('${software.numeroLicencia}'); typeof NotificationService !== 'undefined' && NotificationService.showToast ? NotificationService.showToast('Copiado', 'success') : alert('Copiado!');" 
+                          title="Copiar">
+                    ${typeof Icons !== 'undefined' && Icons.copy ? Icons.copy : '📋'}
+                  </button>
+                </div>
               </div>
               <div class="detail-item">
                 <div class="detail-item__label">Licencia PC / Serie</div>
-                <div class="detail-item__value font-mono">${software.numeroSerie || 'N/A'}</div>
+                <div class="detail-item__value font-mono" style="word-break: break-all; display: flex; align-items: center; justify-content: space-between;">
+                  <span>${software.numeroSerie || 'N/A'}</span>
+                  ${software.numeroSerie ? `
+                  <button class="btn btn--ghost btn--icon btn--sm" 
+                          onclick="navigator.clipboard.writeText('${software.numeroSerie}'); typeof NotificationService !== 'undefined' && NotificationService.showToast ? NotificationService.showToast('Copiado', 'success') : alert('Copiado!');" 
+                          title="Copiar">
+                    ${typeof Icons !== 'undefined' && Icons.copy ? Icons.copy : '📋'}
+                  </button>
+                  ` : ''}
+                </div>
               </div>
               <div class="detail-item detail-item--full">
                 <div class="detail-item__label">Cliente / Organización</div>

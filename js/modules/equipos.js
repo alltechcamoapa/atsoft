@@ -223,12 +223,15 @@ const EquiposModule = (() => {
                        placeholder="Ej: Laptop, PC, Servidor..." required>
                 <datalist id="tipoEquipoList">
                     <option value="Laptop">
-                    <option value="PC Escritorio">
+                    <option value="Computadora">
                     <option value="Servidor">
                     <option value="Impresora">
-                    <option value="Router / Switch">
-                    <option value="Tablet">
-                    <option value="Teléfono">
+                    <option value="Router">
+                    <option value="Switch">
+                    <option value="Firewall">
+                    <option value="UPS">
+                    <option value="NAS">
+                    <option value="Otro">
                 </datalist>
             </div>
 
@@ -718,18 +721,39 @@ const EquiposModule = (() => {
     const cliente = DataService.getClienteById(rawData.clienteId);
 
     // Mapear camelCase (UI) a snake_case (DB)
-    // Mapear camelCase (UI) a snake_case (DB)
+    // Mapear valor en MAYÚSCULAS para que cumpla con el ENUM de la base de datos (tipo_equipo_enum)
+    const formatTipoEquipo = (tipo) => {
+      if (!tipo) return 'Equipo General';
+      const dict = {
+        'LAPTOP': 'Laptop',
+        'PC ESCRITORIO': 'Computadora',
+        'COMPUTADORA': 'Computadora',
+        'SERVIDOR': 'Servidor',
+        'IMPRESORA': 'Impresora',
+        'ROUTER / SWITCH': 'Router',
+        'ROUTER': 'Router',
+        'SWITCH': 'Switch',
+        'FIREWALL': 'Firewall',
+        'UPS': 'UPS',
+        'NAS': 'NAS',
+        'TABLET': 'Otro',
+        'TELÉFONO': 'Otro',
+        'TELEFONO': 'Otro',
+        'OTRO': 'Otro'
+      };
+      return dict[tipo.toUpperCase().trim()] || 'Otro';
+    };
+
     const data = {
       cliente_id: cliente?.id || rawData.clienteId,  // Usar UUID de Supabase
       nombre_equipo: rawData.nombreEquipo,
-      tipo_equipo: rawData.tipoEquipo || 'Equipo General', // Default fallback
+      tipo_equipo: formatTipoEquipo(rawData.tipoEquipo),
       marca: rawData.marca,
       modelo: rawData.modelo,
       serie: rawData.serie,
       ubicacion: rawData.ubicacion || null,
       estado: rawData.estado || 'Operativo'
     };
-
     console.log('📤 Datos a enviar:', data);
 
     try {
@@ -737,15 +761,15 @@ const EquiposModule = (() => {
         // Actualizar equipo existente
         const result = await DataService.updateEquipo(rawData.equipoId, data);
         console.log('✅ Equipo actualizado:', result);
-        if (typeof ConfigModule !== 'undefined' && ConfigModule.showToast) {
-          ConfigModule.showToast('Equipo actualizado correctamente', 'success');
+        if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+          NotificationService.showToast('Equipo actualizado correctamente', 'success');
         }
       } else {
         // Crear nuevo equipo
         const result = await DataService.createEquipo(data);
         console.log('✅ Equipo creado:', result);
-        if (typeof ConfigModule !== 'undefined' && ConfigModule.showToast) {
-          ConfigModule.showToast('Equipo creado correctamente', 'success');
+        if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+          NotificationService.showToast('Equipo creado correctamente', 'success');
         }
       }
       closeModal();
@@ -829,7 +853,9 @@ const EquiposModule = (() => {
     if (confirm('¿Estás seguro de eliminar este equipo? Esto eliminará también su historial de reparaciones.')) {
       try {
         await DataService.deleteEquipo(id);
-        ConfigModule.showToast('Equipo eliminado', 'success');
+        if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+          NotificationService.showToast('Equipo eliminado', 'success');
+        }
         console.log('✅ Equipo eliminado correctamente');
         App.refreshCurrentModule();
       } catch (error) {

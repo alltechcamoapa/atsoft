@@ -8,6 +8,7 @@ const PedidosModule = (() => {
     let filterState = { search: '', clienteId: 'all', estado: 'all', categoria: 'all' };
     let currentPedido = null;
     let currentItems = [];
+    let productosCache = [];
 
     // ========== CATEGORÍAS PREDEFINIDAS ==========
     // ========== CATEGORÍAS ==========
@@ -347,8 +348,9 @@ const PedidosModule = (() => {
 
         // Obtener técnicos para el selector
         const tecnicos = DataService.getUsersSync ? DataService.getUsersSync().filter(u => u.role === 'Tecnico') : [];
+        productosCache = DataService.getProductosSync ? DataService.getProductosSync() : [];
 
-        currentItems = isEdit ? [...(pedido.items || [])].map(item => ({ ...item, completado: item.completado || false })) : [{ descripcion: '', cantidad: 1, precioUnitario: 0, total: 0, completado: false }];
+        currentItems = isEdit ? [...(pedido.items || [])].map(item => ({ ...item, completado: item.completado || false })) : [];
 
         return `
             <div class="modal-overlay open" onclick="PedidosModule.closeModal(event)">
@@ -433,13 +435,42 @@ const PedidosModule = (() => {
 
                         <!-- Lista de Items -->
                         <div class="form-group">
-                            <label class="form-label form-label--required">Items del Pedido</label>
+                            <label class="form-label form-label--required">Catálogo de Productos y Servicios</label>
+                            
+                            <div class="product-add-section" style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--border-radius-md); margin-bottom: var(--spacing-md); border: 1px solid var(--border-color);">
+                                <div style="display: flex; gap: var(--spacing-sm); align-items: flex-end; flex-wrap: wrap;">
+                                    <div class="form-group" style="flex: 2; margin-bottom: 0; min-width: 200px;">
+                                        <label class="form-label" style="font-size: 0.85rem;">Producto / Servicio</label>
+                                        <select id="newItemProduct" class="form-select" onchange="PedidosModule.onProductSelect(this.value)">
+                                            <option value="">Seleccionar del catálogo...</option>
+                                            <option value="manual">-- Agregar Manualmente --</option>
+                                            ${productosCache.map(p => `<option value="${p.id}" data-precio="${p.precio_venta || p.precio || 0}" data-nombre="${p.nombre || p.descripcion || 'Item sin nombre'}">${p.codigo ? p.codigo + ' - ' : ''}${p.nombre || p.descripcion} ($${parseFloat(p.precio_venta || p.precio || 0).toFixed(2)})</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="flex: 2; margin-bottom: 0; display: none; min-width: 150px;" id="manualDescGroup">
+                                        <label class="form-label" style="font-size: 0.85rem;">Descripción Manual</label>
+                                        <input type="text" id="newItemDesc" class="form-input" placeholder="Descripción...">
+                                    </div>
+                                    <div class="form-group" style="width: 80px; margin-bottom: 0;">
+                                        <label class="form-label" style="font-size: 0.85rem;">Cant.</label>
+                                        <input type="number" id="newItemQty" class="form-input" value="1" min="1" step="1">
+                                    </div>
+                                    <div class="form-group" style="width: 100px; margin-bottom: 0;">
+                                        <label class="form-label" style="font-size: 0.85rem;">Precio Unit.</label>
+                                        <input type="number" id="newItemPrice" class="form-input" min="0" step="0.01">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <button type="button" class="btn btn--primary" onclick="PedidosModule.addSelectedProduct()">
+                                            ${Icons.plus} Agregar
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <label class="form-label form-label--required">Items Agregados al Pedido</label>
                             <div class="pedido-items" id="pedidoItems">
                                 ${renderItemsEditor()}
                             </div>
-                            <button type="button" class="btn btn--secondary btn--sm" style="margin-top: var(--spacing-sm);" onclick="PedidosModule.addItem()">
-                                ${Icons.plus} Agregar Item
-                            </button>
                         </div>
 
                         <!-- Totales -->
@@ -468,46 +499,36 @@ const PedidosModule = (() => {
 
     // ========== ITEMS EDITOR ==========
     const renderItemsEditor = () => {
+        if (currentItems.length === 0) {
+            return '<p class="text-muted text-center" style="padding: var(--spacing-md);">No hay items en el pedido. Selecciona y agrega arriba.</p>';
+        }
+
         return currentItems.map((item, index) => `
-            <div class="pedido-item" data-index="${index}" style="display: flex; gap: var(--spacing-sm); align-items: center; margin-bottom: var(--spacing-sm); padding: var(--spacing-sm); background: var(--bg-secondary); border-radius: var(--border-radius-md); ${item.completado ? 'opacity: 0.6;' : ''}">
+            <div class="pedido-item ${item.completado ? 'completed' : ''}" data-index="${index}" style="display: flex; gap: var(--spacing-md); align-items: center; margin-bottom: var(--spacing-xs); padding: var(--spacing-sm); background: var(--bg-secondary); border-radius: var(--border-radius-md); ${item.completado ? 'opacity: 0.6;' : ''}; border: 1px solid var(--border-color);">
                 <input type="checkbox" 
                        ${item.completado ? 'checked' : ''}
                        onchange="PedidosModule.toggleItemComplete(${index}, this.checked)"
-                       style="cursor: pointer; width: 20px; height: 20px;"
+                       style="cursor: pointer; width: 20px; height: 20px; flex-shrink: 0;"
                        title="Marcar como completado">
-                <input type="number" class="form-input" style="width: 70px; ${item.completado ? 'text-decoration: line-through;' : ''}" 
-                       value="${item.cantidad}" min="1" step="1"
-                       placeholder="Cant."
-                       onchange="PedidosModule.updateItem(${index}, 'cantidad', this.value)">
-                <input type="text" class="form-input" style="flex: 1; ${item.completado ? 'text-decoration: line-through;' : ''}" 
-                       value="${item.descripcion}"
-                       placeholder="Descripción del producto/servicio"
-                       onchange="PedidosModule.updateItem(${index}, 'descripcion', this.value)">
-                <input type="number" class="form-input" style="width: 100px; ${item.completado ? 'text-decoration: line-through;' : ''}" 
-                       value="${item.precioUnitario}" min="0" step="0.01"
-                       placeholder="Precio"
-                       onchange="PedidosModule.updateItem(${index}, 'precioUnitario', this.value)">
-                <span style="min-width: 80px; text-align: right; font-weight: var(--font-weight-semibold); ${item.completado ? 'text-decoration: line-through;' : ''}">$${(item.total || 0).toFixed(2)}</span>
-                ${currentItems.length > 1 ? `
-                    <button type="button" class="btn btn--ghost btn--icon btn--sm text-danger" onclick="PedidosModule.removeItem(${index})">
-                        ${Icons.trash}
-                    </button>
-                ` : '<div style="width: 32px;"></div>'}
+                
+                <div style="flex: 1; min-width: 0; ${item.completado ? 'text-decoration: line-through;' : ''}">
+                    <div class="font-medium" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${item.descripcion}</div>
+                    <div class="text-xs text-muted">Precio Unit.: $${(parseFloat(item.precioUnitario) || 0).toFixed(2)}</div>
+                </div>
+
+                <div style="width: 50px; text-align: center; flex-shrink: 0; ${item.completado ? 'text-decoration: line-through;' : ''}" class="badge">
+                    x${item.cantidad}
+                </div>
+                
+                <div style="min-width: 80px; text-align: right; flex-shrink: 0; font-weight: var(--font-weight-semibold); ${item.completado ? 'text-decoration: line-through;' : ''}">
+                    $${(item.total || 0).toFixed(2)}
+                </div>
+
+                <button type="button" class="btn btn--ghost btn--icon btn--sm text-danger" style="flex-shrink: 0;" onclick="PedidosModule.removeItem(${index})" title="Eliminar Item">
+                    ${Icons.trash}
+                </button>
             </div>
         `).join('');
-    };
-
-    const addItem = () => {
-        currentItems.push({ descripcion: '', cantidad: 1, precioUnitario: 0, total: 0, completado: false });
-        document.getElementById('pedidoItems').innerHTML = renderItemsEditor();
-    };
-
-    const removeItem = (index) => {
-        if (currentItems.length > 1) {
-            currentItems.splice(index, 1);
-            document.getElementById('pedidoItems').innerHTML = renderItemsEditor();
-            calculateTotals();
-        }
     };
 
     const toggleItemComplete = (index, checked) => {
@@ -515,13 +536,74 @@ const PedidosModule = (() => {
         document.getElementById('pedidoItems').innerHTML = renderItemsEditor();
     };
 
-    const updateItem = (index, field, value) => {
-        if (field === 'cantidad' || field === 'precioUnitario') {
-            currentItems[index][field] = parseFloat(value) || 0;
-            currentItems[index].total = currentItems[index].cantidad * currentItems[index].precioUnitario;
+    const removeItem = (index) => {
+        currentItems.splice(index, 1);
+        document.getElementById('pedidoItems').innerHTML = renderItemsEditor();
+        calculateTotals();
+    };
+
+    const onProductSelect = (value) => {
+        const descGroup = document.getElementById('manualDescGroup');
+        const priceInput = document.getElementById('newItemPrice');
+
+        if (value === 'manual') {
+            descGroup.style.display = 'block';
+            priceInput.value = '';
         } else {
-            currentItems[index][field] = value;
+            descGroup.style.display = 'none';
+            if (value) {
+                const productSelect = document.getElementById('newItemProduct');
+                const selectedOption = productSelect.options[productSelect.selectedIndex];
+                priceInput.value = selectedOption.getAttribute('data-precio') || 0;
+            } else {
+                priceInput.value = '';
+            }
         }
+    };
+
+    const addSelectedProduct = () => {
+        const productSelect = document.getElementById('newItemProduct');
+        const descInput = document.getElementById('newItemDesc');
+        const qtyInput = document.getElementById('newItemQty');
+        const priceInput = document.getElementById('newItemPrice');
+
+        if (!productSelect.value) {
+            alert('Por favor, selecciona un producto del catálogo o la opción "Agregar Manualmente"');
+            return;
+        }
+
+        let descripcion = '';
+        if (productSelect.value === 'manual') {
+            if (!descInput.value.trim()) {
+                alert('Ingresa una descripción para el item manual');
+                return;
+            }
+            descripcion = descInput.value.trim();
+        } else {
+            const selectedOption = productSelect.options[productSelect.selectedIndex];
+            descripcion = selectedOption.getAttribute('data-nombre');
+        }
+
+        const cantidad = parseFloat(qtyInput.value) || 1;
+        const precioUnitario = parseFloat(priceInput.value) || 0;
+        const total = cantidad * precioUnitario;
+
+        currentItems.push({
+            productoId: productSelect.value === 'manual' ? null : productSelect.value,
+            descripcion,
+            cantidad,
+            precioUnitario,
+            total,
+            completado: false
+        });
+
+        // Limpiar form
+        productSelect.value = '';
+        descInput.value = '';
+        document.getElementById('manualDescGroup').style.display = 'none';
+        qtyInput.value = '1';
+        priceInput.value = '';
+
         document.getElementById('pedidoItems').innerHTML = renderItemsEditor();
         calculateTotals();
     };
@@ -537,7 +619,7 @@ const PedidosModule = (() => {
     // ========== MODAL ACTIONS ==========
     const openCreateModal = () => {
         currentPedido = null;
-        currentItems = [{ descripcion: '', cantidad: 1, precioUnitario: 0, total: 0 }];
+        currentItems = [];
         document.getElementById('pedidoModal').innerHTML = renderFormModal();
         setTimeout(calculateTotals, 100);
     };
@@ -1139,8 +1221,6 @@ const PedidosModule = (() => {
         generateClienteReport,
         generateCategoriaReport,
         generateFechaReport,
-        generateFechaReport,
-        addItem,
         toggleItemComplete,
         // Categories
         openCategoriasModal,
@@ -1148,7 +1228,8 @@ const PedidosModule = (() => {
         updateCategoria,
         deleteCategoria,
         removeItem,
-        updateItem
+        onProductSelect,
+        addSelectedProduct
     };
 })();
 

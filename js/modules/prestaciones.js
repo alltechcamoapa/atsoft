@@ -21,6 +21,7 @@ const PrestacionesModule = (() => {
     extras: { page: 1, limit: 10, search: '' },
     bonos: { page: 1, limit: 10, search: '' },
     adelantos: { page: 1, limit: 10, search: '' },
+    prestamos: { page: 1, limit: 10, search: '' },
     recibos: { page: 1, limit: 10, search: '' } // Historial recibos
   };
 
@@ -202,6 +203,8 @@ const PrestacionesModule = (() => {
     if (!data.id) {
       // Generate Sequence AD-XXXX
       const adelantos = JSON.parse(localStorage.getItem('adelantos') || '[]');
+    const feriados = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
+    const abonos_prestamos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
       let max = 0;
       adelantos.forEach(a => {
         if (a.numero && a.numero.startsWith('AD-')) {
@@ -278,6 +281,14 @@ const PrestacionesModule = (() => {
 
           </button>
 
+          <button class="tab-btn ${currentTab === 'feriados' ? 'active' : ''}" 
+
+                  onclick="PrestacionesModule.changeTab('feriados')">
+
+            ${Icons.calendar} <span>Días Feriados</span>
+
+          </button>
+
           <button class="tab-btn ${currentTab === 'recibos' ? 'active' : ''}" 
 
                   onclick="PrestacionesModule.changeTab('recibos')">
@@ -338,6 +349,8 @@ const PrestacionesModule = (() => {
 
       case 'complementos': return renderComplementosTab();
 
+      case 'feriados': return renderFeriadosTab();
+
       case 'aguinaldo': return renderAguinaldoTab();
 
       case 'recibos': return renderRecibosTab();
@@ -369,13 +382,15 @@ const PrestacionesModule = (() => {
       if (currentComplementoTab === 'extras') loadHorasExtrasTable();
       if (currentComplementoTab === 'bonos') loadBonificacionesTable();
       if (currentComplementoTab === 'adelantos') loadAdelantosTable();
+      if (currentComplementoTab === 'prestamos') loadPrestamosTable();
     }, 100);
 
     const tabs = [
       { id: 'ausencias', label: 'Ausencias', icon: Icons.clock },
       { id: 'extras', label: 'Horas Extras', icon: Icons.clock },
       { id: 'bonos', label: 'Bonos', icon: Icons.award },
-      { id: 'adelantos', label: 'Adelantos', icon: Icons.dollarSign }
+      { id: 'adelantos', label: 'Adelantos', icon: Icons.dollarSign },
+      { id: 'prestamos', label: 'Préstamos', icon: Icons.fileText }
     ];
 
     return `
@@ -469,6 +484,27 @@ const PrestacionesModule = (() => {
                     </table>
                   </div>
                   <div id="adelantosTableFooter"></div>
+              </div>
+            </div>
+        ` : ''}
+
+        ${currentComplementoTab === 'prestamos' ? `
+            <div class="card">
+              <div class="card__header" style="background: #1a1f36; color: white;">
+                <h3 class="card__title" style="color: white;">${Icons.fileText} Préstamos y Créditos</h3>
+                <button class="btn btn--primary btn--sm" onclick="PrestacionesModule.registrarPrestamo()">
+                  ${Icons.plus} Nuevo Préstamo
+                </button>
+              </div>
+              <div class="card__body">
+                  ${renderTableControls('prestamos')}
+                  <div style="overflow-x: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Empleado</th><th>Fecha</th><th>Tipo</th><th>Total Otorgado</th><th>Saldo Pendiente</th><th>Acciones</th></tr></thead>
+                        <tbody id="prestamosTableBody"><tr><td colspan="6">Cargando...</td></tr></tbody>
+                    </table>
+                  </div>
+                  <div id="prestamosTableFooter"></div>
               </div>
             </div>
         ` : ''}
@@ -841,6 +877,182 @@ const PrestacionesModule = (() => {
 
   };
 
+  // ========== FERIADOS TAB ==========
+
+  const renderFeriadosTab = () => {
+    const records = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
+    const totalMonto = records.reduce((sum, r) => sum + (parseFloat(r.monto) || 0), 0);
+
+    // Agrupar visualmente por fecha si se quiere, o mostrarlos como lista. Aquí se muestran como lista.
+    return `
+      <div class="module-section">
+        <div class="card" style="margin-bottom: var(--spacing-md); border-left: 4px solid var(--color-primary);">
+            <div class="card__body" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                   <h3 style="margin-bottom: 5px;">${Icons.calendar} Calendario y Pagos de Días Feriados</h3>
+                   <p class="text-sm text-muted">Añade los días feriados (Nacional o Municipal) y selecciona al personal que lo trabajó para asignarles el pago doble automático.</p>
+                </div>
+                <div style="text-align: right;">
+                   <div class="text-xs text-muted">Total Generado</div>
+                   <div class="font-bold text-success" style="font-size: 1.5rem;">C$${totalMonto.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="module-header" style="justify-content: flex-end; margin-bottom: var(--spacing-md);">
+          <button class="btn btn--primary" onclick="PrestacionesModule.registrarFeriadoModal()">
+             ${Icons.plus} Registrar Feriado Trabajado
+          </button>
+        </div>
+        
+        <div class="card">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Empleado</th>
+                <th>Tipo</th>
+                <th>Descripción</th>
+                <th>Monto Extra</th>
+                <th style="text-align: right;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${records.length > 0 ? records.map(r => `
+                  <tr>
+                    <td>${new Date(r.fecha).toLocaleDateString()}</td>
+                    <td class="font-bold">${r.empleadoNombre}</td>
+                    <td><span class="badge ${r.tipo === 'Nacional' ? 'badge--primary' : 'badge--info'}">${r.tipo}</span></td>
+                    <td>${r.descripcion}</td>
+                    <td class="text-success font-bold">+ C$${parseFloat(r.monto).toLocaleString()}</td>
+                    <td style="text-align: right;">
+                       <button class="btn btn--ghost btn--icon btn--sm text-danger" onclick="PrestacionesModule.deleteComplemento('feriados_trabajados', '${r.id}')" title="Eliminar">
+                          ${Icons.trash}
+                       </button>
+                    </td>
+                  </tr>
+              `).join('') : '<tr><td colspan="6" class="text-center text-muted">No se han registrado días feriados trabajados</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  };
+
+  const registrarFeriadoModal = () => {
+    const empleados = DataService.getEmpleadosSync();
+    // Modal HTML para crear feriado
+    const modalHTML = `
+      <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
+        <div class="modal modal--large" onclick="event.stopPropagation()">
+            <div class="modal__header">
+                <h3 class="modal__title">Registrar Día Feriado Trabajado</h3>
+                <button class="modal__close" onclick="PrestacionesModule.closeModal()">${Icons.x}</button>
+            </div>
+            <form onsubmit="PrestacionesModule.saveFeriadosGrabados(event)" class="modal__body">
+               <div class="form-row">
+                 <div class="form-group">
+                   <label class="form-label form-label--required">Fecha del Feriado</label>
+                   <input type="date" name="fecha" required class="form-input" value="${new Date().toISOString().split('T')[0]}">
+                 </div>
+                 <div class="form-group">
+                   <label class="form-label form-label--required">Tipo de Feriado</label>
+                   <select name="tipo" class="form-input" required>
+                      <option value="Nacional">Feriado Nacional</option>
+                      <option value="Municipal">Feriado Municipal</option>
+                      <option value="Asueto">Asueto</option>
+                   </select>
+                 </div>
+                 <div class="form-group">
+                   <label class="form-label form-label--required">Descripción</label>
+                   <input type="text" name="descripcion" required class="form-input" placeholder="Ej: Primero de Mayo">
+                 </div>
+               </div>
+               
+               <h4 style="margin-top:20px;">Lista de Empleados</h4>
+               <p class="text-xs text-muted" style="margin-bottom: 10px;">Selecciona solo los empleados que trabajaron este día feriado. El sistema liquidará pago doble en base a su salario base normal.</p>
+               
+               <div style="max-height: 350px; overflow-y:auto; border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+                 <table class="data-table" style="margin-top:0;">
+                   <thead style="position: sticky; top: 0; background: var(--bg-primary); z-index: 1;">
+                     <tr>
+                       <th style="width: 50px; text-align: center;"><input type="checkbox" onchange="const chks = document.querySelectorAll('.chk-feriado'); chks.forEach(c => c.checked = this.checked);"></th>
+                       <th>Empleado</th>
+                       <th>Cargo</th>
+                       <th>S. Mensual</th>
+                       <th>Genera Extra (Pago Doble)</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                     ${empleados.map(e => {
+      const salarioDiario = (parseFloat(e.salario_total || e.salarioTotal) || 0) / 30;
+      const pagoExtra = salarioDiario * 2;
+      return `
+                          <tr onclick="const chk = document.getElementById('chk_${e.id}'); chk.checked = !chk.checked;" style="cursor:pointer;" class="hover-bg">
+                             <td style="text-align: center;"><input type="checkbox" name="empleadosTrabajaron" value="${e.id}" id="chk_${e.id}" class="chk-feriado" onclick="event.stopPropagation()"></td>
+                             <td class="font-bold">${e.nombre}</td>
+                             <td class="text-xs text-muted">${e.cargo || 'N/A'}</td>
+                             <td class="text-sm">C$${(parseFloat(e.salario_total || e.salarioTotal) || 0).toLocaleString()}</td>
+                             <td class="font-bold text-success">+ C$${pagoExtra.toFixed(2)}</td>
+                          </tr>
+                        `;
+    }).join('')}
+                   </tbody>
+                 </table>
+               </div>
+               
+               <div class="modal__footer" style="padding-top: 20px; border-top: 1px solid var(--border-color); margin-top: 20px;">
+                  <button type="button" class="btn btn--secondary" onclick="PrestacionesModule.closeModal()">Cancelar</button>
+                  <button type="submit" class="btn btn--primary">✔️ Guardar Días Trabajados</button>
+               </div>
+            </form>
+        </div>
+      </div>
+    `;
+    document.getElementById('prestacionesModal').innerHTML = modalHTML;
+  };
+
+  const saveFeriadosGrabados = (event) => {
+    event.preventDefault();
+    const fd = new FormData(event.target);
+    const fecha = fd.get('fecha');
+    const tipo = fd.get('tipo');
+    const descripcion = fd.get('descripcion');
+    const empleadosSeleccionados = fd.getAll('empleadosTrabajaron');
+
+    if (!empleadosSeleccionados || empleadosSeleccionados.length === 0) {
+      alert("Seleccione al menos un empleado que haya laborado en la fecha seleccionada.");
+      return;
+    }
+
+    const allEmp = DataService.getEmpleadosSync();
+    const records = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
+
+    empleadosSeleccionados.forEach(empId => {
+      const e = allEmp.find(x => x.id === empId);
+      if (e) {
+        const sd = (parseFloat(e.salario_total || e.salarioTotal) || 0) / 30;
+        const montoExtra = sd * 2; // Pago doble
+
+        records.push({
+          id: Date.now().toString() + "_" + empId + Math.floor(Math.random() * 1000),
+          fecha: fecha,
+          empleadoId: empId,
+          empleadoNombre: e.nombre,
+          tipo: tipo,
+          descripcion: descripcion,
+          monto: montoExtra, // Almacenar el monto extra
+          createdAt: new Date().toISOString()
+        });
+      }
+    });
+
+    localStorage.setItem('feriados_trabajados', JSON.stringify(records));
+    App.showNotification?.('Registros de feriados guardados correctamente', 'success');
+    closeModal();
+    App.refreshCurrentModule();
+  };
+
   // --- Complementos Storage Helpers (Local for now, mocked Generic Tables) ---
 
   const saveComplemento = (key, data) => {
@@ -1006,7 +1218,166 @@ const PrestacionesModule = (() => {
     }
   };
 
+  const loadPrestamosTable = async () => {
+    const rawData = JSON.parse(localStorage.getItem('prestamos_empleados') || '[]');
+    const abonos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
+    const empleados = DataService.getEmpleadosSync();
+
+    const fullData = rawData.map(d => {
+      const empleadoName = empleados.find(e => e.id === d.empleadoId)?.nombre || 'Unknown';
+      const sumAbonos = abonos.filter(a => a.prestamoId === d.id).reduce((sum, a) => sum + (parseFloat(a.monto) || 0), 0);
+      const saldoPendiente = parseFloat(d.monto) - sumAbonos;
+      return { ...d, empleadoName, saldoPendiente };
+    });
+
+    const { data, total, totalPages } = _paginate(fullData, 'prestamos', (item, term) => {
+      return (item.empleadoName || '').toLowerCase().includes(term) ||
+        (item.tipo || '').toLowerCase().includes(term);
+    });
+
+    const tbody = document.getElementById('prestamosTableBody');
+    if (tbody) {
+      if (!data.length) tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay registros</td></tr>';
+      else tbody.innerHTML = data.map(d => {
+        return `<tr>
+             <td>${d.empleadoName}</td>
+             <td>${new Date(d.fecha).toLocaleDateString('es-GB')}</td>
+             <td><span class="badge ${d.tipo === 'Prestamo personal' ? 'badge--info' : 'badge--primary'}">${d.tipo}</span></td>
+             <td>C$${parseFloat(d.monto).toFixed(2)}</td>
+             <td><span class="font-bold border px-2 py-1 bg-gray-100 rounded ${d.saldoPendiente > 0 ? 'text-danger' : 'text-success'}">C$${d.saldoPendiente.toFixed(2)}</span></td>
+             <td>
+                <button class="btn btn--ghost btn--icon btn--sm text-primary" onclick="PrestacionesModule.verDetallePrestamo('${d.id}')" title="Abonar / Ver Detalles">${Icons.fileText}</button>
+                <button class="btn btn--ghost btn--icon btn--sm text-error" onclick="PrestacionesModule.deleteComplemento('prestamos_empleados', '${d.id}')" title="Eliminar">${Icons.trash}</button>
+             </td>
+           </tr>`;
+      }).join('');
+
+      const footer = document.getElementById('prestamosTableFooter');
+      if (footer) footer.innerHTML = renderPaginationFooter('prestamos', total, totalPages);
+    }
+  };
+
   // Actions
+
+  const registrarPrestamo = () => {
+    const empleados = DataService.getEmpleadosSync();
+    document.getElementById('prestacionesModal').innerHTML = `
+        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
+            <div class="modal" onclick="event.stopPropagation()">
+              <div class="modal__header">
+                <h3 class="modal__title">Registrar Préstamo / Crédito</h3>
+                <button class="modal__close" onclick="PrestacionesModule.closeModal()">&times;</button>
+              </div>
+              <div class="modal__body">
+                <form onsubmit="event.preventDefault(); const fd=new FormData(event.target); PrestacionesModule.saveComplemento('prestamos_empleados', Object.fromEntries(fd)); PrestacionesModule.closeModal();">
+                    <div class="form-group">
+                      <label class="form-label--required">Empleado</label>
+                      <select name="empleadoId" class="form-select" required>
+                        ${empleados.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('')}
+                      </select>
+                    </div>
+                    <div class="form-row">
+                      <div class="form-group"><label class="form-label--required">Fecha</label><input type="date" name="fecha" class="form-input" required value="${new Date().toISOString().split('T')[0]}"></div>
+                      <div class="form-group">
+                        <label class="form-label--required">Tipo de Préstamo</label>
+                        <select name="tipo" class="form-input" required>
+                           <option value="Credito por productos">Crédito por productos</option>
+                           <option value="Prestamo personal">Préstamo personal</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="form-group"><label class="form-label--required">Monto Total (C$)</label><input type="number" name="monto" step="0.01" min="1" class="form-input" required></div>
+                    <div class="form-group"><label>Motivo / Descripción</label><input type="text" name="motivo" class="form-input" placeholder="Opcional..."></div>
+                    <button type="submit" class="btn btn--primary" style="width:100%">${Icons.plus} Crear Préstamo</button>
+                </form>
+              </div>
+            </div>
+        </div>
+    `;
+  };
+
+  const verDetallePrestamo = (prestamoId) => {
+    const prestamos = JSON.parse(localStorage.getItem('prestamos_empleados') || '[]');
+    const abonos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
+    const prestamo = prestamos.find(p => p.id === prestamoId);
+    if (!prestamo) return;
+
+    const emp = DataService.getEmpleadoById(prestamo.empleadoId);
+    const abonosList = abonos.filter(a => a.prestamoId === prestamoId);
+    const sumAbonos = abonosList.reduce((sum, a) => sum + (parseFloat(a.monto) || 0), 0);
+    const saldoPendiente = parseFloat(prestamo.monto) - sumAbonos;
+
+    const abonosHtml = abonosList.length > 0 ? abonosList.map(a => `
+       <tr>
+         <td>${new Date(a.fecha).toLocaleDateString('es-GB')}</td>
+         <td class="text-success font-bold">C$${parseFloat(a.monto).toFixed(2)}</td>
+         <td>
+            <button class="btn btn--ghost btn--icon btn--sm text-danger" onclick="PrestacionesModule.deleteComplemento('abonos_prestamos', '${a.id}'); setTimeout(() => PrestacionesModule.verDetallePrestamo('${prestamoId}'), 200);">
+               ${Icons.trash}
+            </button>
+         </td>
+       </tr>
+    `).join('') : '<tr><td colspan="3" class="text-center text-muted">No se han registrado abonos</td></tr>';
+
+    document.getElementById('prestacionesModal').innerHTML = `
+        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
+            <div class="modal" onclick="event.stopPropagation()">
+              <div class="modal__header">
+                <h3 class="modal__title">Detalle de Préstamo</h3>
+                <button class="modal__close" onclick="PrestacionesModule.closeModal()">&times;</button>
+              </div>
+              <div class="modal__body">
+                <div class="card p-3 mb-3 bg-gray-50 flex gap-4" style="flex-wrap: wrap;">
+                   <div style="flex: 1; min-width: 200px;">
+                    <p><strong>Empleado:</strong> <br>${emp?.nombre}</p>
+                    <p class="mt-2"><strong>Tipo:</strong> <br>${prestamo.tipo}</p>
+                   </div>
+                   <div style="flex: 1; min-width: 200px;">
+                    <p><strong>Monto Total Otorgado:</strong> <br>C$${parseFloat(prestamo.monto).toLocaleString()}</p>
+                    <p class="mt-2"><strong>Saldo Pendiente:</strong> <br><span class="font-bold text-lg ${saldoPendiente > 0 ? 'text-danger' : 'text-success'}">C$${saldoPendiente.toLocaleString()}</span></p>
+                   </div>
+                </div>
+
+                <h4 style="margin-bottom: 10px;">Nuevo Abono</h4>
+                <form id="formAbonoPrestamo" onsubmit="PrestacionesModule.saveAbonoPrestamo(event, '${prestamoId}', '${prestamo.empleadoId}', ${saldoPendiente})" class="flex gap-2" style="margin-bottom: 20px;">
+                    <input type="date" name="fecha" required class="form-input" value="${new Date().toISOString().split('T')[0]}" style="flex: 1">
+                    <input type="number" name="monto" required min="0.01" step="0.01" placeholder="Monto Abono C$" max="${saldoPendiente}" class="form-input" style="flex: 1" ${saldoPendiente <= 0 ? 'disabled' : ''}>
+                    <button type="submit" class="btn btn--primary" ${saldoPendiente <= 0 ? 'disabled' : ''}>Abonar</button>
+                </form>
+
+                <h4 style="margin-bottom: 10px;">Historial de Abonos</h4>
+                <div style="max-height: 200px; overflow-y: auto;">
+                  <table class="data-table">
+                     <thead style="position: sticky; top:0; background: var(--bg-primary);"><tr><th>Fecha</th><th>Monto Abonado</th><th>Acción</th></tr></thead>
+                     <tbody>${abonosHtml}</tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+        </div>
+    `;
+  };
+
+  const saveAbonoPrestamo = (e, prestamoId, empleadoId, maxAbono) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const monto = parseFloat(fd.get('monto'));
+    if (monto > maxAbono) {
+      App.showNotification?.('El abono no puede superar el saldo pendiente', 'warning');
+      return;
+    }
+    const data = {
+      prestamoId,
+      empleadoId,
+      fecha: fd.get('fecha'),
+      monto: monto,
+      tipo: 'Abono a Préstamo'
+    };
+    saveComplemento('abonos_prestamos', data);
+    setTimeout(() => {
+      verDetallePrestamo(prestamoId);
+    }, 200);
+  };
 
   const registrarHoraExtra = (editItem = null) => {
 
@@ -1014,7 +1385,7 @@ const PrestacionesModule = (() => {
 
     const html = `
 
-        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
+          <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
             <div class="modal" onclick="event.stopPropagation()">
               <div class="modal__header">
 
@@ -1062,7 +1433,7 @@ const PrestacionesModule = (() => {
 
             </div>
 
-        </div>`;
+        </div> `;
 
     document.getElementById('prestacionesModal').innerHTML = html;
 
@@ -1074,53 +1445,53 @@ const PrestacionesModule = (() => {
 
     const html = `
 
-        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
-            <div class="modal" onclick="event.stopPropagation()">
-              <div class="modal__header">
+  <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal__header">
 
-                <h3 class="modal__title">${editItem ? 'Editar' : 'Registrar'} Bonificación</h3>
+        <h3 class="modal__title">${editItem ? 'Editar' : 'Registrar'} Bonificación</h3>
 
-                <button class="modal__close" onclick="PrestacionesModule.closeModal()">&times;</button>
+        <button class="modal__close" onclick="PrestacionesModule.closeModal()">&times;</button>
 
-              </div>
+      </div>
 
-              <div class="modal__body">
+      <div class="modal__body">
 
-                <form onsubmit="event.preventDefault(); const fd=new FormData(event.target); PrestacionesModule.saveComplemento('bonificaciones', Object.fromEntries(fd)); PrestacionesModule.closeModal();">
+        <form onsubmit="event.preventDefault(); const fd=new FormData(event.target); PrestacionesModule.saveComplemento('bonificaciones', Object.fromEntries(fd)); PrestacionesModule.closeModal();">
 
-                  <input type="hidden" name="id" value="${editItem?.id || ''}">
+          <input type="hidden" name="id" value="${editItem?.id || ''}">
 
-                    <div class="form-group">
+            <div class="form-group">
 
-                      <label>Empleado</label>
+              <label>Empleado</label>
 
-                      <select name="empleadoId" class="form-select" required>
+              <select name="empleadoId" class="form-select" required>
 
-                        ${empleados.map(e => `<option value="${e.id}" ${editItem?.empleadoId == e.id ? 'selected' : ''}>${e.nombre}</option>`).join('')}
+                ${empleados.map(e => `<option value="${e.id}" ${editItem?.empleadoId == e.id ? 'selected' : ''}>${e.nombre}</option>`).join('')}
 
-                      </select>
-
-                    </div>
-
-                    <div class="form-row">
-
-                      <div class="form-group"><label>Fecha</label><input type="date" name="fecha" class="form-input" required value="${editItem?.fecha || ''}"></div>
-
-                      <div class="form-group"><label>Monto (C$)</label><input type="number" name="monto" step="0.01" class="form-input" required value="${editItem?.monto || ''}"></div>
-
-                    </div>
-
-                    <div class="form-group"><label>Concepto</label><input type="text" name="concepto" class="form-input" placeholder="Ej: Bono por Cumplimiento" value="${editItem?.concepto || ''}"></div>
-
-                    <button type="submit" class="btn btn--primary">Guardar</button>
-
-                </form>
-
-              </div>
+              </select>
 
             </div>
 
-        </div>`;
+            <div class="form-row">
+
+              <div class="form-group"><label>Fecha</label><input type="date" name="fecha" class="form-input" required value="${editItem?.fecha || ''}"></div>
+
+              <div class="form-group"><label>Monto (C$)</label><input type="number" name="monto" step="0.01" class="form-input" required value="${editItem?.monto || ''}"></div>
+
+            </div>
+
+            <div class="form-group"><label>Concepto</label><input type="text" name="concepto" class="form-input" placeholder="Ej: Bono por Cumplimiento" value="${editItem?.concepto || ''}"></div>
+
+            <button type="submit" class="btn btn--primary">Guardar</button>
+
+        </form>
+
+      </div>
+
+    </div>
+
+        </div> `;
 
     document.getElementById('prestacionesModal').innerHTML = html;
 
@@ -1132,63 +1503,63 @@ const PrestacionesModule = (() => {
 
     const html = `
 
-        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
-            <div class="modal" onclick="event.stopPropagation()">
-              <div class="modal__header">
+  <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal__header">
 
-                <h3 class="modal__title">${editItem ? 'Editar' : 'Registrar'} Adelanto de Salario</h3>
+        <h3 class="modal__title">${editItem ? 'Editar' : 'Registrar'} Adelanto de Salario</h3>
 
-                <button class="modal__close" onclick="PrestacionesModule.closeModal()">&times;</button>
+        <button class="modal__close" onclick="PrestacionesModule.closeModal()">&times;</button>
 
-              </div>
+      </div>
 
-              <div class="modal__body">
+      <div class="modal__body">
 
-                <form onsubmit="event.preventDefault(); const fd=new FormData(event.target); PrestacionesModule.saveComplemento('adelantos', Object.fromEntries(fd)); PrestacionesModule.closeModal();">
+        <form onsubmit="event.preventDefault(); const fd=new FormData(event.target); PrestacionesModule.saveComplemento('adelantos', Object.fromEntries(fd)); PrestacionesModule.closeModal();">
 
-                  <input type="hidden" name="id" value="${editItem?.id || ''}">
+          <input type="hidden" name="id" value="${editItem?.id || ''}">
 
-                    <div class="form-group">
+            <div class="form-group">
 
-                      <label>Empleado</label>
+              <label>Empleado</label>
 
-                      <select name="empleadoId" class="form-select" required>
+              <select name="empleadoId" class="form-select" required>
 
-                        ${empleados.map(e => `<option value="${e.id}" ${editItem?.empleadoId == e.id ? 'selected' : ''}>${e.nombre}</option>`).join('')}
+                ${empleados.map(e => `<option value="${e.id}" ${editItem?.empleadoId == e.id ? 'selected' : ''}>${e.nombre}</option>`).join('')}
 
-                      </select>
-
-                    </div>
-
-                    <div class="form-row">
-
-                      <div class="form-group"><label>Fecha</label><input type="date" name="fecha" class="form-input" required value="${editItem?.fecha || ''}"></div>
-
-                      <div class="form-group"><label>Monto (C$)</label><input type="number" name="monto" step="0.01" class="form-input" required value="${editItem?.monto || ''}"></div>
-
-                    </div>
-
-                    <div class="form-group"><label>Estado</label>
-
-                        <select name="estado" class="form-select">
-
-                            <option value="Pendiente" ${editItem?.estado == 'Pendiente' ? 'selected' : ''}>Pendiente de Deducción</option>
-
-                            <option value="Deducido" ${editItem?.estado == 'Deducido' ? 'selected' : ''}>Deducido</option>
-
-                        </select>
-
-                    </div>
-
-                    <button type="submit" class="btn btn--primary">Guardar</button>
-
-                </form>
-
-              </div>
+              </select>
 
             </div>
 
-        </div>`;
+            <div class="form-row">
+
+              <div class="form-group"><label>Fecha</label><input type="date" name="fecha" class="form-input" required value="${editItem?.fecha || ''}"></div>
+
+              <div class="form-group"><label>Monto (C$)</label><input type="number" name="monto" step="0.01" class="form-input" required value="${editItem?.monto || ''}"></div>
+
+            </div>
+
+            <div class="form-group"><label>Estado</label>
+
+              <select name="estado" class="form-select">
+
+                <option value="Pendiente" ${editItem?.estado == 'Pendiente' ? 'selected' : ''}>Pendiente de Deducción</option>
+
+                <option value="Deducido" ${editItem?.estado == 'Deducido' ? 'selected' : ''}>Deducido</option>
+
+              </select>
+
+            </div>
+
+            <button type="submit" class="btn btn--primary">Guardar</button>
+
+        </form>
+
+      </div>
+
+    </div>
+
+        </div> `;
 
     document.getElementById('prestacionesModal').innerHTML = html;
 
@@ -1209,7 +1580,7 @@ const PrestacionesModule = (() => {
 
     return `
 
-  <div class="stats-row">
+  <div class="stats-row" >
 
         <div class="stat-card stat-card--success">
 
@@ -1514,7 +1885,7 @@ const PrestacionesModule = (() => {
       }
     }, 500);
 
-    return `<div class="card">
+    return `<div class="card" >
 
           <div class="card__header">
 
@@ -1760,7 +2131,7 @@ const PrestacionesModule = (() => {
 
                     </td>
 
-                </tr> `;
+                </tr>`;
 
       }).join('');
 
@@ -1883,11 +2254,11 @@ const PrestacionesModule = (() => {
 
               const val = parseFloat(splitArr[1].replace('C$', '').replace(/,/g, '').trim()) || 0;
 
-              if (lbl.includes('Extras') || lbl.includes('Bonos')) {
+              if (lbl.includes('Extras') || lbl.includes('Bonos') || lbl.includes('Feriados')) {
 
                 rows.push({ label: lbl, ingreso: val, deduccion: 0 });
 
-              } else if (lbl.includes('Adelantos') || lbl.includes('Ausencias')) {
+              } else if (lbl.includes('Adelantos') || lbl.includes('Ausencias') || lbl.includes('Abono')) {
 
                 rows.push({ label: lbl, ingreso: 0, deduccion: val });
 
@@ -1926,7 +2297,7 @@ const PrestacionesModule = (() => {
       // COMPACT TEMPLATE
 
       const renderReceiptHtml = (title) => `
-        <div style="padding: 15px 25px; border: 1px solid #ccc; font-family: 'Arial Narrow', Arial, sans-serif; font-size: 11px; background: white;">
+  <div style="padding: 15px 25px; border: 1px solid #ccc; font-family: 'Arial Narrow', Arial, sans-serif; font-size: 11px; background: white;">
 
             <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 10px;">
 
@@ -2014,7 +2385,7 @@ const PrestacionesModule = (() => {
 
             </table>
 
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 25px;">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
 
                  <div style="border: 2px solid #000; padding: 5px 15px; font-weight: bold; font-size: 14px; background: #eef;">
 
@@ -2039,11 +2410,11 @@ const PrestacionesModule = (() => {
   `;
 
       const content = `
-        <div style="max-width: 800px; margin: 0 auto; background: white;">
+  <div style="max-width: 800px; margin: 0 auto; background: white;">
 
     ${renderReceiptHtml('ORIGINAL')}
 
-<div style="display: flex; align-items: center; margin: 25px 0; color: #ccc; font-size: 9px;">
+<div style="display: flex; align-items: center; margin: 10px 0; color: #ccc; font-size: 9px;">
 
   <div style="flex: 1; border-top: 1px dashed #ccc;"></div>
 
@@ -2055,9 +2426,9 @@ const PrestacionesModule = (() => {
 
           ${renderReceiptHtml('COPIA')}
         </div>
-      `;
+  `;
 
-      printDocument(`Recibo ${reciboNo} `, content);
+      printDocument(`Recibo ${reciboNo}`, content);
 
     } catch (e) {
 
@@ -2075,7 +2446,7 @@ const PrestacionesModule = (() => {
 
     return `
 
-      <div class="card">
+  <div class="card">
 
         <div class="card__header">
 
@@ -2199,7 +2570,7 @@ const PrestacionesModule = (() => {
 
   const renderReportesTab = () => {
     return `
-  <div class="reports-container" style="padding: 20px;">
+  <div class="reports-container" style = "padding: 20px;" >
         <div class="reports-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
 
           <!-- Reporte de Empleados -->
@@ -2280,16 +2651,15 @@ const PrestacionesModule = (() => {
         <!--Historial de Pagos(Full Width)-- >
   <div class="card" style="margin-top: 20px;">
     <div class="card__header" style="background: #1a1f36; color: white;">
-      <h3 class="card__title" style="color: white;">${Icons.fileText} Historial de Pagos Realizados</h3>
+      <h3 class="card__title" style="color: white;">${Icons.fileText} Historial de Pagos de Empleado</h3>
     </div>
     <div class="card__body">
-      <p class="text-muted">Historial detallado de recibos, bonos y adelantos por empleado.</p>
+      <p class="text-muted">Reporte integral de todos los pagos realizados a un empleado (Recibos, Bonos, etc.).</p>
 
       <div class="reports-filter-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; align-items: end;">
         <div class="form-group" style="margin-bottom: 0;">
           <label class="text-xs">Empleado:</label>
           <select id="reportPagosEmpleadoId" class="form-select">
-            <option value="all">Todos los Empleados</option>
             ${DataService.getEmpleadosSync().map(e => `<option value="${e.id}">${e.nombre}</option>`).join('')}
           </select>
         </div>
@@ -2297,18 +2667,22 @@ const PrestacionesModule = (() => {
         <div class="form-group" style="margin-bottom: 0;">
           <label class="text-xs">Tipo de Filtro:</label>
           <select id="reportPagosTipoFiltro" class="form-select" onchange="PrestacionesModule.toggleReportFilters()">
-            <option value="mes">Por Mes</option>
-            <option value="anio">Por Año</option>
+            <option value="anio" selected>Por Año</option>
             <option value="rango">Rango de Fechas</option>
+            <option value="desde_alta">Desde Fecha de Alta</option>
           </select>
         </div>
 
         <!-- Inputs dinámicos -->
-        <div class="form-group" id="filterContainerMes" style="margin-bottom: 0;">
+        <div class="form-group" id="filterContainerMes" style="display:none; margin-bottom: 0;">
           <label class="text-xs">Mes:</label>
           <input type="month" id="reportPagosMes" class="form-input" value="${new Date().toISOString().slice(0, 7)}">
         </div>
-        <div class="form-group" id="filterContainerAnio" style="display:none; margin-bottom: 0;">
+        <div class="form-group" id="filterContainerDesdeAlta" style="display:none; margin-bottom: 0;">
+          <label class="text-xs" style="color: transparent;">.</label>
+          <button class="btn btn--ghost" disabled>Todo el histórico disponible</button>
+        </div>
+        <div class="form-group" id="filterContainerAnio" style="display:block; margin-bottom: 0;">
           <label class="text-xs">Año:</label>
           <select id="reportPagosAnio" class="form-select">
             ${Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => `<option value="${y}">${y}</option>`).join('')}
@@ -2316,14 +2690,13 @@ const PrestacionesModule = (() => {
         </div>
         <div class="form-group" id="filterContainerRango" style="display:none; margin-bottom: 0; gap: 5px; flex-direction:column;">
           <input type="date" id="reportPagosInicio" class="form-input" title="Desde">
-            <input type="date" id="reportPagosFin" class="form-input" title="Hasta">
-            </div>
+          <input type="date" id="reportPagosFin" class="form-input" title="Hasta">
+        </div>
 
-            <div class="form-group" style="margin-bottom: 0;">
-              <button class="btn btn--primary" style="width: 100%;" onclick="PrestacionesModule.generarReportePagosHechos()">
-                ${Icons.search} Consultar
-              </button>
-            </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <button class="btn btn--primary" style="width: 100%;" onclick="PrestacionesModule.generarReportePagosHechos()">
+            ${Icons.search} Consultar
+          </button>
         </div>
       </div>
     </div>
@@ -2533,7 +2906,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -2833,7 +3206,7 @@ const PrestacionesModule = (() => {
 
     const contenido = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
@@ -2979,7 +3352,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
@@ -3157,7 +3530,7 @@ const PrestacionesModule = (() => {
 
       document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -3281,7 +3654,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
@@ -3699,7 +4072,7 @@ const PrestacionesModule = (() => {
 
       const content = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -3851,6 +4224,10 @@ const PrestacionesModule = (() => {
 
       adelantos: getSum('adelantos'),
 
+      feriados: getSum('feriados_trabajados'),
+
+      prestamosAbonos: getSum('abonos_prestamos'),
+
       ausencias: deduccionAusencias
 
     };
@@ -3891,9 +4268,11 @@ const PrestacionesModule = (() => {
 
     let fechaInicio, fechaFin;
 
-    const year = parseInt(mes.split('-')[0]);
+    const mesClean = mes ? mes.trim() : '';
 
-    const month = parseInt(mes.split('-')[1]) - 1; // 0-indexed
+    const year = parseInt(mesClean.split('-')[0]);
+
+    const month = parseInt(mesClean.split('-')[1]) - 1; // 0-indexed
 
     const lastDayOfMonth = new Date(year, month + 1, 0).getDate();
 
@@ -3901,23 +4280,23 @@ const PrestacionesModule = (() => {
 
       if (quincena === '1') {
 
-        fechaInicio = `${mes}-01`;
+        fechaInicio = `${mesClean}-01`;
 
-        fechaFin = `${mes} -15`;
+        fechaFin = `${mesClean}-15`;
 
       } else {
 
-        fechaInicio = `${mes} -16`;
+        fechaInicio = `${mesClean}-16`;
 
-        fechaFin = `${mes} -${lastDayOfMonth} `;
+        fechaFin = `${mesClean}-${lastDayOfMonth}`;
 
       }
 
     } else {
 
-      fechaInicio = `${mes}-01`;
+      fechaInicio = `${mesClean}-01`;
 
-      fechaFin = `${mes} -${lastDayOfMonth} `;
+      fechaFin = `${mesClean}-${lastDayOfMonth}`;
 
     }
 
@@ -3957,7 +4336,7 @@ const PrestacionesModule = (() => {
 
           msgDiv.style.display = 'block';
 
-          msgDiv.innerHTML = `⚠️ <strong>${emp.nombre}</strong> ya tiene un recibo del <strong> ${new Date(fechaInicio).toLocaleDateString('es-GB')} al ${new Date(fechaFin).toLocaleDateString('es-GB')}</strong>.`;
+          msgDiv.innerHTML = `⚠️ <strong>${emp.nombre}</strong> ya tiene un recibo del <strong>${new Date(fechaInicio).toLocaleDateString('es-GB')} al ${new Date(fechaFin).toLocaleDateString('es-GB')}</strong>.`;
 
         }
 
@@ -3993,9 +4372,11 @@ const PrestacionesModule = (() => {
 
     const ir = 0; // IR desactivado
 
-    const totalIngresos = salarioBase + comps.horasExtras + comps.bonificaciones;
+    const totalIngresos = salarioBase + comps.horasExtras + comps.bonificaciones + (comps.feriados || 0);
 
-    const totalDeducciones = inss + ir + comps.adelantos + (comps.ausencias || 0);
+    const prestamos = comps.prestamosAbonos || 0;
+
+    const totalDeducciones = inss + ir + comps.adelantos + (comps.ausencias || 0) + prestamos;
 
     const neto = totalIngresos - totalDeducciones;
 
@@ -4011,9 +4392,13 @@ const PrestacionesModule = (() => {
 
       if (comps.bonificaciones > 0) partesNotas.push(`Bonos: C$${comps.bonificaciones.toFixed(2)} `);
 
+      if (comps.feriados > 0) partesNotas.push(`Feriados: C$${comps.feriados.toFixed(2)} `);
+
       if (comps.adelantos > 0) partesNotas.push(`Adelantos: C$${comps.adelantos.toFixed(2)} `);
 
       if (comps.ausencias > 0) partesNotas.push(`Ausencias: C$${comps.ausencias.toFixed(2)} `);
+
+      if (prestamos > 0) partesNotas.push(`Abono a Préstamo / Crédito: C$${prestamos.toFixed(2)} `);
 
       const notasAutogeneradas = partesNotas.length > 0 ? `Detalles: ${partesNotas.join(', ')} ` : `Generado para ${periodo} de ${mes} `;
 
@@ -4033,7 +4418,7 @@ const PrestacionesModule = (() => {
 
         horas_extras: comps.horasExtras,
 
-        bonificaciones: comps.bonificaciones,
+        bonificaciones: comps.bonificaciones + (comps.feriados || 0),
 
         adelantos: comps.adelantos,
 
@@ -4041,7 +4426,7 @@ const PrestacionesModule = (() => {
 
         deduccionIr: ir,
 
-        otrasDeducciones: (comps.ausencias || 0),
+        otrasDeducciones: (comps.ausencias || 0) + prestamos,
 
         totalNeto: neto,
 
@@ -4093,7 +4478,7 @@ const PrestacionesModule = (() => {
 
       const content = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -4191,7 +4576,7 @@ const PrestacionesModule = (() => {
 
     info.innerHTML = `
 
-  <div class="info-card info-card--info">
+  <div class="info-card info-card--info" >
 
           <p><strong>Empleado:</strong> ${emp.nombre || 'N/A'}</p>
 
@@ -4265,7 +4650,7 @@ const PrestacionesModule = (() => {
 
       // Mostrar indicador de carga inmediato para dar feedback de "está pasando algo"
 
-      resultDiv.innerHTML = `<div class="card p-4 text-center"> <p>${Icons.loader} Procesando datos de ${emp.nombre}...</p></div> `;
+      resultDiv.innerHTML = `<div class="card p-4 text-center" > <p>${Icons.loader} Procesando datos de ${emp.nombre}...</p></div> `;
 
       // Datos base
 
@@ -4341,7 +4726,7 @@ const PrestacionesModule = (() => {
 
       const htmlResult = `
 
-  <div class="card" style="margin-top: 2rem; border: 2px solid var(--color-primary-400); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+  <div class="card" style = "margin-top: 2rem; border: 2px solid var(--color-primary-400); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);" >
 
                 <div class="card__header" style="background: var(--color-primary-50); border-bottom: 2px solid var(--color-primary-100); display: flex; justify-content: space-between; align-items: center;">
 
@@ -4537,7 +4922,7 @@ const PrestacionesModule = (() => {
 
         resDiv.innerHTML = `
 
-  <div class="card p-4 border-error" style="background: #fef2f2; border: 1px solid #ef4444; border-radius: 8px; margin-top: 1rem;">
+  <div class="card p-4 border-error" style = "background: #fef2f2; border: 1px solid #ef4444; border-radius: 8px; margin-top: 1rem;" >
 
                     <h3 style="color: #b91c1c; margin-top: 0;">No se pudo completar el cálculo</h3>
 
@@ -4573,7 +4958,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" onclick="PrestacionesModule.closeModal(event)">
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
@@ -4861,7 +5246,7 @@ const PrestacionesModule = (() => {
 
     // Si es ruta de imagen (png, jpg, base64)
 
-    return `< img src="${logoUrl}" alt="${name}" style="height:${height}; width:auto; object-fit:contain;"> `;
+    return `<img src="${logoUrl}" alt="${name}" style="height:${height}; width:auto; object-fit:contain;">`;
 
   };
 
@@ -4873,7 +5258,7 @@ const PrestacionesModule = (() => {
 
     const config = getCompanyConfig();
 
-    printWindow.document.write(`< !DOCTYPE html >
+    printWindow.document.write(`<!DOCTYPE html>
 
   <html>
 
@@ -4885,9 +5270,9 @@ const PrestacionesModule = (() => {
 
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-        body {font - family: 'Inter', system-ui, -apple-system, sans-serif; padding: 0; margin: 0; color: #1a1f36; background: white; }
+        body {font-family: 'Inter', system-ui, -apple-system, sans-serif; padding: 0; margin: 0; color: #1a1f36; background: white; }
 
-        .container {padding: 30px; max-width: 900px; margin: 0 auto; }
+        .container {padding: 10px 30px; max-width: 900px; margin: 0 auto; }
 
         .print-header {display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; border-bottom: 2px solid #e3e8ee; padding-bottom: 12px; }
 
@@ -4897,29 +5282,31 @@ const PrestacionesModule = (() => {
 
         table {width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 12px; }
 
-        th {background - color: #f7f9fc; color: #4f566b; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; padding: 12px 10px; border: 1px solid #e3e8ee; text-align: left; }
+        th {background-color: #f7f9fc; color: #4f566b; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; padding: 12px 10px; border: 1px solid #e3e8ee; text-align: left; }
 
         td {padding: 10px; border: 1px solid #e3e8ee; color: #3c4257; }
 
-        tr:nth-child(even) {background - color: #fcfdfe; }
+        tr:nth-child(even) {background-color: #fcfdfe; }
 
-        .text-right {text - align: right; }
+        .text-right {text-align: right; }
 
-        .text-center {text - align: center; }
+        .text-center {text-align: center; }
 
-        .font-bold {font - weight: 700; }
+        .font-bold {font-weight: 700; }
 
-        .footer {margin - top: 30px; padding-top: 15px; border-top: 1px solid #e3e8ee; font-size: 10px; text-align: center; color: #697386; }
+        .footer {margin-top: 30px; padding-top: 15px; border-top: 1px solid #e3e8ee; font-size: 10px; text-align: center; color: #697386; }
 
         @media print {
 
-          @page {size: ${orientation}; margin: 12mm; }
+          @page {size: ${orientation}; margin: 5mm; }
 
-        body {-webkit - print - color - adjust: exact; print-color-adjust: exact; }
+        body {-webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
         .no-print {display: none !important; }
 
-        .container {padding: 0; }
+        .container {padding: 0; max-width: 100%; margin: 0;}
+
+        .print-header {display: none;} /* Do not print generic header for receipts */
 
           }
 
@@ -4982,7 +5369,7 @@ const PrestacionesModule = (() => {
     const empleados = DataService.getEmpleadosSync().filter(e => e.estado === 'Activo');
 
     const content = `
-    <div style="font-family: 'Inter', sans-serif; padding: 20px;">
+    <div style = "font-family: 'Inter', sans-serif; padding: 20px;" >
           <h2 style="color: #1a1f36; text-align: center; margin-bottom: 20px;">Reporte de Personal Activo</h2>
           <table style="width: 100%; border-collapse: collapse;">
               <thead>
@@ -5024,7 +5411,7 @@ const PrestacionesModule = (() => {
     const datos = empleados.map(e => calcularVacaciones(e));
 
     const content = `
-      < table >
+  <table>
         <thead>
           <tr>
             <th>Empleado</th>
@@ -5058,7 +5445,7 @@ const PrestacionesModule = (() => {
             <td class="text-right">C$${datos.reduce((sum, d) => sum + (d.diasDisponibles * ((parseFloat(empleados.find(e => e.id === d.id)?.salarioTotal || empleados.find(e => e.id === d.id)?.salario_total) || 0) / 30)), 0).toLocaleString('es-NI', { minimumFractionDigits: 2 })}</td>
           </tr>
         </tbody>
-      </table >
+      </table>
   `;
 
     printDocument('Reporte de Estado de Vacaciones', content, 'landscape');
@@ -5078,6 +5465,8 @@ const PrestacionesModule = (() => {
     const bonos = JSON.parse(localStorage.getItem('bonificaciones') || '[]');
 
     const adelantos = JSON.parse(localStorage.getItem('adelantos') || '[]');
+    const feriados = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
+    const abonos_prestamos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
 
     // Obtener ausencias desde DataService (asumimos que ya están en DB)
 
@@ -5102,6 +5491,8 @@ const PrestacionesModule = (() => {
     let totalBonos = 0;
 
     let totalAdelantos = 0;
+    let totalFeriados = 0;
+    let totalAbonos = 0;
 
     let totalInss = 0;
 
@@ -5120,7 +5511,12 @@ const PrestacionesModule = (() => {
         .reduce((sum, b) => sum + (parseFloat(b.monto) || 0), 0);
 
       const mAdelantos = adelantos.filter(a => a.empleadoId === e.id && a.fecha?.startsWith(mesSeleccionado))
+        .reduce((sum, a) => sum + (parseFloat(a.monto) || 0), 0);
 
+      const mFeriados = feriados.filter(f => f.empleadoId === e.id && f.fecha?.startsWith(mesSeleccionado))
+        .reduce((sum, f) => sum + (parseFloat(f.monto) || 0), 0);
+
+      const mAbonos = abonos_prestamos.filter(a => a.empleadoId === e.id && a.fecha?.startsWith(mesSeleccionado))
         .reduce((sum, a) => sum + (parseFloat(a.monto) || 0), 0);
 
       // Calcular deducción por ausencias (días laborales que no son vacaciones)
@@ -5131,11 +5527,11 @@ const PrestacionesModule = (() => {
 
       const decAusencia = (salarioBase / 30) * diasAusentes;
 
-      const ingresosBrutos = salarioBase + mExtras + mBonos;
+      const ingresosBrutos = salarioBase + mExtras + mBonos + mFeriados;
 
       const inss = ingresosBrutos * 0.07;
 
-      const neto = ingresosBrutos - inss - mAdelantos - decAusencia;
+      const neto = ingresosBrutos - inss - mAdelantos - decAusencia - mAbonos;
 
       totalSalarioBase += salarioBase;
 
@@ -5143,23 +5539,27 @@ const PrestacionesModule = (() => {
 
       totalBonos += mBonos;
 
-      totalAdelantos += (mAdelantos + decAusencia); // Sumamos ambos como deducciones totales en el reporte
+      totalAdelantos += (mAdelantos + decAusencia);
+      totalFeriados += mFeriados;
+      totalAbonos += mAbonos;
 
       totalInss += inss;
 
       totalNetoGeneral += neto;
 
       return `
-  < tr >
+  <tr>
             <td>${e.nombre}</td>
             <td class="text-right">C$${salarioBase.toLocaleString()}</td>
             <td class="text-right text-success">+ C$${mExtras.toLocaleString()}</td>
             <td class="text-right text-success">+ C$${mBonos.toLocaleString()}</td>
+            <td class="text-right text-success">+ C$${mFeriados.toLocaleString()}</td>
             <td class="text-right text-danger">${diasAusentes > 0 ? `<div style="font-size:9px">(${diasAusentes}d)</div>` : ''}- C$${decAusencia.toLocaleString()}</td>
             <td class="text-right text-danger">- C$${inss.toLocaleString()}</td>
             <td class="text-right text-danger">- C$${mAdelantos.toLocaleString()}</td>
+            <td class="text-right text-danger">- C$${mAbonos.toLocaleString()}</td>
             <td class="text-right font-bold" style="background: #f8fafc;">C$${neto.toLocaleString()}</td>
-        </tr >
+        </tr>
   `;
 
     }).join('');
@@ -5170,7 +5570,7 @@ const PrestacionesModule = (() => {
     const fechaCapitalizada = fechaLegible.charAt(0).toUpperCase() + fechaLegible.slice(1);
 
     const content = `
-  < h3 > Planilla Mensual Interna(${fechaCapitalizada})</h3 >
+  <h3> Planilla Mensual Interna(${fechaCapitalizada})</h3>
       <p style="font-size: 11px; color: #666; margin-bottom: 20px;">Reporte integral incluye Salario Base, Horas Extras, Bonificaciones y Deducciones (INSS / Adelantos / Ausencias).</p>
       <table>
         <thead>
@@ -5179,9 +5579,11 @@ const PrestacionesModule = (() => {
             <th class="text-right">Salario Base</th>
             <th class="text-right">H. Extras</th>
             <th class="text-right">Bonos</th>
+            <th class="text-right">Feriados</th>
             <th class="text-right">Ausenc.</th>
             <th class="text-right">INSS (7%)</th>
             <th class="text-right">Adelantos</th>
+            <th class="text-right">Préstamos</th>
             <th class="text-right">Neto Recibir</th>
           </tr>
         </thead>
@@ -5192,7 +5594,11 @@ const PrestacionesModule = (() => {
             <td class="text-right">C$${totalSalarioBase.toLocaleString()}</td>
             <td class="text-right">C$${totalExtras.toLocaleString()}</td>
             <td class="text-right">C$${totalBonos.toLocaleString()}</td>
-            <td colspan="3"></td>
+            <td class="text-right">C$${totalFeriados.toLocaleString()}</td>
+            <td class="text-right"></td>
+            <td class="text-right">C$${totalInss.toLocaleString()}</td>
+            <td class="text-right">C$${totalAdelantos.toLocaleString()}</td>
+            <td class="text-right">C$${totalAbonos.toLocaleString()}</td>
             <td class="text-right" style="color: #1a73e8; font-size: 14px;">C$${totalNetoGeneral.toLocaleString()}</td>
           </tr>
         </tbody>
@@ -5206,6 +5612,8 @@ const PrestacionesModule = (() => {
   const imprimirReciboAdelanto = (id) => {
 
     const adelantos = JSON.parse(localStorage.getItem('adelantos') || '[]');
+    const feriados = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
+    const abonos_prestamos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
 
     const item = adelantos.find(a => a.id === id);
 
@@ -5226,7 +5634,7 @@ const PrestacionesModule = (() => {
     const receiptNo = `AD - ${index.toString().padStart(4, '0')} `;
 
     const renderReceipt = (copyTitle) => `
-  < div style = "border: 1px solid #000; padding: 20px; margin-bottom: 20px; position: relative; font-family: 'Courier New', Courier, monospace; min-height: 350px;" >
+  <div style="border: 1px solid #000; padding: 20px; margin-bottom: 20px; position: relative; font-family: 'Courier New', Courier, monospace; min-height: 350px;">
             <div style="position: absolute; top: 10px; right: 20px; font-weight: bold; font-size: 12px;">${copyTitle}</div>
             <div style="text-align: center; margin-bottom: 20px;">
                 <h2 style="margin: 0; font-size: 18px; text-decoration: underline;">RECIBO DE ADELANTO DE SALARIO</h2>
@@ -5264,7 +5672,7 @@ const PrestacionesModule = (() => {
                   </div>
                 </div>
             </div>
-        </div >
+        </div>
   `;
 
     // Helper for NumberToText (Simplified for this snippet, typically a separate util)
@@ -5283,11 +5691,11 @@ const PrestacionesModule = (() => {
     // Or just removing the complexity that might have caused issues.
 
     const content = `
-  < div style = "font-family: Arial, sans-serif; padding: 20px;" >
+  <div style="font-family: Arial, sans-serif; padding: 20px;">
     ${renderReceipt('ORIGINAL - CONTABILIDAD')}
 <div style="border-bottom: 1px dashed #000; margin: 30px 0;"></div>
         ${renderReceipt('COPIA - EMPLEADO')}
-      </div >
+      </div>
   `;
 
     printDocument(`Recibo Adelanto ${receiptNo} `, content, 'portrait');
@@ -5304,7 +5712,7 @@ const PrestacionesModule = (() => {
     const year = new Date().getFullYear();
 
     const renderReceipt = (copyTitle) => `
-  < div style = "border: 2px solid #1a1f36; padding: 15px; margin-bottom: 10px; position: relative; min-height: 320px;" >
+  <div style="border: 2px solid #1a1f36; padding: 15px; margin-bottom: 10px; position: relative; min-height: 320px;">
             <div style="text-align: right; color: #666; font-size: 10px; margin-bottom: 5px;">${copyTitle}</div>
             <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #f1f3f9; padding-bottom: 5px; margin-bottom: 10px;">
                 <div>
@@ -5348,165 +5756,137 @@ const PrestacionesModule = (() => {
                 </tr>
               </table>
             </div>
-        </div >
+        </div>
   `;
 
     const content = `
-  < div style = "font-family: 'Inter', sans-serif;" >
+  <div style="font-family: 'Inter', sans-serif;">
     ${renderReceipt('COPIA EMPRESA')}
 <div style="border-top: 1px dashed #ccc; margin: 15px 0;"></div>
         ${renderReceipt('COPIA CLIENTE')}
-      </div >
+      </div>
   `;
 
     printDocument(`Recibo Aguinaldo - ${emp.nombre} `, content, 'portrait');
   };
 
   const toggleReportFilters = () => {
-
     const tipo = document.getElementById('reportPagosTipoFiltro').value;
-
-    document.getElementById('filterContainerMes').style.display = tipo === 'mes' ? 'block' : 'none';
-
-    document.getElementById('filterContainerAnio').style.display = tipo === 'anio' ? 'block' : 'none';
-
-    document.getElementById('filterContainerRango').style.display = tipo === 'rango' ? 'flex' : 'none';
-
+    const btnMes = document.getElementById('filterContainerMes');
+    if (btnMes) btnMes.style.display = tipo === 'mes' ? 'block' : 'none';
+    const btnAnio = document.getElementById('filterContainerAnio');
+    if (btnAnio) btnAnio.style.display = tipo === 'anio' ? 'block' : 'none';
+    const btnRango = document.getElementById('filterContainerRango');
+    if (btnRango) btnRango.style.display = tipo === 'rango' ? 'flex' : 'none';
+    const btnAlta = document.getElementById('filterContainerDesdeAlta');
+    if (btnAlta) btnAlta.style.display = tipo === 'desde_alta' ? 'block' : 'none';
   };
 
-  const generarReportePagosHechos = () => {
-
+  const generarReportePagosHechos = async () => {
     const empId = document.getElementById('reportPagosEmpleadoId').value;
-
     const tipoFiltro = document.getElementById('reportPagosTipoFiltro').value;
+    const allEmps = DataService.getEmpleadosSync();
+    if (!allEmps.length) return App.showNotification('No hay empleados.', 'warning');
 
-    // Definir rango de fechas
+    const emp = allEmps.find(e => e.id === empId);
+    if (!emp) return alert('Seleccione un empleado válido.');
 
     let fechaInicio, fechaFin;
-
     const today = new Date();
 
     if (tipoFiltro === 'mes') {
-
-      const mesInput = document.getElementById('reportPagosMes').value; // YYYY-MM
-
+      const mesInput = document.getElementById('reportPagosMes').value; 
       if (!mesInput) return alert('Seleccione un mes válido');
-
       const [y, m] = mesInput.split('-');
-
-      fechaInicio = new Date(y, m - 1, 1); // Primer día
-
-      fechaFin = new Date(y, m, 0, 23, 59, 59); // Último día
-
+      fechaInicio = new Date(y, m - 1, 1);
+      fechaFin = new Date(y, m, 0, 23, 59, 59);
     } else if (tipoFiltro === 'anio') {
-
       const y = document.getElementById('reportPagosAnio').value;
-
       fechaInicio = new Date(y, 0, 1);
-
       fechaFin = new Date(y, 11, 31, 23, 59, 59);
-
     } else if (tipoFiltro === 'rango') {
-
-      const dInicio = document.getElementById('reportPagosDesde').value;
-
-      const dFin = document.getElementById('reportPagosHasta').value;
-
+      const dInicio = document.getElementById('reportPagosDesde').value || document.getElementById('reportPagosInicio').value;
+      const dFin = document.getElementById('reportPagosHasta').value || document.getElementById('reportPagosFin').value;
       if (!dInicio || !dFin) return alert('Seleccione fecha inicial y final');
-
       fechaInicio = new Date(dInicio);
-
       fechaFin = new Date(dFin);
-
-      fechaFin.setHours(23, 59, 59); // Final del día
-
+      fechaFin.setHours(23, 59, 59);
+    } else if (tipoFiltro === 'desde_alta') {
+      if (!emp.fechaAlta && !emp.fecha_alta) return alert('El empleado no tiene registrada una fecha de alta.');
+      fechaInicio = new Date(emp.fechaAlta || emp.fecha_alta);
+      fechaFin = new Date();
+      fechaFin.setHours(23, 59, 59);
     }
 
-    const allEmps = DataService.getEmpleadosSync();
+    try {
+        // Obtenemos los recibos formales mediante la base de datos o su persistencia real
+        const allNominas = await DataService.getAllNominas?.() || JSON.parse(localStorage.getItem('nominas_historial') || '[]');
+        const bonos = JSON.parse(localStorage.getItem('bonificaciones') || '[]');
 
-    const emps = empId === 'all' ? allEmps : [allEmps.find(e => e.id === empId)];
+        const filterByDate = (item, dateField) => {
+            if (item.empleadoId !== emp.id && item.empleado_id !== emp.id) return false;
+            const dStr = item[dateField];
+            if (!dStr) return false;
+            const d = new Date(dStr);
+            return d >= fechaInicio && d <= fechaFin;
+        };
 
-    const nominas = JSON.parse(localStorage.getItem('nominas_historial') || '[]');
+        const eNominas = allNominas.filter(n => filterByDate(n, 'fechaPago') || filterByDate(n, 'created_at'));
+        const eBonos = bonos.filter(b => filterByDate(b, 'fecha'));
 
-    const bonos = JSON.parse(localStorage.getItem('bonificaciones') || '[]');
+        if (!eNominas.length && !eBonos.length) {
+            return App.showNotification('No se encontraron pagos en este período para el empleado seleccionado', 'error');
+        }
 
-    const adelantos = JSON.parse(localStorage.getItem('adelantos') || '[]');
+        const totalNominas = eNominas.reduce((acc, curr) => acc + (parseFloat(curr.montoNeto || curr.total_neto) || 0), 0);
+        const totalBonos = eBonos.reduce((acc, curr) => acc + (parseFloat(curr.monto) || 0), 0);
 
-    const content = emps.map(e => {
+        const rowsHtml = [];
 
-      // Filter by Employee AND Date Range
+        eNominas.forEach(n => {
+            const date = new Date(n.fechaPago || n.created_at).toLocaleDateString('es-NI');
+            const periodo = n.tipo_periodo ? ` (${n.tipo_periodo} ${new Date(n.periodo_inicio).toLocaleDateString('es-NI')} al ${new Date(n.periodo_fin).toLocaleDateString('es-NI')})` : '';
+            const val = parseFloat(n.montoNeto || n.total_neto);
+            rowsHtml.push(`<tr><td>${date}</td><td><strong>Recibo de Pago</strong>${periodo}</td><td class="text-right">C$${val.toLocaleString()}</td></tr>`);
+        });
 
-      const filterByDate = (item, dateField) => {
+        eBonos.forEach(b => {
+            const date = new Date(b.fecha).toLocaleDateString('es-NI');
+            rowsHtml.push(`<tr><td>${date}</td><td>Bono / Extra: ${b.concepto}</td><td class="text-right text-success">+ C$${parseFloat(b.monto).toLocaleString()}</td></tr>`);
+        });
 
-        if (item.empleadoId !== e.id) return false;
-
-        const d = new Date(item[dateField]);
-
-        return d >= fechaInicio && d <= fechaFin;
-
-      };
-
-      const eNominas = nominas.filter(n => filterByDate(n, 'fechaPago')); // fechaPago used in nominas
-
-      const eBonos = bonos.filter(b => filterByDate(b, 'fecha'));
-
-      const eAdelantos = adelantos.filter(a => filterByDate(a, 'fecha'));
-
-      if (!eNominas.length && !eBonos.length && !eAdelantos.length) return '';
-
-      // Calculate Totals per Employee
-
-      const totalNominas = eNominas.reduce((acc, curr) => acc + (parseFloat(curr.montoNeto) || 0), 0);
-
-      const totalBonos = eBonos.reduce((acc, curr) => acc + (parseFloat(curr.monto) || 0), 0);
-
-      const totalAdelantos = eAdelantos.reduce((acc, curr) => acc + (parseFloat(curr.monto) || 0), 0);
-
-      const grandTotal = totalNominas + totalBonos - totalAdelantos; // Adelantos are deductions usually, but here we list payments MADE. If it's "Pagos Hechos", adelantos are money OUT. Nominas are money OUT. 
-
-      return `
-  < div style = "margin-bottom: 40px; page-break-inside: avoid;" >
-          <h3 style="border-bottom: 2px solid #1a1f36; padding-bottom: 5px; color: #1a73e8;">${e.nombre}</h3>
-          <p style="font-size: 11px; margin-top: -5px;">Cargo: ${e.cargo} | Cédula: ${e.cedula}</p>
-          <table style="margin-top: 10px;">
+        const content = `
+        <h3 style="border-bottom: 2px solid #1a73e8; padding-bottom: 5px; color: #1a73e8;">Detalle de Pagos: ${emp.nombre}</h3>
+        <p style="font-size: 11px; margin-top: -5px;">Cargo: ${emp.cargo} | Cédula: ${emp.cedula}</p>
+        <div style="margin-bottom: 20px;">
+          <strong>Período:</strong> Del ${fechaInicio.toLocaleDateString('es-NI')} al ${fechaFin.toLocaleDateString('es-NI')}
+        </div>
+        <table style="width: 100%; font-size: 12px;">
             <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Tipo de Pago / Concepto</th>
-                <th class="text-right">Monto</th>
-              </tr>
+                <tr>
+                    <th style="width: 15%">Fecha</th>
+                    <th style="width: 60%">Concepto de Pago</th>
+                    <th class="text-right" style="width: 25%">Monto Acreditado</th>
+                </tr>
             </thead>
             <tbody>
-            ${eNominas.map(n => {
-        const mesNombre = new Date(n.fechaPago).toLocaleDateString('es-NI', { month: 'long' });
-        const salarioBase = n.salarioBase || 0;
-        return `<tr>
-                  <td>${new Date(n.fechaPago).toLocaleDateString('es-NI')}</td>
-                  <td>
-                      <div><strong>Nómina Mensual</strong> (${mesNombre})</div>
-                      ${salarioBase ? `<div style="font-size: 10px; color: #666;">Salario Base: C$${parseFloat(salarioBase).toLocaleString()}</div>` : ''}
-                  </td>
-                  <td class="text-right">C$${parseFloat(n.montoNeto).toLocaleString()}</td>
-              </tr>`;
-      }).join('')}
-            ${eBonos.map(b => `<tr><td>${new Date(b.fecha).toLocaleDateString('es-NI')}</td><td>Bono: ${b.concepto}</td><td class="text-right">C$${parseFloat(b.monto).toLocaleString()}</td></tr>`).join('')}
-            ${eAdelantos.map(a => `<tr><td>${new Date(a.fecha).toLocaleDateString('es-NI')}</td><td>Adelanto de Salario (Deducción Futura)</td><td class="text-right text-warning">C$${parseFloat(a.monto).toLocaleString()}</td></tr>`).join('')}
+                ${rowsHtml.join('')}
             </tbody>
             <tfoot>
-               <tr style="background: #f8fafc; font-weight: bold;">
-                 <td colspan="2" class="text-right">Total Pagado:</td>
-                 <td class="text-right">C$${(totalNominas + totalBonos + totalAdelantos).toLocaleString()}</td>
-               </tr>
+                <tr style="background: #f8fafc; font-weight: bold; font-size: 14px;">
+                    <td colspan="2" class="text-right">Total Pagado al Empleado en el Período:</td>
+                    <td class="text-right" style="color: #1a73e8;">C$${(totalNominas + totalBonos).toLocaleString()}</td>
+                </tr>
             </tfoot>
-          </table>
-`;
-    }).join('') || '<p>No se encontraron registros de pagos para la selección y período indicados.</p>';
+        </table>`;
 
-    const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
-    const periodStr = `Del ${fechaInicio.toLocaleDateString('es-NI', dateOptions)} al ${fechaFin.toLocaleDateString('es-NI', dateOptions)} `;
+        printDocument('Historial de Pagos de Empleado', content, 'portrait');
 
-    printDocument(`Historial de Pagos - ${periodStr} `, content, 'portrait');
-  };
+    } catch (e) {
+        console.error(e);
+        App.showNotification('Error al generar historial.', 'error');
+    }
+};
 
 
   const generarPlanillaINSSMITRAB = () => {
@@ -5528,12 +5908,12 @@ const PrestacionesModule = (() => {
       totalInss += inss;
 
       return `
-  < tr >
+  <tr>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">${e.nombre}</td>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">${e.cedula || '-'}</td>
             <td class="text-right" style="padding: 8px; border-bottom: 1px solid #eee;">C$${salarioBase.toLocaleString()}</td>
             <td class="text-right" style="padding: 8px; border-bottom: 1px solid #eee; color: #dc2626;">- C$${inss.toLocaleString()}</td>
-        </tr >
+        </tr>
   `;
     }).join('');
 
@@ -5543,7 +5923,7 @@ const PrestacionesModule = (() => {
     const fechaCapitalizada = fechaLegible.charAt(0).toUpperCase() + fechaLegible.slice(1);
 
     const content = `
-  < h3 > Planilla Mensual INSS / MITRAB - ${fechaCapitalizada}</h3 >
+  <h3> Planilla Mensual INSS / MITRAB - ${fechaCapitalizada}</h3>
     <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
       <thead>
         <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
@@ -5604,14 +5984,14 @@ const PrestacionesModule = (() => {
       totalAguinaldo += (salario / 12);
 
       return `
-  < tr >
+  <tr>
             <td style="padding: 8px;">${e.nombre}</td>
             <td class="text-right" style="padding: 8px;">C$${salario.toLocaleString()}</td>
             <td class="text-right" style="padding: 8px;">C$${inssPatronal.toLocaleString()}</td>
             <td class="text-right" style="padding: 8px;">C$${inatec.toLocaleString()}</td>
             <td class="text-right" style="padding: 8px;">C$${provisionLey.toLocaleString()}</td>
             <td class="text-right font-bold" style="padding: 8px;">C$${costoTotal.toLocaleString()}</td>
-        </tr >
+        </tr>
   `;
 
     }).join('');
@@ -5619,7 +5999,7 @@ const PrestacionesModule = (() => {
     const granTotal = totalSalario + totalINSSPatronal + totalINATE + totalVacaciones + totalAguinaldo;
 
     const content = `
-  < h3 > Costos Laborales Mensuales(Carga Patronal)</h3 >
+  <h3> Costos Laborales Mensuales(Carga Patronal)</h3>
       <table>
         <thead>
           <tr>
@@ -5845,6 +6225,18 @@ const PrestacionesModule = (() => {
     deleteAguinaldo,
 
     eliminarHistorialVacaciones,
+
+    // Feriados
+
+    registrarFeriadoModal,
+
+    saveFeriadosGrabados,
+
+    registrarPrestamo,
+
+    verDetallePrestamo,
+
+    saveAbonoPrestamo,
 
     darDeBajaEmpleado,
 

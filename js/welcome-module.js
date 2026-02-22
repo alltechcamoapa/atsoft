@@ -68,7 +68,7 @@ const WelcomeModule = (() => {
         // Filter pending visits assigned to this user for today and tomorrow
         return allVisitas.filter(visita => {
             const visitDate = new Date(visita.fechaInicio);
-            const isAssigned = visita.usuarioSoporte === user.nombre;
+            const isAssigned = (visita.usuarioSoporte === user.id || visita.usuarioSoporte === user.nombre || visita.usuarioSoporte === user.username);
             const isPending = !visita.trabajoRealizado;
             const isUpcoming = visitDate <= tomorrow && visitDate >= now;
 

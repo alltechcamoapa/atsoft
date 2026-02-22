@@ -6,6 +6,7 @@
 const ProformasModule = (() => {
   let filterState = { search: '', clienteId: 'all', estado: 'all' };
   let currentItems = [];
+  let currentFormCurrency = 'USD';
 
   // ========== RENDER FUNCTIONS ==========
 
@@ -235,6 +236,7 @@ const ProformasModule = (() => {
     const clientes = DataService.getClientesSync();
     const productos = DataService.getProductosSync();
     currentItems = isEdit ? [...proforma.items] : [{ cantidad: 1, descripcion: '', precioUnitario: 0, total: 0 }];
+    currentFormCurrency = proforma?.moneda || 'USD';
 
     return `
       <div class="modal-overlay open" onclick="ProformasModule.closeModal(event)">
@@ -285,7 +287,7 @@ const ProformasModule = (() => {
             <div class="form-group">
               <label class="form-label form-label--required">Productos / Servicios</label>
               <datalist id="productosList">
-                ${productos.map(p => `<option value="${p.nombre}">From ${p.tipo}: $${p.precio}</option>`).join('')}
+                ${productos.map(p => `<option value="${p.nombre}">From ${p.tipo}: USD $${p.precio}</option>`).join('')}
               </datalist>
               <div class="proforma-items" id="proformaItems">
                 ${renderItemsEditor()}
@@ -324,6 +326,7 @@ const ProformasModule = (() => {
   };
 
   const renderItemsEditor = () => {
+    const symbol = currentFormCurrency === 'USD' ? '$' : 'C$';
     return currentItems.map((item, index) => `
       <div class="proforma-item" data-index="${index}">
         <div class="proforma-item__row">
@@ -339,7 +342,7 @@ const ProformasModule = (() => {
                  value="${item.precioUnitario}" min="0" step="0.01"
                  placeholder="Precio Unit."
                  onchange="ProformasModule.updateItem(${index}, 'precioUnitario', this.value)">
-          <span class="proforma-item__total">$${item.total.toFixed(2)}</span>
+          <span class="proforma-item__total">${symbol}${item.total.toFixed(2)}</span>
           ${currentItems.length > 1 ? `
             <button type="button" class="btn btn--ghost btn--icon btn--sm text-danger" onclick="ProformasModule.removeItem(${index})">
               ${Icons.trash}
@@ -373,8 +376,17 @@ const ProformasModule = (() => {
       const productos = DataService.getProductosSync();
       const producto = productos.find(p => p.nombre === value);
       if (producto) {
-        currentItems[index].precioUnitario = producto.precio;
-        currentItems[index].total = currentItems[index].cantidad * producto.precio;
+        let precio = parseFloat(producto.precio) || 0;
+        if (currentFormCurrency === 'NIO') {
+          let tipoCambio = 36.6;
+          try {
+            const cacheConfig = typeof DataService.getConfig === 'function' ? DataService.getConfig() : null;
+            if (cacheConfig && cacheConfig.tipoCambio) tipoCambio = parseFloat(cacheConfig.tipoCambio);
+          } catch (error) { }
+          precio = precio * tipoCambio;
+        }
+        currentItems[index].precioUnitario = precio;
+        currentItems[index].total = currentItems[index].cantidad * precio;
       }
     } else {
       currentItems[index][field] = value;
@@ -384,10 +396,11 @@ const ProformasModule = (() => {
   };
 
   const calculateTotals = () => {
+    const symbol = currentFormCurrency === 'USD' ? '$' : 'C$';
     const subtotal = currentItems.reduce((sum, item) => sum + item.total, 0);
     const total = subtotal; // Sin IVA por ahora
-    document.getElementById('proformaSubtotal').textContent = `$${subtotal.toFixed(2)}`;
-    document.getElementById('proformaTotal').textContent = `$${total.toFixed(2)}`;
+    document.getElementById('proformaSubtotal').textContent = `${symbol}${subtotal.toFixed(2)}`;
+    document.getElementById('proformaTotal').textContent = `${symbol}${total.toFixed(2)}`;
   };
 
   // ========== DETAIL MODAL ==========
@@ -1050,28 +1063,24 @@ const ProformasModule = (() => {
 
   // ========== CURRENCY MANAGEMENT ==========
   const updateCurrencySymbols = (moneda) => {
-    const symbol = moneda === 'USD' ? '$' : 'C$';
+    if (moneda === currentFormCurrency) return;
 
-    // Update all currency symbols in the form
-    const subtotalEl = document.getElementById('proformaSubtotal');
-    const totalEl = document.getElementById('proformaTotal');
+    let tipoCambio = 36.6;
+    try {
+      const cacheConfig = typeof DataService.getConfig === 'function' ? DataService.getConfig() : null;
+      if (cacheConfig && cacheConfig.tipoCambio) tipoCambio = parseFloat(cacheConfig.tipoCambio);
+    } catch (error) { }
 
-    if (subtotalEl) {
-      const currentSubtotal = parseFloat(subtotalEl.textContent.replace(/[^0-9.]/g, '')) || 0;
-      subtotalEl.textContent = `${symbol}${currentSubtotal.toFixed(2)}`;
-    }
+    const factor = moneda === 'NIO' ? tipoCambio : (1 / tipoCambio);
 
-    if (totalEl) {
-      const currentTotal = parseFloat(totalEl.textContent.replace(/[^0-9.]/g, '')) || 0;
-      totalEl.textContent = `${symbol}${currentTotal.toFixed(2)}`;
-    }
-
-    // Update item totals
-    const itemTotals = document.querySelectorAll('.proforma-item__total');
-    itemTotals.forEach(el => {
-      const currentValue = parseFloat(el.textContent.replace(/[^0-9.]/g, '')) || 0;
-      el.textContent = `${symbol}${currentValue.toFixed(2)}`;
+    currentItems.forEach(item => {
+      item.precioUnitario = (item.precioUnitario || 0) * factor;
+      item.total = item.cantidad * item.precioUnitario;
     });
+
+    currentFormCurrency = moneda;
+    document.getElementById('proformaItems').innerHTML = renderItemsEditor();
+    calculateTotals();
   };
 
   // ========== PUBLIC API ==========

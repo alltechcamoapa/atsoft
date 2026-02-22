@@ -594,7 +594,10 @@ const ContratosModule = (() => {
                       <td>${v.tipoVisita}</td>
                       <td>${eq ? eq.nombreEquipo : '-'}</td>
                       <td>${v.descripcionTrabajo}</td>
-                      <td>${v.usuarioSoporte}</td>
+                      <td>${ (() => {
+                      const t = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync().find(u => u.id === v.usuarioSoporte) : null;
+                      return t ? (t.name || t.username) : (v.usuarioSoporte || 'N/A');
+                  })() }</td>
                       <td><span class="badge badge-${v.trabajoRealizado ? 'success' : 'warning'}">${v.trabajoRealizado ? 'Completado' : 'Pendiente'}</span></td>
                     </tr>
                   `;
@@ -735,10 +738,10 @@ const ContratosModule = (() => {
       if (phone) {
         if (confirm(`¿Enviar reporte a ${phone} por WhatsApp ? `)) {
           const result = await WhatsAppService.sendMessage(phone, message);
-          if (result.success) {
-            ConfigModule.showToast('Mensaje de WhatsApp enviado', 'success');
+          if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+            NotificationService.showToast('Mensaje de WhatsApp enviado', 'success');
           } else {
-            alert('Error enviando WhatsApp: ' + result.error);
+            alert('Mensaje de WhatsApp enviado');
           }
         }
       }
@@ -748,7 +751,11 @@ const ContratosModule = (() => {
         if (confirm(`¿Enviar reporte a ${email} por Email ? `)) {
           const result = await EmailService.sendEmail(email, `Reporte Contrato ${contratoId} `, message);
           if (result.success) {
-            ConfigModule.showToast('Email enviado correctamente', 'success');
+            if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+              NotificationService.showToast('Email enviado correctamente', 'success');
+            } else {
+              alert('Email enviado correctamente');
+            }
           } else {
             alert('Error enviando Email: ' + result.error);
           }
@@ -761,7 +768,9 @@ const ContratosModule = (() => {
     if (confirm('¿Estás seguro de eliminar este contrato? Esta acción no se puede deshacer.')) {
       try {
         await DataService.deleteContrato(id);
-        ConfigModule.showToast('Contrato eliminado', 'success');
+        if (typeof NotificationService !== 'undefined' && NotificationService.showToast) {
+          NotificationService.showToast('Contrato eliminado', 'success');
+        }
         console.log('✅ Contrato eliminado correctamente');
         App.refreshCurrentModule();
       } catch (error) {

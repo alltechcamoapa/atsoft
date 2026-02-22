@@ -496,13 +496,13 @@ const DataService = (() => {
     };
 
     const getContratosStats = () => {
-        const activos = cache.contratos.filter(c => c.estadoContrato === 'Activo').length;
-        const vencidos = cache.contratos.filter(c => c.estadoContrato === 'Vencido').length;
+        const activos = cache.contratos.filter(c => (c.estadoContrato || '').toUpperCase() === 'ACTIVO').length;
+        const vencidos = cache.contratos.filter(c => (c.estadoContrato || '').toUpperCase() === 'VENCIDO').length;
         const now = new Date();
         const porVencer = cache.contratos.filter(c => {
             const fin = new Date(c.fechaFin);
             const diff = (fin - now) / (1000 * 60 * 60 * 24);
-            return c.estadoContrato === 'Activo' && diff <= 30 && diff > 0;
+            return (c.estadoContrato || '').toUpperCase() === 'ACTIVO' && diff <= 30 && diff > 0;
         }).length;
         return { activos, vencidos, porVencer, ingresosMensuales: 0 };
     };
@@ -512,7 +512,7 @@ const DataService = (() => {
         return cache.contratos.filter(c => {
             const fin = new Date(c.fechaFin);
             const diff = (fin - now) / (1000 * 60 * 60 * 24);
-            return c.estadoContrato === 'Activo' && diff <= cache.config.diasAnticipacion && diff > 0;
+            return (c.estadoContrato || '').toUpperCase() === 'ACTIVO' && diff <= cache.config.diasAnticipacion && diff > 0;
         });
     };
 
@@ -571,9 +571,9 @@ const DataService = (() => {
     };
 
     const getEquiposStats = () => ({
-        operativos: cache.equipos.filter(e => e.estado === 'Operativo').length,
+        operativos: cache.equipos.filter(e => (e.estado || '').toUpperCase() === 'OPERATIVO').length,
         total: cache.equipos.length,
-        enReparacion: 0
+        enReparacion: cache.equipos.filter(e => (e.estado || '').toUpperCase() === 'EN REPARACIÓN' || (e.estado || '').toUpperCase() === 'EN REPARACION').length
     });
 
     const getHistorialEquipo = () => [];
@@ -615,6 +615,11 @@ const DataService = (() => {
     const getVisitasByCliente = (clienteId) => {
         if (!clienteId) return [];
         return (cache.visitas || []).filter(v => v.clienteId === clienteId || v.cliente_id === clienteId || v.cliente?.id === clienteId);
+    };
+
+    const getVisitasByContrato = (contratoId) => {
+        if (!contratoId) return [];
+        return (cache.visitas || []).filter(v => v.contratoId === contratoId || v.contrato_id === contratoId || v.contrato?.id === contratoId || v.contrato?.contratoId === contratoId);
     };
 
     const getVisitasByMonth = (year, month) => {
@@ -850,13 +855,15 @@ const DataService = (() => {
     const getDashboardStats = () => {
         // Calcular estadísticas localmente desde el caché
         // Manejar tanto formato legacy como Supabase
-        const clientesActivos = cache.clientes.filter(c =>
-            (c.estado === 'Activo' || c.status === 'Activo')
-        ).length;
+        const clientesActivos = cache.clientes.filter(c => {
+            const estado = (c.estado || c.status || '').toUpperCase();
+            return estado === 'ACTIVO';
+        }).length;
 
-        const contratosActivos = cache.contratos.filter(c =>
-            (c.estadoContrato === 'Activo' || c.estado_contrato === 'Activo' || c.status === 'Activo')
-        ).length;
+        const contratosActivos = cache.contratos.filter(c => {
+            const estado = (c.estadoContrato || c.estado_contrato || c.status || '').toUpperCase();
+            return estado === 'ACTIVO';
+        }).length;
 
         // Visitas del mes actual
         const today = new Date();
@@ -869,7 +876,10 @@ const DataService = (() => {
 
         // Calcular ingresos del mes desde contratos activos
         const ingresosMes = cache.contratos
-            .filter(c => c.estadoContrato === 'Activo' || c.estado_contrato === 'Activo' || c.status === 'Activo')
+            .filter(c => {
+                const estado = (c.estadoContrato || c.estado_contrato || c.status || '').toUpperCase();
+                return estado === 'ACTIVO';
+            })
             .reduce((sum, c) => {
                 const valor = parseFloat(c.valorContrato || c.valor_contrato || c.valor || 0);
                 return sum + valor;
@@ -962,15 +972,22 @@ const DataService = (() => {
 
         // Ingresos de contratos activos 
         const ingresosTotales = cache.contratos
-            .filter(c => c.estadoContrato === 'Activo' || c.status === 'Activo')
+            .filter(c => {
+                const estado = (c.estadoContrato || c.status || '').toUpperCase();
+                return estado === 'ACTIVO';
+            })
             .reduce((sum, c) => sum + (parseFloat(c.valorContrato || c.valor || 0)), 0);
 
-        const contratosActivos = cache.contratos.filter(c => c.estadoContrato === 'Activo' || c.status === 'Activo').length;
+        const contratosActivos = cache.contratos.filter(c => {
+            const estado = (c.estadoContrato || c.status || '').toUpperCase();
+            return estado === 'ACTIVO';
+        }).length;
 
         // Servicios por Técnico
         const tecnicoMap = {};
         filteredVisitas.forEach(v => {
-            const t = v.usuarioSoporte || 'Sin asignar';
+            const techObj = cache.users.find(u => u.id === v.usuarioSoporte);
+            const t = techObj ? (techObj.name || techObj.username) : (v.usuarioSoporte || 'SIN ASIGNAR');
             tecnicoMap[t] = (tecnicoMap[t] || 0) + 1;
         });
         const serviciosPorTecnico = Object.entries(tecnicoMap)
@@ -979,8 +996,8 @@ const DataService = (() => {
 
         // Servicios por Tipo
         const serviciosPorTipo = {
-            fisica: filteredVisitas.filter(v => v.tipoVisita === 'Física').length,
-            remota: filteredVisitas.filter(v => v.tipoVisita === 'Remota').length
+            fisica: filteredVisitas.filter(v => (v.tipoVisita || '').toUpperCase() === 'FÍSICA').length,
+            remota: filteredVisitas.filter(v => (v.tipoVisita || '').toUpperCase() === 'REMOTA').length
         };
 
         // Contrato vs Eventual
@@ -1393,10 +1410,6 @@ const DataService = (() => {
         valorTotal: cache.pedidos?.reduce((sum, p) => sum + (p.total || 0), 0) || 0
     });
 
-    const getContractTemplates = () => cache.contractTemplates;
-    const getContractTemplateById = () => null;
-    const saveContractTemplate = () => { };
-    const deleteContractTemplate = () => { };
 
     // ========== EMPLEADOS ==========
     const getEmpleadosSync = () => [...(cache.empleados || [])];
@@ -1483,6 +1496,40 @@ const DataService = (() => {
         throw new Error(res?.error || 'Error al eliminar empleado');
     };
 
+    // ========== CONTRACT TEMPLATES ==========
+    const getContractTemplates = () => {
+        try {
+            if (!cache.contractTemplates || cache.contractTemplates.length === 0) {
+                const stored = localStorage.getItem('alltech_contract_templates');
+                if (stored) cache.contractTemplates = JSON.parse(stored);
+            }
+        } catch (e) { }
+        return cache.contractTemplates || [];
+    };
+
+    const getContractTemplateById = (id) => {
+        const templates = getContractTemplates();
+        return templates.find(t => t.id === id);
+    };
+
+    const saveContractTemplate = (template) => {
+        const templates = getContractTemplates();
+        const idx = templates.findIndex(t => t.id === template.id);
+        if (idx !== -1) templates[idx] = template;
+        else templates.push(template);
+        cache.contractTemplates = templates;
+        try { localStorage.setItem('alltech_contract_templates', JSON.stringify(templates)); } catch (e) { }
+        return true;
+    };
+
+    const deleteContractTemplate = (id) => {
+        let templates = getContractTemplates();
+        templates = templates.filter(t => t.id !== id);
+        cache.contractTemplates = templates;
+        try { localStorage.setItem('alltech_contract_templates', JSON.stringify(templates)); } catch (e) { }
+        return true;
+    };
+
     const resetData = () => location.reload();
 
 
@@ -1497,12 +1544,13 @@ const DataService = (() => {
 
         // Contratos
         getContratosSync, getContratosFiltered, getContratoById, getContratosByCliente, createContrato, updateContrato, deleteContrato, getContratosStats, getContratosProximosAVencer,
+        getContractTemplates, getContractTemplateById, saveContractTemplate, deleteContractTemplate,
 
         // Equipos
         getEquiposSync, getEquiposFiltered, getEquipoById, getEquiposByCliente, createEquipo, updateEquipo, deleteEquipo, getEquiposStats, getHistorialEquipo,
 
         // Visitas
-        getVisitasSync, getVisitasFiltered, getVisitaById, getVisitasByCliente, getVisitasByMonth, createVisita, updateVisita, deleteVisita, getVisitasStats,
+        getVisitasSync, getVisitasFiltered, getVisitaById, getVisitasByCliente, getVisitasByContrato, getVisitasByMonth, createVisita, updateVisita, deleteVisita, getVisitasStats,
 
         // Config & Auth
         getConfig, updateConfig, getUsers, getUsersSync, getUserByUsername, createUser, updateUser, deleteUser, authenticateUser,

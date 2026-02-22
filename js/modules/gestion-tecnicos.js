@@ -190,8 +190,8 @@ const GestionTecnicosModule = (() => {
                                 <td><span class="font-bold">${p.numero_recibo || 'N/A'}</span></td>
                                 <td>${p.tecnico?.full_name || 'Desconocido'}</td>
                                 <td>${formatDate(p.periodo_inicio)} - ${formatDate(p.periodo_fin)}</td>
-                                <td>$${parseFloat(p.total_servicios).toFixed(2)}</td>
-                                <td><span class="text-success font-bold">$${parseFloat(p.monto_pago).toFixed(2)}</span></td>
+                                <td>C$${parseFloat(p.total_servicios).toFixed(2)}</td>
+                                <td><span class="text-success font-bold">C$${parseFloat(p.monto_pago).toFixed(2)}</span></td>
                                 <td>${formatDateTime(p.fecha_pago)}</td>
                                 <td style="text-align: right;">
                                     <button class="btn btn--ghost btn--icon btn--sm" onclick="GestionTecnicosModule.printReceipt('${p.id}')" title="Imprimir Recibo">
@@ -345,7 +345,7 @@ const GestionTecnicosModule = (() => {
         }
     };
 
-    const renderPaymentSummary = (visits, total) => {
+    const renderPaymentSummary = (visits, total, tipoCambio = 36.6) => {
         const pagoMonto = total * 0.5;
 
         if (visits.length === 0) {
@@ -363,11 +363,11 @@ const GestionTecnicosModule = (() => {
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
                 <span class="font-semibold">Total Bruto Servicios:</span>
-                <span class="font-bold">$${total.toFixed(2)}</span>
+                <span class="font-bold">C$${total.toFixed(2)}</span>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; padding-top: var(--spacing-sm); border-top: 1px solid var(--border-color);">
                 <span class="font-bold" style="font-size: var(--font-size-lg);">Monto a Pagar (50%):</span>
-                <span class="font-bold text-success" style="font-size: var(--font-size-2xl);">$${pagoMonto.toFixed(2)}</span>
+                <span class="font-bold text-success" style="font-size: var(--font-size-2xl);">C$${pagoMonto.toFixed(2)}</span>
             </div>
             <div style="margin-top: var(--spacing-md); max-height: 150px; overflow-y: auto;">
                 <table class="data-table data-table--compact">
@@ -379,13 +379,21 @@ const GestionTecnicosModule = (() => {
                         </tr>
                     </thead>
                     <tbody>
-                        ${visits.map(v => `
+                        ${visits.map(v => {
+            const isNIO = v.moneda === 'NIO';
+            const orig = (parseFloat(v.costo_servicio) || 0);
+            const calc = isNIO ? orig : orig * tipoCambio;
+            return `
                             <tr>
                                 <td>${formatDate(v.fecha_inicio)}</td>
                                 <td style="font-size: 11px;">${v.tipo_visita}</td>
-                                <td style="text-align: right;">$${(parseFloat(v.costo_servicio) || 0).toFixed(2)}</td>
+                                <td style="text-align: right;">
+                                    <div style="font-weight: bold;">C$${calc.toFixed(2)}</div>
+                                    <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">${!isNIO && orig > 0 ? `($${orig.toFixed(2)} x ${tipoCambio})` : ''}</div>
+                                </td>
                             </tr>
-                        `).join('')}
+                            `;
+        }).join('')}
                     </tbody>
                 </table>
             </div>
@@ -417,9 +425,19 @@ const GestionTecnicosModule = (() => {
             console.warn('🔍 Debug: Total visits for tech (ignoring payment status):', allVisits.length);
         }
 
-        const total = visits.reduce((sum, v) => sum + (parseFloat(v.costo_servicio) || 0), 0);
+        let tipoCambio = 36.6;
+        try {
+            const cacheConfig = typeof DataService.getConfig === 'function' ? DataService.getConfig() : null;
+            if (cacheConfig && cacheConfig.tipoCambio) tipoCambio = parseFloat(cacheConfig.tipoCambio);
+        } catch (error) { }
 
-        summaryDiv.innerHTML = renderPaymentSummary(visits, total);
+        const total = visits.reduce((sum, v) => {
+            const costo = parseFloat(v.costo_servicio) || 0;
+            if (v.moneda === 'NIO') return sum + costo;
+            return sum + (costo * tipoCambio);
+        }, 0);
+
+        summaryDiv.innerHTML = renderPaymentSummary(visits, total, tipoCambio);
         btnSave.disabled = (visits.length === 0);
     };
 
@@ -480,7 +498,17 @@ const GestionTecnicosModule = (() => {
             fechaFin: end
         });
 
-        const totalCosto = visits.reduce((sum, v) => sum + (parseFloat(v.costo_servicio) || 0), 0);
+        let tipoCambio = 36.6;
+        try {
+            const cacheConfig = typeof DataService.getConfig === 'function' ? DataService.getConfig() : null;
+            if (cacheConfig && cacheConfig.tipoCambio) tipoCambio = parseFloat(cacheConfig.tipoCambio);
+        } catch (error) { }
+
+        const totalCosto = visits.reduce((sum, v) => {
+            const costo = parseFloat(v.costo_servicio) || 0;
+            if (v.moneda === 'NIO') return sum + costo;
+            return sum + (costo * tipoCambio);
+        }, 0);
         const completadas = visits.filter(v => v.trabajo_realizado).length;
         const antiguedad = await DataService.getAntiguedadTecnico(techId);
 
@@ -506,7 +534,7 @@ const GestionTecnicosModule = (() => {
                         </div>
                         <div style="padding: var(--spacing-md); background: var(--bg-secondary); border-radius: var(--border-radius-md);">
                             <div class="text-xs text-muted">Monto Generado</div>
-                            <div class="font-bold" style="font-size: var(--font-size-xl);">$${totalCosto.toFixed(2)}</div>
+                            <div class="font-bold" style="font-size: var(--font-size-xl);">C$${totalCosto.toFixed(2)}</div>
                         </div>
                         <div style="padding: var(--spacing-md); background: var(--bg-secondary); border-radius: var(--border-radius-md);">
                             <div class="text-xs text-muted">Fecha Alta</div>
@@ -531,7 +559,7 @@ const GestionTecnicosModule = (() => {
                                     <td>${v.cliente?.empresa || 'N/A'}</td>
                                     <td>${v.tipo_visita}</td>
                                     <td><span class="badge ${v.trabajo_realizado ? 'badge--success' : 'badge--warning'}">${v.trabajo_realizado ? 'Realizado' : 'Pendiente'}</span></td>
-                                    <td style="text-align: right;">$${(parseFloat(v.costo_servicio) || 0).toFixed(2)}</td>
+                                    <td style="text-align: right;">${v.moneda === 'NIO' ? 'C$' : '$'}${(parseFloat(v.costo_servicio) || 0).toFixed(2)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>

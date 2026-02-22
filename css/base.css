@@ -119,6 +119,11 @@ select {
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
+input:not([type="password"]):not([type="email"]):not([type="color"]):not([type="url"]):not([type="number"]):not([type="date"]):not([type="time"]):not([type="file"]):not([type="month"]):not([type="week"]),
+textarea {
+    text-transform: uppercase;
+}
+
 input:focus,
 textarea:focus,
 select:focus {

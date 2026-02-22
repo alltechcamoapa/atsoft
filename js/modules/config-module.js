@@ -899,7 +899,7 @@ const ConfigModule = (() => {
             <div class="form-group">
               <label class="form-label">Rol</label>
               <select name="role" class="form-select" required onchange="ConfigModule.toggleModulesSelector(this.value)">
-                ${['Admin', 'Tecnico', 'Vendedor'].map(r => `<option value="${r}">${r}</option>`).join('')}
+                ${['Administrador', 'Tecnico', 'Ejecutivo de Ventas'].map(r => `<option value="${r}">${r}</option>`).join('')}
               </select>
             </div>
 
@@ -932,7 +932,7 @@ const ConfigModule = (() => {
   const toggleModulesSelector = (role) => {
     const selector = document.getElementById('modulesSelector');
     if (selector) {
-      if (role === 'Admin') {
+      if (role === 'Administrador' || role === 'Admin') {
         selector.style.display = 'none';
       } else {
         selector.style.display = 'block';
@@ -946,7 +946,7 @@ const ConfigModule = (() => {
     const data = Object.fromEntries(formData.entries());
 
     // Handle allowedModules checkboxes
-    if (data.role !== 'Admin') {
+    if (data.data.role !== 'Administrador' && data.role !== 'Admin') {
       const checkboxes = event.target.querySelectorAll('input[name="allowedModules"]:checked');
       data.allowedModules = Array.from(checkboxes).map(cb => cb.value);
     } else {
