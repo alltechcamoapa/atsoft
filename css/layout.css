@@ -419,6 +419,8 @@
 @media (max-width: 1024px) {
     .sidebar {
         transform: translateX(-100%);
+        animation: none !important;
+        /* Fixes sidebar flash bug on tablets */
     }
 
     .sidebar.open {

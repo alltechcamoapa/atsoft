@@ -13,17 +13,17 @@ const App = (() => {
     const menuItems = [
       { id: 'dashboard', label: 'Dashboard', icon: Icons.home },
       { id: 'clientes', label: 'Clientes', icon: Icons.users },
-      { id: 'contratos', label: 'Contratos', icon: Icons.fileText },
-      { id: 'visitas', label: 'Visitas / Servicios', icon: Icons.wrench },
       { id: 'pedidos', label: 'Pedidos', icon: Icons.shoppingCart },
-      { id: 'proformas', label: 'Proformas', icon: Icons.fileText },
       { id: 'productos', label: 'Productos / Servicios', icon: Icons.package },
       { id: 'equipos', label: 'Equipos', icon: Icons.monitor },
+      { id: 'contratos', label: 'Contratos', icon: Icons.fileText },
+      { id: 'visitas', label: 'Visitas / Servicios', icon: Icons.wrench },
       { id: 'software', label: 'Software', icon: Icons.monitor },
-      { id: 'prestaciones', label: 'Prestaciones', icon: Icons.dollarSign },
-      { id: 'calendario', label: 'Calendario', icon: Icons.calendar },
-      { id: 'reportes', label: 'Reportes', icon: Icons.barChart },
       { id: 'gestion-tecnicos', label: 'Gestión de Técnicos', icon: Icons.users },
+      { id: 'calendario', label: 'Calendario', icon: Icons.calendar },
+      { id: 'proformas', label: 'Proformas', icon: Icons.fileText },
+      { id: 'prestaciones', label: 'Prestaciones', icon: Icons.dollarSign },
+      { id: 'reportes', label: 'Reportes', icon: Icons.barChart },
       { id: 'configuracion', label: 'Configuración', icon: Icons.settings }
     ];
 
@@ -80,16 +80,44 @@ const App = (() => {
         
         <nav class="sidebar__nav">
           <ul class="sidebar__menu">
-            ${visibleItems.map(item => `
-              <li class="sidebar__menu-item">
-                <a href="#${item.id}" 
-                   class="sidebar__menu-link ${currentModule === item.id ? 'active' : ''}"
-                   data-module="${item.id}">
-                  <span class="sidebar__menu-icon">${item.icon}</span>
-                  ${item.label}
-                </a>
-              </li>
-            `).join('')}
+            ${(() => {
+        const groups = {
+          'Principal': [],
+          'Servicios Técnicos': [],
+          'Administración': []
+        };
+
+        visibleItems.forEach(item => {
+          if (['contratos', 'visitas', 'software', 'gestion-tecnicos', 'calendario', 'proformas'].includes(item.id)) {
+            groups['Servicios Técnicos'].push(item);
+          } else if (['prestaciones', 'reportes', 'configuracion'].includes(item.id)) {
+            groups['Administración'].push(item);
+          } else {
+            groups['Principal'].push(item);
+          }
+        });
+
+        return Object.entries(groups)
+          .filter(([_, items]) => items.length > 0)
+          .map(([groupName, items]) => {
+            const headerHtml = groupName !== 'Principal'
+              ? `<li class="sidebar__menu-header" style="padding: 1.5rem 1rem 0.5rem; font-size: 0.75rem; font-weight: 600; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.05em;">${groupName}</li>`
+              : '';
+
+            const itemsHtml = items.map(item => `
+                    <li class="sidebar__menu-item">
+                      <a href="#${item.id}" 
+                         class="sidebar__menu-link ${currentModule === item.id ? 'active' : ''}"
+                         data-module="${item.id}">
+                        <span class="sidebar__menu-icon">${item.icon}</span>
+                        ${item.label}
+                      </a>
+                    </li>
+                  `).join('');
+
+            return headerHtml + itemsHtml;
+          }).join('');
+      })()}
           </ul>
         </nav>
         
@@ -736,14 +764,20 @@ const App = (() => {
     // Always close sidebar before navigation (prevents flash on mobile)
     closeSidebar();
     State.setCurrentModule(module);
-    // Update hash without triggering hashchange re-render
+
+    // Update hash cleanly without triggering jump/scroll on mobile
     const currentHash = window.location.hash.slice(1);
     if (currentHash !== module) {
-      window.removeEventListener('hashchange', handleHashChange);
-      window.location.hash = module;
-      requestAnimationFrame(() => {
-        window.addEventListener('hashchange', handleHashChange);
-      });
+      if (history.pushState) {
+        history.pushState(null, null, `#${module}`);
+      } else {
+        // Fallback that might jump but works in very old browsers
+        window.removeEventListener('hashchange', handleHashChange);
+        window.location.hash = module;
+        requestAnimationFrame(() => {
+          window.addEventListener('hashchange', handleHashChange);
+        });
+      }
     }
     render();
   };
@@ -757,6 +791,7 @@ const App = (() => {
     // Verify Authentication
     if (!State.get('isAuthenticated')) {
       appContainer.innerHTML = renderLogin();
+      appContainer.dataset.shellInitialized = 'false'; // Reset shell flag
       return;
     }
 
@@ -810,17 +845,75 @@ const App = (() => {
         moduleContent = renderModulePlaceholder(currentModule);
     }
 
-    appContainer.innerHTML = `
-      ${renderSidebar()}
-      <div class="sidebar-overlay" id="sidebarOverlay"></div>
-      <main class="main">
-        ${renderHeader()}
-        <div class="content">
-          ${moduleContent}
-        </div>
-      </main>
-      ${renderBottomNav()}
-    `;
+    const titles = {
+      dashboard: 'Dashboard',
+      clientes: 'Clientes',
+      contratos: 'Contratos',
+      visitas: 'Visitas / Servicios',
+      pedidos: 'Pedidos',
+      proformas: 'Proformas / Cotizaciones',
+      productos: 'Productos y Servicios',
+      equipos: 'Equipos',
+      software: 'Software y Licencias',
+      prestaciones: 'Prestaciones Laborales',
+      calendario: 'Calendario',
+      reportes: 'Reportes',
+      'gestion-tecnicos': 'Gestión de Técnicos',
+      configuracion: 'Configuración'
+    };
+
+    // Check if the app shell is already initialized
+    const isReady = appContainer.dataset.shellInitialized === 'true' && document.querySelector('.main .content');
+
+    if (isReady) {
+      // 1. Update ONLY the module content
+      const contentEl = document.querySelector('.main .content');
+      if (contentEl) {
+        contentEl.innerHTML = moduleContent;
+      }
+
+      // 2. Update Header Title
+      const headerTitle = document.querySelector('.header__title');
+      if (headerTitle) {
+        headerTitle.textContent = titles[currentModule] || 'Dashboard';
+      }
+
+      // 3. Update active states for Sidebar
+      document.querySelectorAll('.sidebar__menu-link').forEach(link => {
+        if (link.dataset.module === currentModule) {
+          link.classList.add('active');
+        } else {
+          link.classList.remove('active');
+        }
+      });
+
+      // 4. Update active states for Bottom Nav
+      document.querySelectorAll('.pwa-bottom-nav__item').forEach(btn => {
+        if (btn.dataset.module === currentModule) {
+          btn.classList.add('pwa-bottom-nav__item--active');
+        } else {
+          btn.classList.remove('pwa-bottom-nav__item--active');
+        }
+      });
+
+    } else {
+      // First render: create the entire shell
+      appContainer.innerHTML = `
+        ${renderSidebar()}
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+        <main class="main">
+          ${renderHeader()}
+          <div class="content">
+            ${moduleContent}
+          </div>
+        </main>
+        ${renderBottomNav()}
+      `;
+
+      appContainer.dataset.shellInitialized = 'true';
+      setupMobileMenuHandlers();
+      attachEventListeners();
+    }
 
     // Initialize chart after render
     if (currentModule === 'dashboard') {
@@ -829,10 +922,8 @@ const App = (() => {
       });
     }
 
-    // Initialize Mobile UI Helpers
-    setupMobileMenuHandlers();
+    // Initialize Mobile UI Helpers only for the new content
     setupMobileTables();
-    attachEventListeners();
   }
 
   // ========== BOTTOM NAVIGATION (Mobile PWA) ==========
@@ -957,25 +1048,29 @@ const App = (() => {
     window.addEventListener('hashchange', handleHashChange);
 
     // RIPPLE EFFECT FOR BUTTONS
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('.btn, .sidebar__menu-link, .pwa-bottom-nav__item, .stat-card, .card--clickable');
-      if (btn) {
-        const rect = btn.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+    if (!window.rippleListenerAttached) {
+      document.addEventListener('click', (e) => {
+        // Removed .pwa-bottom-nav__item because it prevents issues with clicks on mobile
+        const btn = e.target.closest('.btn, .sidebar__menu-link, .stat-card, .card--clickable');
+        if (btn) {
+          const rect = btn.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
 
-        const ripple = document.createElement('span');
-        ripple.classList.add('ripple-effect');
-        ripple.style.left = `${x}px`;
-        ripple.style.top = `${y}px`;
+          const ripple = document.createElement('span');
+          ripple.classList.add('ripple-effect');
+          ripple.style.left = `${x}px`;
+          ripple.style.top = `${y}px`;
 
-        btn.appendChild(ripple);
+          btn.appendChild(ripple);
 
-        setTimeout(() => {
-          ripple.remove();
-        }, 600);
-      }
-    });
+          setTimeout(() => {
+            ripple.remove();
+          }, 600);
+        }
+      });
+      window.rippleListenerAttached = true;
+    }
   };
 
   // ========== INITIALIZATION ==========

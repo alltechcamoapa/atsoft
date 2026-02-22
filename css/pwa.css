@@ -464,7 +464,7 @@ body {
 
 /* PWA Standalone Mode - Show bottom nav AND allow sidebar toggle */
 /* PWA Standalone Mode - Show bottom nav AND allow sidebar toggle */
-@media (max-width: 767px) and (display-mode: standalone) {
+@media (max-width: 1024px) and (display-mode: standalone) {
 
     /* Keep sidebar accessible via toggle, not hidden */
     .sidebar {
