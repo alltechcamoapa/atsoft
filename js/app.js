@@ -83,12 +83,15 @@ const App = (() => {
             ${(() => {
         const groups = {
           'Principal': [],
+          'VENTAS': [],
           'Servicios Técnicos': [],
           'Administración': []
         };
 
         visibleItems.forEach(item => {
-          if (['contratos', 'visitas', 'software', 'gestion-tecnicos', 'calendario', 'proformas'].includes(item.id)) {
+          if (['proformas', 'clientes', 'pedidos', 'productos'].includes(item.id)) {
+            groups['VENTAS'].push(item);
+          } else if (['equipos', 'contratos', 'visitas', 'software', 'gestion-tecnicos', 'calendario'].includes(item.id)) {
             groups['Servicios Técnicos'].push(item);
           } else if (['prestaciones', 'reportes', 'configuracion'].includes(item.id)) {
             groups['Administración'].push(item);
@@ -99,9 +102,22 @@ const App = (() => {
 
         return Object.entries(groups)
           .filter(([_, items]) => items.length > 0)
-          .map(([groupName, items]) => {
-            const headerHtml = groupName !== 'Principal'
-              ? `<li class="sidebar__menu-header" style="padding: 1.5rem 1rem 0.5rem; font-size: 0.75rem; font-weight: 600; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 0.05em;">${groupName}</li>`
+          .map(([groupName, items], index) => {
+            const isPrincipal = groupName === 'Principal';
+            const groupId = 'sidebar-group-' + index;
+            const isActiveGroup = items.some(item => item.id === currentModule) || isPrincipal;
+            const displayStyle = isActiveGroup ? 'block' : 'none';
+            const chevronTransform = isActiveGroup ? 'rotate(180deg)' : 'rotate(0deg)';
+
+            const headerHtml = !isPrincipal
+              ? `<li class="sidebar__menu-header" 
+                     onclick="const el = document.getElementById('${groupId}'); const isHidden = el.style.display === 'none'; el.style.display = isHidden ? 'block' : 'none'; this.querySelector('svg').style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';"
+                     style="padding: 0.75rem 1rem; font-size: 0.75rem; font-weight: 600; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-radius: var(--border-radius-sm); margin: 0.5rem 0 0.25rem 0; transition: background 0.2s;" 
+                     onmouseover="this.style.background='rgba(255,255,255,0.1)'" 
+                     onmouseout="this.style.background='transparent'">
+                  ${groupName}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.3s ease; transform: ${chevronTransform};"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                 </li>`
               : '';
 
             const itemsHtml = items.map(item => `
@@ -115,7 +131,11 @@ const App = (() => {
                     </li>
                   `).join('');
 
-            return headerHtml + itemsHtml;
+            if (isPrincipal) {
+              return itemsHtml;
+            } else {
+              return headerHtml + `<ul id="${groupId}" style="display: ${displayStyle}; padding-left: 0; list-style: none; margin: 0;">${itemsHtml}</ul>`;
+            }
           }).join('');
       })()}
           </ul>
@@ -180,7 +200,7 @@ const App = (() => {
           </button>
           
           <div class="dropdown">
-            <button class="header__action-btn notification-bell ${(typeof NotificationService !== 'undefined' && NotificationService.getUnreadCount() > 0) ? 'has-notifications' : ''}" id="notificationsBtn" onclick="App.toggleNotifications()">
+            <button class="header__action-btn notification-bell ${(typeof NotificationService !== 'undefined' && NotificationService.getUnreadCount() > 0) ? 'has-notifications' : ''}" id="notificationsBtn" onclick="App.toggleNotifications(event)">
               ${Icons.bell}
               <span class="badge" style="${(typeof NotificationService !== 'undefined' && NotificationService.getUnreadCount() > 0) ? '' : 'display:none'}">${typeof NotificationService !== 'undefined' ? NotificationService.getUnreadCount() : 0}</span>
             </button>
@@ -202,7 +222,7 @@ const App = (() => {
           
           
           <div class="dropdown">
-             <button class="header__avatar-btn" onclick="App.toggleUserMenu()">
+             <button class="header__avatar-btn" onclick="App.toggleUserMenu(event)">
                  <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=1a73e8&color=fff&size=44" 
                     alt="${user?.name || 'User'}" 
                     class="header__avatar">
@@ -251,12 +271,24 @@ const App = (() => {
     const dropdown = document.getElementById('userDropdown');
     if (dropdown) dropdown.classList.remove('show');
 
-    // Log out and return to login screen
-    State.logout();
-    render();
+    // Make sure we completely sign out
+    if (typeof signOut === 'function') {
+      signOut().then(() => {
+        State.logout();
+        render();
+      }).catch(err => {
+        console.error('Logout error:', err);
+        State.logout();
+        render();
+      });
+    } else {
+      State.logout();
+      render();
+    }
   };
 
-  const toggleUserMenu = () => {
+  const toggleUserMenu = (event) => {
+    if (event) event.stopPropagation();
     const dropdown = document.getElementById('userDropdown');
     if (dropdown) dropdown.classList.toggle('show');
   };
@@ -761,8 +793,11 @@ const App = (() => {
   };
 
   const navigate = (module) => {
-    // Always close sidebar before navigation (prevents flash on mobile)
-    closeSidebar();
+    // On mobile, close always. On PC, do not auto-close so the user can see it still.
+    if (window.innerWidth <= 1024) {
+      closeSidebarForMobile();
+    }
+
     State.setCurrentModule(module);
 
     // Update hash cleanly without triggering jump/scroll on mobile
@@ -924,6 +959,11 @@ const App = (() => {
 
     // Initialize Mobile UI Helpers only for the new content
     setupMobileTables();
+
+    // Initialize Draggable FAB
+    requestAnimationFrame(() => {
+      initDraggableFAB();
+    });
   }
 
   // ========== BOTTOM NAVIGATION (Mobile PWA) ==========
@@ -958,23 +998,38 @@ const App = (() => {
 
   // ========== SIDEBAR TOGGLE ==========
   const toggleSidebar = () => {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.getElementById('sidebarOverlay');
-
-    if (sidebar) {
-      sidebar.classList.toggle('open');
-    }
-    if (overlay) {
-      overlay.classList.toggle('active');
+    if (window.innerWidth <= 1024) {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      if (sidebar) sidebar.classList.toggle('open');
+      if (overlay) overlay.classList.toggle('active');
+    } else {
+      const sidebar = document.getElementById('sidebar');
+      const main = document.querySelector('.main');
+      if (sidebar) sidebar.classList.toggle('collapsed');
+      if (main) main.classList.toggle('expanded');
     }
   };
 
-  const closeSidebar = () => {
+  const closeSidebarForMobile = () => {
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebarOverlay');
-
     if (sidebar) sidebar.classList.remove('open');
     if (overlay) overlay.classList.remove('active');
+  };
+
+  const closeSidebarForPC = () => {
+    const sidebar = document.getElementById('sidebar');
+    const main = document.querySelector('.main');
+    if (sidebar) sidebar.classList.add('collapsed');
+    if (main) main.classList.add('expanded');
+  };
+
+  const openSidebarForPC = () => {
+    const sidebar = document.getElementById('sidebar');
+    const main = document.querySelector('.main');
+    if (sidebar) sidebar.classList.remove('collapsed');
+    if (main) main.classList.remove('expanded');
   };
 
   // ========== EVENT LISTENERS ==========
@@ -1007,7 +1062,7 @@ const App = (() => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
         const module = link.dataset.module;
-        closeSidebar(); // Close sidebar after navigation on mobile
+        if (window.innerWidth <= 1024) closeSidebarForMobile();
         navigate(module);
       });
     });
@@ -1046,7 +1101,7 @@ const App = (() => {
     const sidebarOverlay = document.getElementById('sidebarOverlay');
     if (sidebarOverlay) {
       sidebarOverlay.addEventListener('click', () => {
-        closeSidebar();
+        closeSidebarForMobile();
       });
     }
 
@@ -1108,6 +1163,9 @@ const App = (() => {
     // Initial render
     render();
 
+    // Apply company styling and branding
+    updateSidebarStyle();
+
     // Initialize Realtime Sync
     if (typeof SupabaseDataService !== 'undefined' && typeof DataService !== 'undefined') {
       // Wait for potential session restore
@@ -1153,9 +1211,61 @@ const App = (() => {
 
   // ========== NOTIFICATIONS TOGGLE ==========
 
-  const toggleNotifications = () => {
+  const toggleNotifications = (event) => {
+    if (event) event.stopPropagation();
     const dropdown = document.getElementById('notificationsDropdown');
     if (dropdown) dropdown.classList.toggle('show');
+  };
+
+  // ========== FAB DRAGGABLE SUPPORT ==========
+  const initDraggableFAB = () => {
+    const fab = document.querySelector('.module-header .btn--primary');
+    if (!fab || window.innerWidth > 768) return;
+
+    let isDragging = false;
+    let startY, startYPos;
+
+    fab.addEventListener('touchstart', (e) => {
+      isDragging = true;
+      startY = e.touches[0].clientY;
+      // Get current bottom property or computed style
+      const computed = window.getComputedStyle(fab);
+      startYPos = parseInt(computed.bottom, 10) || 85;
+      fab.style.transition = 'none';
+      e.stopPropagation(); // don't trigger clicks yet
+    }, { passive: true });
+
+    fab.addEventListener('touchmove', (e) => {
+      if (!isDragging) return;
+      const currentY = e.touches[0].clientY;
+      const deltaY = startY - currentY;
+      let newBottom = startYPos + deltaY;
+
+      // Boundaries
+      if (newBottom < 85) newBottom = 85; // minimal bottom
+      if (newBottom > window.innerHeight - 100) newBottom = window.innerHeight - 100;
+
+      fab.style.bottom = newBottom + 'px';
+      // Add a tiny movement threshold to prevent triggering click when dragging
+      if (Math.abs(deltaY) > 5) {
+        fab.dataset.dragged = 'true';
+      }
+    }, { passive: true });
+
+    fab.addEventListener('touchend', (e) => {
+      isDragging = false;
+      fab.style.transition = 'bottom 0.3s ease, box-shadow 0.3s ease';
+      setTimeout(() => {
+        fab.dataset.dragged = 'false';
+      }, 50);
+    });
+
+    fab.addEventListener('click', (e) => {
+      if (fab.dataset.dragged === 'true') {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    });
   };
 
   // ========== TOAST NOTIFICATIONS ==========
@@ -1185,19 +1295,19 @@ const App = (() => {
           gap: 12px;
           padding: 14px 20px;
           background: var(--bg-secondary);
-          border-radius: var(--radius-lg);
+          border-radius: var(--border-radius-lg);
           box-shadow: var(--shadow-lg);
           z-index: 10000;
           animation: slideInRight 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
           border-left: 4px solid var(--color-info-500);
         }
-        .toast-notification--success { border-left-color: var(--color-success-500); }
-        .toast-notification--error { border-left-color: var(--color-danger-500); }
-        .toast-notification--warning { border-left-color: var(--color-warning-500); }
+        .toast-notification--success { border-left-color: var(--color-success); }
+        .toast-notification--error { border-left-color: var(--color-danger); }
+        .toast-notification--warning { border-left-color: var(--color-warning); }
         .toast-notification__icon { font-size: 18px; }
-        .toast-notification--success .toast-notification__icon { color: var(--color-success-500); }
-        .toast-notification--error .toast-notification__icon { color: var(--color-danger-500); }
-        .toast-notification--warning .toast-notification__icon { color: var(--color-warning-500); }
+        .toast-notification--success .toast-notification__icon { color: var(--color-success); }
+        .toast-notification--error .toast-notification__icon { color: var(--color-danger); }
+        .toast-notification--warning .toast-notification__icon { color: var(--color-warning); }
         .toast-notification--info .toast-notification__icon { color: var(--color-info-500); }
         .toast-notification__message { color: var(--text-primary); font-size: var(--font-size-sm); }
         @keyframes slideInRight {
@@ -1302,12 +1412,20 @@ const App = (() => {
     const logo = document.querySelector('.sidebar__logo-img');
     const companyConfig = State.get('companyConfig');
 
-    if (companyConfig && sidebar) {
-      sidebar.style.background = companyConfig.sidebarColor || '#1a73e8';
-    }
-    if (companyConfig && logo) {
-      logo.src = companyConfig.logoUrl || 'assets/logo.png';
-      logo.alt = companyConfig.name || 'ALLTECH';
+    if (companyConfig) {
+      if (sidebar) {
+        sidebar.style.background = companyConfig.sidebarColor || '#1a73e8';
+      }
+
+      if (companyConfig.brandColor) {
+        document.documentElement.style.setProperty('--color-primary-500', companyConfig.brandColor);
+        document.documentElement.style.setProperty('--bg-sidebar-active', companyConfig.brandColor);
+      }
+
+      if (logo) {
+        logo.src = companyConfig.logoUrl || 'assets/logo.png';
+        logo.alt = companyConfig.name || 'ALLTECH';
+      }
     }
 
     // Actualizar favicon dinámicamente con el logo de la empresa

@@ -18,8 +18,13 @@ const NotificationService = (() => {
         await initPushNotifications();
 
         // Generate app notifications
-        generateNotifications();
-        updateBadge();
+        refresh();
+
+        // Real-time updates: refresh manually every 60 seconds
+        setInterval(() => {
+            refresh();
+            checkAndNotifyImportantEvents();
+        }, 60000);
     };
 
     // ========== PUSH NOTIFICATIONS SETUP ==========

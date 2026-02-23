@@ -61,20 +61,22 @@ const LoginModule = (() => {
                         </div>
 
                         <!-- Biometric options -->
-                        <div style="margin-bottom: 28px; display:flex; align-items:center; justify-content:space-between;">
-                            ${window.PublicKeyCredential ? `
-                            <label style="color: #cbd5e1; font-size: 13px; display:flex; align-items:center; cursor:pointer;">
-                                <input type="checkbox" id="enableBiometric" style="margin-right: 8px;">
-                                Guardar para Huella
-                            </label>
-                            ` : '<div></div>'}
-                            
-                            ${hasSavedBiometric() ? `
-                            <button type="button" onclick="LoginModule.handleBiometricLogin()" style="background:rgba(26, 115, 232, 0.1); border:1px solid #1a73e8; border-radius: 8px; padding: 6px 12px; color:#60a5fa; font-size:13px; cursor:pointer; font-weight:600; display:flex; align-items:center; transition:all 0.2s;">
-                                 <svg style="width:16px; height:16px; margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.092a14.5 14.5 0 00-2.8-5.619m11.536-4.524A14.502 14.502 0 0012 3a14.502 14.502 0 00-6.19 1.39A8.96 8.96 0 004.5 7.5"></path></svg>
-                                 Entrar con Huella
-                            </button>
-                            ` : ''}
+                        <div style="margin-bottom: 28px; display:flex; flex-direction: column; gap: 10px;">
+                            <div style="display:flex; align-items:center; justify-content:space-between;">
+                                ${window.PublicKeyCredential ? `
+                                <label style="color: #cbd5e1; font-size: 13px; display:flex; align-items:center; cursor:pointer;">
+                                    <input type="checkbox" id="enableBiometric" style="margin-right: 8px;">
+                                    Guardar para Huella
+                                </label>
+                                ` : '<span style="color: #94a3b8; font-size: 11px;">⚠️ Huella no disponible (Requiere HTTPS)</span>'}
+                                
+                                ${hasSavedBiometric() ? `
+                                <button type="button" onclick="LoginModule.handleBiometricLogin()" style="background:rgba(26, 115, 232, 0.1); border:1px solid #1a73e8; border-radius: 8px; padding: 6px 12px; color:#60a5fa; font-size:13px; cursor:pointer; font-weight:600; display:flex; align-items:center; transition:all 0.2s;">
+                                     <svg style="width:16px; height:16px; margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.092a14.5 14.5 0 00-2.8-5.619m11.536-4.524A14.502 14.502 0 0012 3a14.502 14.502 0 00-6.19 1.39A8.96 8.96 0 004.5 7.5"></path></svg>
+                                     Entrar con Huella
+                                </button>
+                                ` : ''}
+                            </div>
                         </div>
 
                         <!-- Error message -->
@@ -104,12 +106,19 @@ const LoginModule = (() => {
 
 
     // ========== BIOMETRIC LOGIC ==========
+    const isBiometricSupported = () => {
+        return window.PublicKeyCredential !== undefined;
+    };
+
     const hasSavedBiometric = () => {
-        return !!localStorage.getItem('alltech_bio_username') && !!window.PublicKeyCredential;
+        return !!localStorage.getItem('alltech_bio_username') && isBiometricSupported();
     };
 
     const registerBiometric = async (username, password) => {
-        if (!window.PublicKeyCredential) return;
+        if (!isBiometricSupported()) {
+            console.warn('Biometría no soportada (necesita HTTPS o localhost).');
+            return;
+        }
         try {
             const challenge = new Uint8Array(32);
             window.crypto.getRandomValues(challenge);
@@ -119,7 +128,7 @@ const LoginModule = (() => {
             const credential = await navigator.credentials.create({
                 publicKey: {
                     challenge: challenge,
-                    rp: { name: "ALLTECH" },
+                    rp: { name: "ALLTECH SUPPORT" },
                     user: {
                         id: userId,
                         name: username,
@@ -138,14 +147,20 @@ const LoginModule = (() => {
                 localStorage.setItem('alltech_bio_username', btoa(encodeURIComponent(username)));
                 localStorage.setItem('alltech_bio_pwd', btoa(encodeURIComponent(password)));
                 console.log('✅ Biometric registered locally for Quick Login');
+                showSuccess('Huella vinculada con éxito. La próxima vez podrás entrar con tu huella.');
+                setTimeout(() => { hideError(); }, 3000);
             }
         } catch (e) {
             console.error("❌ Error registering biometric:", e);
+            showError("No se pudo vincular la huella. ¿Cancelaste o el dispositivo no lo soporta?");
         }
     };
 
     const handleBiometricLogin = async () => {
-        if (!window.PublicKeyCredential) return;
+        if (!isBiometricSupported()) {
+            showError("Tu navegador no soporta iniciar sesión con huella (Requiere HTTPS).");
+            return;
+        }
         try {
             const challenge = new Uint8Array(32);
             window.crypto.getRandomValues(challenge);
@@ -160,15 +175,17 @@ const LoginModule = (() => {
             if (assertion) {
                 const uMatch = localStorage.getItem('alltech_bio_username');
                 const pMatch = localStorage.getItem('alltech_bio_pwd');
-                
-                if(uMatch && pMatch) {
+
+                if (uMatch && pMatch) {
                     const u = decodeURIComponent(atob(uMatch));
                     const p = decodeURIComponent(atob(pMatch));
-                    
+
                     document.getElementById('loginUsername').value = u;
                     document.getElementById('loginPassword').value = p;
+
+                    showSuccess('Huella reconocida. Iniciando sesión...');
                     // Procede al login directamente
-                    handleLogin(true); // pass skipBiometricCheck if needed but no
+                    handleLogin();
                 } else {
                     showError("No se encontraron credenciales guardadas. Inicia sesión con contraseña.");
                 }
