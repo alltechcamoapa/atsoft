@@ -1421,6 +1421,65 @@ const SupabaseDataService = (() => {
         return { success: true };
     };
 
+    // ========== PRESTACIONES: COMPLEMENTOS ==========
+    const callTableSelect = async (table) => {
+        if (!client) return [];
+        const { data, error } = await client.from(table).select('*');
+        if (error) { console.error(`Error fetching ${table}:`, error); return []; }
+        return data || [];
+    };
+
+    const callTableInsert = async (table, data) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data: result, error } = await client.from(table).insert([data]).select().single();
+        if (error) return { error: handleSupabaseError(error, `create_${table}`) };
+        return { success: true, data: result };
+    };
+
+    const callTableUpdate = async (table, id, data) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data: result, error } = await client.from(table).update(data).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, `update_${table}`) };
+        return { success: true, data: result };
+    };
+
+    const callTableDelete = async (table, id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from(table).delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, `delete_${table}`) };
+        return { success: true };
+    };
+
+    const getHorasExtrasSync = async () => callTableSelect('horas_extras');
+    const createHoraExtra = async (data) => callTableInsert('horas_extras', data);
+    const updateHoraExtra = async (id, data) => callTableUpdate('horas_extras', id, data);
+    const deleteHoraExtra = async (id) => callTableDelete('horas_extras', id);
+
+    const getBonificacionesSync = async () => callTableSelect('bonificaciones');
+    const createBonificacion = async (data) => callTableInsert('bonificaciones', data);
+    const updateBonificacion = async (id, data) => callTableUpdate('bonificaciones', id, data);
+    const deleteBonificacion = async (id) => callTableDelete('bonificaciones', id);
+
+    const getAdelantosSync = async () => callTableSelect('adelantos');
+    const createAdelanto = async (data) => callTableInsert('adelantos', data);
+    const updateAdelanto = async (id, data) => callTableUpdate('adelantos', id, data);
+    const deleteAdelanto = async (id) => callTableDelete('adelantos', id);
+
+    const getFeriadosTrabajadosSync = async () => callTableSelect('feriados_trabajados');
+    const createFeriadoTrabajado = async (data) => callTableInsert('feriados_trabajados', data);
+    const updateFeriadoTrabajado = async (id, data) => callTableUpdate('feriados_trabajados', id, data);
+    const deleteFeriadoTrabajado = async (id) => callTableDelete('feriados_trabajados', id);
+
+    const getPrestamosSync = async () => callTableSelect('prestamos_empleados');
+    const createPrestamo = async (data) => callTableInsert('prestamos_empleados', data);
+    const updatePrestamo = async (id, data) => callTableUpdate('prestamos_empleados', id, data);
+    const deletePrestamo = async (id) => callTableDelete('prestamos_empleados', id);
+
+    const getAbonosPrestamosSync = async () => callTableSelect('abonos_prestamos');
+    const createAbonoPrestamo = async (data) => callTableInsert('abonos_prestamos', data);
+    const updateAbonoPrestamo = async (id, data) => callTableUpdate('abonos_prestamos', id, data);
+    const deleteAbonoPrestamo = async (id) => callTableDelete('abonos_prestamos', id);
+
     // ========== PRESTACIONES: NÓMINAS ==========
     const getNominasByEmpleado = async (empleadoId) => {
         if (!client) return [];
@@ -2048,6 +2107,14 @@ const SupabaseDataService = (() => {
         getRecentNominas,
         getAllNominas,
         deleteNomina,
+
+        // Prestaciones Complementos
+        getHorasExtrasSync, createHoraExtra, updateHoraExtra, deleteHoraExtra,
+        getBonificacionesSync, createBonificacion, updateBonificacion, deleteBonificacion,
+        getAdelantosSync, createAdelanto, updateAdelanto, deleteAdelanto,
+        getFeriadosTrabajadosSync, createFeriadoTrabajado, updateFeriadoTrabajado, deleteFeriadoTrabajado,
+        getPrestamosSync, createPrestamo, updatePrestamo, deletePrestamo,
+        getAbonosPrestamosSync, createAbonoPrestamo, updateAbonoPrestamo, deleteAbonoPrestamo,
 
         // Ausencias
         getAusenciasByEmpleado,

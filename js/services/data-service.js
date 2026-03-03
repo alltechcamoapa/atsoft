@@ -97,21 +97,10 @@ const DataService = (() => {
                 SupabaseDataService.init();
             }
 
-            // Cargar datos principales en paralelo
             const [
-                clientes,
-                contratos,
-                equipos,
-                visitas,
-                productos,
-                proformas,
-                pedidos,
-                empleados,
-                nominas,
-                software,
-                users,
-                pagosTecnicos,
-                ausencias
+                clientes, contratos, equipos, visitas, productos, proformas, pedidos,
+                empleados, nominas, software, users, pagosTecnicos, ausencias,
+                horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -125,7 +114,13 @@ const DataService = (() => {
                 SupabaseDataService.getSoftwareSync(),
                 SupabaseDataService.getUsersSync(),
                 SupabaseDataService.getPagosTecnicos(),
-                SupabaseDataService.getAllAusencias?.() || Promise.resolve([])
+                SupabaseDataService.getAllAusencias?.() || Promise.resolve([]),
+                SupabaseDataService.getHorasExtrasSync?.() || Promise.resolve([]),
+                SupabaseDataService.getBonificacionesSync?.() || Promise.resolve([]),
+                SupabaseDataService.getAdelantosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getFeriadosTrabajadosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getPrestamosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([])
             ]);
 
             // Normalizar y almacenar en caché
@@ -189,6 +184,14 @@ const DataService = (() => {
                 empleadoNombre: a.empleado?.nombre || 'Desconocido'
             }));
 
+            // Assign raw records
+            cache.horasExtras = horasExtras || [];
+            cache.bonificaciones = bonificaciones || [];
+            cache.adelantos = adelantos || [];
+            cache.feriadosTrabajados = feriadosTrabajados || [];
+            cache.prestamosEmpleados = prestamosEmpleados || [];
+            cache.abonosPrestamos = abonosPrestamos || [];
+
             // Cargar permisos por defecto (hardcoded por seguridad)
             cache.permissions = loadDefaultPermissions();
 
@@ -219,16 +222,9 @@ const DataService = (() => {
         try {
             // Recargar todos los datos en paralelo
             const [
-                clientes,
-                contratos,
-                equipos,
-                visitas,
-                productos,
-                proformas,
-                pedidos,
-                nominas,
-                software,
-                ausencias
+                clientes, contratos, equipos, visitas, productos, proformas, pedidos,
+                empleados, nominas, software, users, pagosTecnicos, ausencias,
+                horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -237,9 +233,18 @@ const DataService = (() => {
                 SupabaseDataService.getProductosSync(),
                 SupabaseDataService.getProformasSync(),
                 SupabaseDataService.getPedidosSync(),
+                SupabaseDataService.getEmpleadosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getRecentNominas?.() || Promise.resolve([]),
                 SupabaseDataService.getSoftwareSync(),
-                SupabaseDataService.getAllAusencias?.() || Promise.resolve([])
+                SupabaseDataService.getUsersSync(),
+                SupabaseDataService.getPagosTecnicos(),
+                SupabaseDataService.getAllAusencias?.() || Promise.resolve([]),
+                SupabaseDataService.getHorasExtrasSync?.() || Promise.resolve([]),
+                SupabaseDataService.getBonificacionesSync?.() || Promise.resolve([]),
+                SupabaseDataService.getAdelantosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getFeriadosTrabajadosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getPrestamosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([])
             ]);
 
             // Actualizar caché
@@ -266,8 +271,39 @@ const DataService = (() => {
                 clienteId: p.cliente_id,
                 cliente: p.cliente ? normalizeSupabaseData('clientes', p.cliente) : null
             }));
-            cache.nominas = (nominas || []).map(n => ({ ...n, empleadoNombre: n.empleado?.nombre || 'Desconocido', empleadoCargo: n.empleado?.cargo || '-' }));
-            cache.software = (software || []).map(s => ({ ...normalizeSupabaseData('software', s), cliente: s.cliente ? normalizeSupabaseData('clientes', s.cliente) : null }));
+            cache.empleados = (empleados || []).map(e => ({
+                ...e,
+                fechaAlta: e.fecha_alta || e.fechaAlta,
+                salarioTotal: parseFloat(e.salario_total) || e.salarioTotal || 0,
+                tipoSalario: e.tipo_salario || e.tipoSalario,
+                tipoContrato: e.tipo_contrato || e.tipoContrato,
+                tiempoContrato: e.tiempo_contrato || e.tiempoContrato,
+                vacacionesTomadas: e.vacaciones_tomadas || e.vacacionesTomadas || 0,
+                aguinaldoPagado: e.aguinaldo_pagado || e.aguinaldoPagado || false
+            }));
+
+            cache.users = (users || []).map(u => ({
+                ...u,
+                role: u.role || 'Usuario', // Fallback
+                allowedModules: u.allowedModules || []
+            }));
+
+            cache.nominas = (nominas || []).map(n => ({
+                ...n,
+                empleadoNombre: n.empleado?.nombre || 'Desconocido',
+                empleadoCargo: n.empleado?.cargo || '-'
+            }));
+
+            cache.pagosTecnicos = (pagosTecnicos || []).map(p => ({
+                ...p,
+                tecnicoNombre: p.tecnico?.full_name || 'Desconocido'
+            }));
+
+            cache.software = (software || []).map(s => ({
+                ...normalizeSupabaseData('software', s),
+                cliente: s.cliente ? normalizeSupabaseData('clientes', s.cliente) : null
+            }));
+
             cache.ausencias = (ausencias || []).map(a => ({
                 ...normalizeSupabaseData('ausencias', a),
                 empleadoNombre: a.empleado?.nombre || 'Desconocido'
@@ -1695,6 +1731,133 @@ const DataService = (() => {
         },
         getVisitasPorTecnico: (id, filter) => SupabaseDataService.getVisitasPorTecnico(id, filter),
         getAntiguedadTecnico: (id) => SupabaseDataService.getAntiguedadTecnico(id),
+
+        // Prestaciones Complementos
+        getHorasExtrasSync: () => [...(cache.horasExtras || [])],
+        createHoraExtra: async (data) => {
+            const res = await SupabaseDataService.createHoraExtra(data);
+            if (res.success) { cache.horasExtras.unshift(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        updateHoraExtra: async (id, data) => {
+            const res = await SupabaseDataService.updateHoraExtra(id, data);
+            if (res.success) {
+                const idx = cache.horasExtras.findIndex(x => x.id === id);
+                if (idx !== -1) cache.horasExtras[idx] = { ...cache.horasExtras[idx], ...res.data };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        deleteHoraExtra: async (id) => {
+            const res = await SupabaseDataService.deleteHoraExtra(id);
+            if (res.success) { cache.horasExtras = cache.horasExtras.filter(x => x.id !== id); return true; }
+            throw new Error(res.error);
+        },
+
+        getBonificacionesSync: () => [...(cache.bonificaciones || [])],
+        createBonificacion: async (data) => {
+            const res = await SupabaseDataService.createBonificacion(data);
+            if (res.success) { cache.bonificaciones.unshift(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        updateBonificacion: async (id, data) => {
+            const res = await SupabaseDataService.updateBonificacion(id, data);
+            if (res.success) {
+                const idx = cache.bonificaciones.findIndex(x => x.id === id);
+                if (idx !== -1) cache.bonificaciones[idx] = { ...cache.bonificaciones[idx], ...res.data };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        deleteBonificacion: async (id) => {
+            const res = await SupabaseDataService.deleteBonificacion(id);
+            if (res.success) { cache.bonificaciones = cache.bonificaciones.filter(x => x.id !== id); return true; }
+            throw new Error(res.error);
+        },
+
+        getAdelantosSync: () => [...(cache.adelantos || [])],
+        createAdelanto: async (data) => {
+            const res = await SupabaseDataService.createAdelanto(data);
+            if (res.success) { cache.adelantos.unshift(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        updateAdelanto: async (id, data) => {
+            const res = await SupabaseDataService.updateAdelanto(id, data);
+            if (res.success) {
+                const idx = cache.adelantos.findIndex(x => x.id === id);
+                if (idx !== -1) cache.adelantos[idx] = { ...cache.adelantos[idx], ...res.data };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        deleteAdelanto: async (id) => {
+            const res = await SupabaseDataService.deleteAdelanto(id);
+            if (res.success) { cache.adelantos = cache.adelantos.filter(x => x.id !== id); return true; }
+            throw new Error(res.error);
+        },
+
+        getFeriadosTrabajadosSync: () => [...(cache.feriadosTrabajados || [])],
+        createFeriadoTrabajado: async (data) => {
+            const res = await SupabaseDataService.createFeriadoTrabajado(data);
+            if (res.success) { cache.feriadosTrabajados.unshift(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        updateFeriadoTrabajado: async (id, data) => {
+            const res = await SupabaseDataService.updateFeriadoTrabajado(id, data);
+            if (res.success) {
+                const idx = cache.feriadosTrabajados.findIndex(x => x.id === id);
+                if (idx !== -1) cache.feriadosTrabajados[idx] = { ...cache.feriadosTrabajados[idx], ...res.data };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        deleteFeriadoTrabajado: async (id) => {
+            const res = await SupabaseDataService.deleteFeriadoTrabajado(id);
+            if (res.success) { cache.feriadosTrabajados = cache.feriadosTrabajados.filter(x => x.id !== id); return true; }
+            throw new Error(res.error);
+        },
+
+        getPrestamosSync: () => [...(cache.prestamosEmpleados || [])],
+        createPrestamo: async (data) => {
+            const res = await SupabaseDataService.createPrestamo(data);
+            if (res.success) { cache.prestamosEmpleados.unshift(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        updatePrestamo: async (id, data) => {
+            const res = await SupabaseDataService.updatePrestamo(id, data);
+            if (res.success) {
+                const idx = cache.prestamosEmpleados.findIndex(x => x.id === id);
+                if (idx !== -1) cache.prestamosEmpleados[idx] = { ...cache.prestamosEmpleados[idx], ...res.data };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        deletePrestamo: async (id) => {
+            const res = await SupabaseDataService.deletePrestamo(id);
+            if (res.success) { cache.prestamosEmpleados = cache.prestamosEmpleados.filter(x => x.id !== id); return true; }
+            throw new Error(res.error);
+        },
+
+        getAbonosPrestamosSync: () => [...(cache.abonosPrestamos || [])],
+        createAbonoPrestamo: async (data) => {
+            const res = await SupabaseDataService.createAbonoPrestamo(data);
+            if (res.success) { cache.abonosPrestamos.unshift(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        updateAbonoPrestamo: async (id, data) => {
+            const res = await SupabaseDataService.updateAbonoPrestamo(id, data);
+            if (res.success) {
+                const idx = cache.abonosPrestamos.findIndex(x => x.id === id);
+                if (idx !== -1) cache.abonosPrestamos[idx] = { ...cache.abonosPrestamos[idx], ...res.data };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        deleteAbonoPrestamo: async (id) => {
+            const res = await SupabaseDataService.deleteAbonoPrestamo(id);
+            if (res.success) { cache.abonosPrestamos = cache.abonosPrestamos.filter(x => x.id !== id); return true; }
+            throw new Error(res.error);
+        }
     };
 })();
 

@@ -202,9 +202,7 @@ const PrestacionesModule = (() => {
 
     if (!data.id) {
       // Generate Sequence AD-XXXX
-      const adelantos = JSON.parse(localStorage.getItem('adelantos') || '[]');
-    const feriados = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
-    const abonos_prestamos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
+      const adelantos = DataService.getAdelantosSync?.() || [];
       let max = 0;
       adelantos.forEach(a => {
         if (a.numero && a.numero.startsWith('AD-')) {
@@ -880,7 +878,7 @@ const PrestacionesModule = (() => {
   // ========== FERIADOS TAB ==========
 
   const renderFeriadosTab = () => {
-    const records = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
+    const records = DataService.getFeriadosTrabajadosSync?.() || [];
     const totalMonto = records.reduce((sum, r) => sum + (parseFloat(r.monto) || 0), 0);
 
     // Agrupar visualmente por fecha si se quiere, o mostrarlos como lista. Aquí se muestran como lista.
@@ -1012,12 +1010,12 @@ const PrestacionesModule = (() => {
     document.getElementById('prestacionesModal').innerHTML = modalHTML;
   };
 
-  const saveFeriadosGrabados = (event) => {
+  const saveFeriadosGrabados = async (event) => {
     event.preventDefault();
     const fd = new FormData(event.target);
     const fecha = fd.get('fecha');
-    const tipo = fd.get('tipo');
-    const descripcion = fd.get('descripcion');
+    // const tipo = fd.get('tipo');
+    // const descripcion = fd.get('descripcion');
     const empleadosSeleccionados = fd.getAll('empleadosTrabajaron');
 
     if (!empleadosSeleccionados || empleadosSeleccionados.length === 0) {
@@ -1026,101 +1024,100 @@ const PrestacionesModule = (() => {
     }
 
     const allEmp = DataService.getEmpleadosSync();
-    const records = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
 
-    empleadosSeleccionados.forEach(empId => {
-      const e = allEmp.find(x => x.id === empId);
-      if (e) {
-        const sd = (parseFloat(e.salario_total || e.salarioTotal) || 0) / 30;
-        const montoExtra = sd * 2; // Pago doble
+    try {
+      for (const empId of empleadosSeleccionados) {
+        const e = allEmp.find(x => x.id === empId);
+        if (e) {
+          const sd = (parseFloat(e.salario_total || e.salarioTotal) || 0) / 30;
+          const montoExtra = sd * 2; // Pago doble
 
-        records.push({
-          id: Date.now().toString() + "_" + empId + Math.floor(Math.random() * 1000),
-          fecha: fecha,
-          empleadoId: empId,
-          empleadoNombre: e.nombre,
-          tipo: tipo,
-          descripcion: descripcion,
-          monto: montoExtra, // Almacenar el monto extra
-          createdAt: new Date().toISOString()
-        });
+          await DataService.createFeriadoTrabajado({
+            fecha: fecha,
+            empleadoId: empId,
+            monto: montoExtra, // Almacenar el monto extra
+            pagado: false
+          });
+        }
       }
-    });
-
-    localStorage.setItem('feriados_trabajados', JSON.stringify(records));
-    App.showNotification?.('Registros de feriados guardados correctamente', 'success');
-    closeModal();
-    App.refreshCurrentModule();
-  };
-
-  // --- Complementos Storage Helpers (Local for now, mocked Generic Tables) ---
-
-  const saveComplemento = (key, data) => {
-
-    const current = JSON.parse(localStorage.getItem(key) || '[]');
-
-    if (data.id) {
-
-      const index = current.findIndex(x => x.id === data.id);
-
-      if (index !== -1) {
-
-        current[index] = { ...current[index], ...data };
-
-      } else {
-
-        current.push({ ...data, createdAt: new Date().toISOString() }); // Should not happen usually
-
-      }
-
-    } else {
-
-      current.push({ ...data, id: Date.now().toString(), createdAt: new Date().toISOString() });
-
+      App.showNotification?.('Registros de feriados guardados correctamente', 'success');
+      closeModal();
+      App.refreshCurrentModule();
+    } catch (e) {
+      console.error(e);
+      App.showNotification?.('Error al guardar feriados', 'error');
     }
-
-    localStorage.setItem(key, JSON.stringify(current));
-
-    App.showNotification?.('Registro guardado localmente', 'success');
-
-    App.refreshCurrentModule();
-
   };
 
-  const deleteComplemento = (key, id) => {
+  const getComplementoTable = (key) => {
+    switch (key) {
+      case 'horas_extras': return 'HoraExtra';
+      case 'bonificaciones': return 'Bonificacion';
+      case 'adelantos': return 'Adelanto';
+      case 'feriados_trabajados': return 'FeriadoTrabajado';
+      case 'prestamos_empleados': return 'Prestamo';
+      case 'abonos_prestamos': return 'AbonoPrestamo';
+      default: return null;
+    }
+  };
 
-    if (!confirm('¿Eliminar registro?')) return;
+  const saveComplemento = async (key, data) => {
+    try {
+      const type = getComplementoTable(key);
+      if (!type) throw new Error('Tipo de complemento no válido');
 
-    const current = JSON.parse(localStorage.getItem(key) || '[]');
+      const payload = { ...data };
+      if (!payload.id) {
+        await DataService[`create${type}`](payload);
+      } else {
+        const id = payload.id;
+        delete payload.id;
+        if (payload.createdAt) delete payload.createdAt;
+        if (payload.created_at) delete payload.created_at;
+        await DataService[`update${type}`](id, payload);
+      }
+      App.showNotification?.('Registro guardado correctamente', 'success');
+      App.refreshCurrentModule();
+    } catch (e) {
+      console.error(e);
+      App.showNotification?.('Error al guardar registro', 'error');
+    }
+  };
 
-    const filtered = current.filter(x => x.id !== id);
-
-    localStorage.setItem(key, JSON.stringify(filtered));
-
-    App.refreshCurrentModule();
-
+  const deleteComplemento = async (key, id) => {
+    if (!confirm('¿Eliminar registro? Esta acción es irreversible.')) return;
+    try {
+      const type = getComplementoTable(key);
+      await DataService[`delete${type}`](id);
+      App.showNotification?.('Registro eliminado correctamente', 'success');
+      App.refreshCurrentModule();
+    } catch (e) {
+      console.error(e);
+      App.showNotification?.('Error al eliminar registro', 'error');
+    }
   };
 
   const editComplemento = (key, id) => {
-
-    const data = JSON.parse(localStorage.getItem(key) || '[]');
-
-    const item = data.find(x => x.id === id);
-
+    let list = [];
+    switch (key) {
+      case 'horas_extras': list = DataService.getHorasExtrasSync?.() || []; break;
+      case 'bonificaciones': list = DataService.getBonificacionesSync?.() || []; break;
+      case 'adelantos': list = DataService.getAdelantosSync?.() || []; break;
+      case 'feriados_trabajados': list = DataService.getFeriadosTrabajadosSync?.() || []; break;
+      case 'prestamos_empleados': list = DataService.getPrestamosSync?.() || []; break;
+      case 'abonos_prestamos': list = DataService.getAbonosPrestamosSync?.() || []; break;
+    }
+    const item = list.find(x => x.id === id);
     if (!item) return;
 
     if (key === 'horas_extras') registrarHoraExtra(item);
-
     if (key === 'bonificaciones') registrarBonificacion(item);
-
     if (key === 'adelantos') registrarAdelanto(item);
-
   };
 
   // Loaders implementation
-
   const loadHorasExtrasTable = async () => {
-    const rawData = JSON.parse(localStorage.getItem('horas_extras') || '[]');
+    const rawData = DataService.getHorasExtrasSync?.() || [];
     const empleados = DataService.getEmpleadosSync();
 
     // Enrich data
@@ -1154,7 +1151,7 @@ const PrestacionesModule = (() => {
   };
 
   const loadBonificacionesTable = async () => {
-    const rawData = JSON.parse(localStorage.getItem('bonificaciones') || '[]');
+    const rawData = DataService.getBonificacionesSync?.() || [];
     const empleados = DataService.getEmpleadosSync();
 
     const fullData = rawData.map(d => ({ ...d, empleadoName: empleados.find(e => e.id === d.empleadoId)?.nombre || 'Unknown' }));
@@ -1186,7 +1183,7 @@ const PrestacionesModule = (() => {
   };
 
   const loadAdelantosTable = async () => {
-    const rawData = JSON.parse(localStorage.getItem('adelantos') || '[]');
+    const rawData = DataService.getAdelantosSync?.() || [];
     const empleados = DataService.getEmpleadosSync();
 
     const fullData = rawData.map(d => ({ ...d, empleadoName: empleados.find(e => e.id === d.empleadoId)?.nombre || 'Unknown' }));
@@ -1219,8 +1216,8 @@ const PrestacionesModule = (() => {
   };
 
   const loadPrestamosTable = async () => {
-    const rawData = JSON.parse(localStorage.getItem('prestamos_empleados') || '[]');
-    const abonos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
+    const rawData = DataService.getPrestamosSync?.() || [];
+    const abonos = DataService.getAbonosPrestamosSync?.() || [];
     const empleados = DataService.getEmpleadosSync();
 
     const fullData = rawData.map(d => {
@@ -1297,8 +1294,8 @@ const PrestacionesModule = (() => {
   };
 
   const verDetallePrestamo = (prestamoId) => {
-    const prestamos = JSON.parse(localStorage.getItem('prestamos_empleados') || '[]');
-    const abonos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
+    const prestamos = DataService.getPrestamosSync?.() || [];
+    const abonos = DataService.getAbonosPrestamosSync?.() || [];
     const prestamo = prestamos.find(p => p.id === prestamoId);
     if (!prestamo) return;
 
@@ -4141,17 +4138,18 @@ const PrestacionesModule = (() => {
   // Helper to fetch complementos (Mock for now, using LocalStorage tables)
 
   const getComplementosForEmpleado = async (id, inicio, fin) => {
-
     const getSum = (key) => {
-
-      const data = JSON.parse(localStorage.getItem(key) || '[]');
-
+      let data = [];
+      switch (key) {
+        case 'horas_extras': data = DataService.getHorasExtrasSync?.() || []; break;
+        case 'bonificaciones': data = DataService.getBonificacionesSync?.() || []; break;
+        case 'adelantos': data = DataService.getAdelantosSync?.() || []; break;
+        case 'feriados_trabajados': data = DataService.getFeriadosTrabajadosSync?.() || []; break;
+        case 'abonos_prestamos': data = DataService.getAbonosPrestamosSync?.() || []; break;
+      }
       return data
-
         .filter(x => x.empleadoId == id && x.fecha >= inicio && x.fecha <= fin)
-
         .reduce((sum, x) => sum + (parseFloat(x.monto) || 0), 0);
-
     };
 
     let deduccionAusencias = 0;
@@ -5460,13 +5458,11 @@ const PrestacionesModule = (() => {
 
     // Obtener complementos del Storage para el cálculo
 
-    const extras = JSON.parse(localStorage.getItem('horas_extras') || '[]');
-
-    const bonos = JSON.parse(localStorage.getItem('bonificaciones') || '[]');
-
-    const adelantos = JSON.parse(localStorage.getItem('adelantos') || '[]');
-    const feriados = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
-    const abonos_prestamos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
+    const extras = DataService.getHorasExtrasSync?.() || [];
+    const bonos = DataService.getBonificacionesSync?.() || [];
+    const adelantos = DataService.getAdelantosSync?.() || [];
+    const feriados = DataService.getFeriadosTrabajadosSync?.() || [];
+    const abonos_prestamos = DataService.getAbonosPrestamosSync?.() || [];
 
     // Obtener ausencias desde DataService (asumimos que ya están en DB)
 
@@ -5611,9 +5607,9 @@ const PrestacionesModule = (() => {
 
   const imprimirReciboAdelanto = (id) => {
 
-    const adelantos = JSON.parse(localStorage.getItem('adelantos') || '[]');
-    const feriados = JSON.parse(localStorage.getItem('feriados_trabajados') || '[]');
-    const abonos_prestamos = JSON.parse(localStorage.getItem('abonos_prestamos') || '[]');
+    const adelantos = DataService.getAdelantosSync?.() || [];
+    const feriados = DataService.getFeriadosTrabajadosSync?.() || [];
+    const abonos_prestamos = DataService.getAbonosPrestamosSync?.() || [];
 
     const item = adelantos.find(a => a.id === id);
 
@@ -5795,7 +5791,7 @@ const PrestacionesModule = (() => {
     const today = new Date();
 
     if (tipoFiltro === 'mes') {
-      const mesInput = document.getElementById('reportPagosMes').value; 
+      const mesInput = document.getElementById('reportPagosMes').value;
       if (!mesInput) return alert('Seleccione un mes válido');
       const [y, m] = mesInput.split('-');
       fechaInicio = new Date(y, m - 1, 1);
@@ -5819,43 +5815,43 @@ const PrestacionesModule = (() => {
     }
 
     try {
-        // Obtenemos los recibos formales mediante la base de datos o su persistencia real
-        const allNominas = await DataService.getAllNominas?.() || JSON.parse(localStorage.getItem('nominas_historial') || '[]');
-        const bonos = JSON.parse(localStorage.getItem('bonificaciones') || '[]');
+      // Obtenemos los recibos formales mediante la base de datos o su persistencia real
+      const allNominas = await DataService.getAllNominas?.() || [];
+      const bonos = DataService.getBonificacionesSync?.() || [];
 
-        const filterByDate = (item, dateField) => {
-            if (item.empleadoId !== emp.id && item.empleado_id !== emp.id) return false;
-            const dStr = item[dateField];
-            if (!dStr) return false;
-            const d = new Date(dStr);
-            return d >= fechaInicio && d <= fechaFin;
-        };
+      const filterByDate = (item, dateField) => {
+        if (item.empleadoId !== emp.id && item.empleado_id !== emp.id) return false;
+        const dStr = item[dateField];
+        if (!dStr) return false;
+        const d = new Date(dStr);
+        return d >= fechaInicio && d <= fechaFin;
+      };
 
-        const eNominas = allNominas.filter(n => filterByDate(n, 'fechaPago') || filterByDate(n, 'created_at'));
-        const eBonos = bonos.filter(b => filterByDate(b, 'fecha'));
+      const eNominas = allNominas.filter(n => filterByDate(n, 'fechaPago') || filterByDate(n, 'created_at'));
+      const eBonos = bonos.filter(b => filterByDate(b, 'fecha'));
 
-        if (!eNominas.length && !eBonos.length) {
-            return App.showNotification('No se encontraron pagos en este período para el empleado seleccionado', 'error');
-        }
+      if (!eNominas.length && !eBonos.length) {
+        return App.showNotification('No se encontraron pagos en este período para el empleado seleccionado', 'error');
+      }
 
-        const totalNominas = eNominas.reduce((acc, curr) => acc + (parseFloat(curr.montoNeto || curr.total_neto) || 0), 0);
-        const totalBonos = eBonos.reduce((acc, curr) => acc + (parseFloat(curr.monto) || 0), 0);
+      const totalNominas = eNominas.reduce((acc, curr) => acc + (parseFloat(curr.montoNeto || curr.total_neto) || 0), 0);
+      const totalBonos = eBonos.reduce((acc, curr) => acc + (parseFloat(curr.monto) || 0), 0);
 
-        const rowsHtml = [];
+      const rowsHtml = [];
 
-        eNominas.forEach(n => {
-            const date = new Date(n.fechaPago || n.created_at).toLocaleDateString('es-NI');
-            const periodo = n.tipo_periodo ? ` (${n.tipo_periodo} ${new Date(n.periodo_inicio).toLocaleDateString('es-NI')} al ${new Date(n.periodo_fin).toLocaleDateString('es-NI')})` : '';
-            const val = parseFloat(n.montoNeto || n.total_neto);
-            rowsHtml.push(`<tr><td>${date}</td><td><strong>Recibo de Pago</strong>${periodo}</td><td class="text-right">C$${val.toLocaleString()}</td></tr>`);
-        });
+      eNominas.forEach(n => {
+        const date = new Date(n.fechaPago || n.created_at).toLocaleDateString('es-NI');
+        const periodo = n.tipo_periodo ? ` (${n.tipo_periodo} ${new Date(n.periodo_inicio).toLocaleDateString('es-NI')} al ${new Date(n.periodo_fin).toLocaleDateString('es-NI')})` : '';
+        const val = parseFloat(n.montoNeto || n.total_neto);
+        rowsHtml.push(`<tr><td>${date}</td><td><strong>Recibo de Pago</strong>${periodo}</td><td class="text-right">C$${val.toLocaleString()}</td></tr>`);
+      });
 
-        eBonos.forEach(b => {
-            const date = new Date(b.fecha).toLocaleDateString('es-NI');
-            rowsHtml.push(`<tr><td>${date}</td><td>Bono / Extra: ${b.concepto}</td><td class="text-right text-success">+ C$${parseFloat(b.monto).toLocaleString()}</td></tr>`);
-        });
+      eBonos.forEach(b => {
+        const date = new Date(b.fecha).toLocaleDateString('es-NI');
+        rowsHtml.push(`<tr><td>${date}</td><td>Bono / Extra: ${b.concepto}</td><td class="text-right text-success">+ C$${parseFloat(b.monto).toLocaleString()}</td></tr>`);
+      });
 
-        const content = `
+      const content = `
         <h3 style="border-bottom: 2px solid #1a73e8; padding-bottom: 5px; color: #1a73e8;">Detalle de Pagos: ${emp.nombre}</h3>
         <p style="font-size: 11px; margin-top: -5px;">Cargo: ${emp.cargo} | Cédula: ${emp.cedula}</p>
         <div style="margin-bottom: 20px;">
@@ -5880,13 +5876,13 @@ const PrestacionesModule = (() => {
             </tfoot>
         </table>`;
 
-        printDocument('Historial de Pagos de Empleado', content, 'portrait');
+      printDocument('Historial de Pagos de Empleado', content, 'portrait');
 
     } catch (e) {
-        console.error(e);
-        App.showNotification('Error al generar historial.', 'error');
+      console.error(e);
+      App.showNotification('Error al generar historial.', 'error');
     }
-};
+  };
 
 
   const generarPlanillaINSSMITRAB = () => {
