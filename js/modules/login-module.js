@@ -38,6 +38,8 @@ const LoginModule = (() => {
                                 required 
                                 placeholder="admin"
                                 autocomplete="username"
+                                autocapitalize="none"
+                                autocorrect="off"
                                 style="width: 100%; padding: 14px 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid #444444; border-radius: 10px; color: #ffffff; font-size: 15px; outline: none; transition: all 0.2s; box-sizing: border-box;"
                                 onfocus="this.style.borderColor='#1a73e8'; this.style.background='rgba(26, 115, 232, 0.15)'"
                                 onblur="this.style.borderColor='#444444'; this.style.background='rgba(255, 255, 255, 0.05)'"
@@ -200,7 +202,7 @@ const LoginModule = (() => {
     const handleLogin = async () => {
         if (isLoading) return;
 
-        const username = document.getElementById('loginUsername')?.value.trim();
+        const username = document.getElementById('loginUsername')?.value.trim().toLowerCase();
         const password = document.getElementById('loginPassword')?.value;
 
         console.log('👤 Login attempt:', username);

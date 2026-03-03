@@ -362,41 +362,22 @@ const DataService = (() => {
     });
 
     // ========== REALTIME UPDATE HANDLER ==========
+    let _realtimeTimeout = null;
     const handleRealtimeUpdate = (payload) => {
         try {
-            const { table, eventType, new: newRecord, old: oldRecord } = payload;
+            const { table, eventType } = payload;
+            console.log(`🔄 Realtime: ${eventType} detectado en ${table}. Sincronizando sistema...`);
 
-            // Mapear tabla DB a propiedad del caché
-            let target = cache[table] || cache[table.toLowerCase()];
+            // Evitar múltiples llamadas al cargar muchos datos juntos (debounce)
+            if (_realtimeTimeout) clearTimeout(_realtimeTimeout);
 
-            if (!target) {
-                if (table === 'tecnicos' || table === 'empleados') target = cache.empleados;
-            }
-
-            if (!target) return;
-
-            console.log(`🔄 Realtime: ${eventType} en ${table}`);
-
-            if (eventType === 'INSERT') {
-                const item = normalizeSupabaseData(table, newRecord);
-                if (!target.find(i => i.id === item.id)) {
-                    target.unshift(item);
+            _realtimeTimeout = setTimeout(async () => {
+                // Hacer un refresco global de todos los datos y actualizar UI
+                const success = await refreshData();
+                if (success && typeof App !== 'undefined' && App.refreshCurrentModule) {
+                    App.refreshCurrentModule();
                 }
-            } else if (eventType === 'UPDATE') {
-                const item = normalizeSupabaseData(table, newRecord);
-                const idx = target.findIndex(i => i.id === item.id);
-                if (idx !== -1) target[idx] = { ...target[idx], ...item };
-            } else if (eventType === 'DELETE') {
-                const id = oldRecord.id;
-                const idx = target.findIndex(i => i.id === id);
-                if (idx !== -1) target.splice(idx, 1);
-            }
-
-            // Refrescar UI si es necesario
-            if (typeof App !== 'undefined' && App.refreshCurrentModule) {
-                const currentModule = State.get('currentModule');
-                if (currentModule === table) App.refreshCurrentModule();
-            }
+            }, 1500); // 1.5s delay permite que múltiples inserts de la app móvil terminen de llegar
 
         } catch (e) {
             console.error('Realtime Sync Error:', e);

@@ -5,9 +5,9 @@
  * ============================================
  */
 
-const CACHE_NAME = 'alltech-support-v1';
-const STATIC_CACHE = 'alltech-static-v1';
-const DYNAMIC_CACHE = 'alltech-dynamic-v1';
+const CACHE_NAME = 'alltech-support-v2';
+const STATIC_CACHE = 'alltech-static-v2';
+const DYNAMIC_CACHE = 'alltech-dynamic-v2';
 
 // Assets to cache immediately on install
 const PRECACHE_ASSETS = [
