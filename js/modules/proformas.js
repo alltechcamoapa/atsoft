@@ -238,6 +238,10 @@ const ProformasModule = (() => {
     currentItems = isEdit ? [...proforma.items] : [{ cantidad: 1, descripcion: '', precioUnitario: 0, total: 0 }];
     currentFormCurrency = proforma?.moneda || 'USD';
 
+    const activeClienteId = proforma?.cliente_id || proforma?.clienteId;
+    const activeCliente = clientes.find(c => c.id === activeClienteId || c.clienteId === activeClienteId);
+    const activeClienteText = activeCliente ? `${activeCliente.codigo_cliente || activeCliente.clienteId} - ${activeCliente.nombreCliente}` : '';
+
     return `
       <div class="modal-overlay open">
         <div class="modal modal--lg" onclick="event.stopPropagation()">
@@ -251,14 +255,18 @@ const ProformasModule = (() => {
             <div class="form-row">
               <div class="form-group">
                 <label class="form-label form-label--required">Cliente</label>
-                <select name="clienteId" class="form-select" required>
-                  <option value="">Seleccionar cliente...</option>
+                <input type="text" class="form-input" 
+                       list="clientesListDatalist" 
+                       placeholder="Buscar o seleccionar cliente..." 
+                       value="${activeClienteText}"
+                       oninput="ProformasModule.handleClienteSelection(this.value)" 
+                       required>
+                <datalist id="clientesListDatalist">
                   ${clientes.map(c => `
-                    <option value="${c.id}" ${proforma?.cliente_id === c.id || proforma?.clienteId === c.clienteId ? 'selected' : ''}>
-                      ${c.empresa} - ${c.nombreCliente}
-                    </option>
+                    <option value="${c.codigo_cliente || c.clienteId} - ${c.nombreCliente}"></option>
                   `).join('')}
-                </select>
+                </datalist>
+                <input type="hidden" name="clienteId" id="selectedClienteId" value="${activeClienteId || ''}">
               </div>
               <div class="form-group">
                 <label class="form-label form-label--required">Días de Validez</label>
@@ -896,10 +904,30 @@ const ProformasModule = (() => {
   const handleClienteFilter = (value) => { filterState.clienteId = value; App.refreshCurrentModule(); };
   const handleEstadoFilter = (value) => { filterState.estado = value; App.refreshCurrentModule(); };
 
+  const handleClienteSelection = (value) => {
+    const hiddenInput = document.getElementById('selectedClienteId');
+    if (!value) {
+      hiddenInput.value = '';
+      return;
+    }
+    const clientes = DataService.getClientesSync();
+    const match = clientes.find(c => `${c.codigo_cliente || c.clienteId} - ${c.nombreCliente}` === value);
+    if (match) {
+      hiddenInput.value = match.id || match.clienteId;
+    } else {
+      hiddenInput.value = '';
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     const formData = new FormData(event.target);
     const data = Object.fromEntries(formData.entries());
+
+    if (!data.clienteId) {
+      alert('Por favor, selecciona un cliente válido de la lista sugerida.');
+      return;
+    }
 
     // Validate items
     const validItems = currentItems.filter(item => item.descripcion && item.cantidad > 0);
@@ -1104,6 +1132,7 @@ const ProformasModule = (() => {
     aprobarProforma,
     deleteProforma,
     sendViaWhatsApp,
-    updateCurrencySymbols
+    updateCurrencySymbols,
+    handleClienteSelection
   };
 })();

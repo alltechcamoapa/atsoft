@@ -218,13 +218,14 @@ const DataService = (() => {
 
         try {
             // Recargar todos los datos en paralelo
-            // Recargar todos los datos en paralelo
             const [
                 clientes,
                 contratos,
                 equipos,
                 visitas,
                 productos,
+                proformas,
+                pedidos,
                 nominas,
                 software,
                 ausencias
@@ -234,6 +235,8 @@ const DataService = (() => {
                 SupabaseDataService.getEquiposSync(),
                 SupabaseDataService.getVisitasSync(),
                 SupabaseDataService.getProductosSync(),
+                SupabaseDataService.getProformasSync(),
+                SupabaseDataService.getPedidosSync(),
                 SupabaseDataService.getRecentNominas?.() || Promise.resolve([]),
                 SupabaseDataService.getSoftwareSync(),
                 SupabaseDataService.getAllAusencias?.() || Promise.resolve([])
@@ -249,6 +252,20 @@ const DataService = (() => {
                 productoId: p.id,
                 precio: parseFloat(p.precio_venta) || 0
             }));
+            cache.proformas = (proformas || []).map(p => ({
+                ...p,
+                proformaId: p.codigo_proforma,
+                numero: p.numero_proforma,
+                clienteId: p.cliente_id,
+                cliente: p.cliente ? normalizeSupabaseData('clientes', p.cliente) : null
+            }));
+            cache.pedidos = (pedidos || []).map(p => ({
+                ...p,
+                pedidoId: p.pedido_id,
+                numeroPedido: p.numero_pedido,
+                clienteId: p.cliente_id,
+                cliente: p.cliente ? normalizeSupabaseData('clientes', p.cliente) : null
+            }));
             cache.nominas = (nominas || []).map(n => ({ ...n, empleadoNombre: n.empleado?.nombre || 'Desconocido', empleadoCargo: n.empleado?.cargo || '-' }));
             cache.software = (software || []).map(s => ({ ...normalizeSupabaseData('software', s), cliente: s.cliente ? normalizeSupabaseData('clientes', s.cliente) : null }));
             cache.ausencias = (ausencias || []).map(a => ({
@@ -256,7 +273,7 @@ const DataService = (() => {
                 empleadoNombre: a.empleado?.nombre || 'Desconocido'
             }));
 
-            console.log(`✅ DataService: Refresh completo (${cache.clientes.length} Clientes)`);
+            console.log(`✅ DataService: Refresh completo (${cache.proformas.length} Proformas, ${cache.clientes.length} Clientes)`);
 
             // Notificar a la UI
             dispatchRefreshEvent();
