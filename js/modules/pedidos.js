@@ -71,7 +71,7 @@ const PedidosModule = (() => {
                                 <span class="search-input__icon">${Icons.search}</span>
                                 <input type="text" class="form-input" placeholder="Buscar pedido..." 
                                        value="${filterState.search}"
-                                       onkeyup="PedidosModule.handleSearch(this.value)">
+                                       oninput="PedidosModule.handleSearch(this.value)">
                             </div>
                             <select class="form-select" style="width: 180px;" 
                                     onchange="PedidosModule.handleClienteFilter(this.value)">
@@ -284,7 +284,8 @@ const PedidosModule = (() => {
                 matches = (p.pedidoId || '').toLowerCase().includes(s) ||
                     (p.numeroPedido || '').toLowerCase().includes(s) ||
                     (cliente?.empresa || '').toLowerCase().includes(s) ||
-                    (cliente?.nombreCliente || '').toLowerCase().includes(s);
+                    (cliente?.nombreCliente || '').toLowerCase().includes(s) ||
+                    (cliente?.clienteId || '').toLowerCase().includes(s);
             }
             if (filterState.clienteId && filterState.clienteId !== 'all') {
                 matches = matches && p.clienteId === filterState.clienteId;

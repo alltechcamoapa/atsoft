@@ -37,7 +37,7 @@ const ProductosModule = (() => {
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar por nombre, código o descripción..." 
                        value="${filterState.search}"
-                       onkeyup="ProductosModule.handleSearch(this.value)">
+                       oninput="ProductosModule.handleSearch(this.value)">
               </div>
               <select class="form-select" style="width: 150px;" 
                       onchange="ProductosModule.handleTipoFilter(this.value)">

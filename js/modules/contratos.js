@@ -46,7 +46,7 @@ const ContratosModule = (() => {
                        class="form-input" 
                        placeholder="Buscar contrato..." 
                        value="${filterState.search}"
-                       onkeyup="ContratosModule.handleSearch(this.value)">
+                       oninput="ContratosModule.handleSearch(this.value)">
               </div>
               <select class="form-select" style="width: 150px;" 
                       onchange="ContratosModule.handleStatusFilter(this.value)">
@@ -594,10 +594,10 @@ const ContratosModule = (() => {
                       <td>${v.tipoVisita}</td>
                       <td>${eq ? eq.nombreEquipo : '-'}</td>
                       <td>${v.descripcionTrabajo}</td>
-                      <td>${ (() => {
-                      const t = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync().find(u => u.id === v.usuarioSoporte) : null;
-                      return t ? (t.name || t.username) : (v.usuarioSoporte || 'N/A');
-                  })() }</td>
+                      <td>${(() => {
+          const t = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync().find(u => u.id === v.usuarioSoporte) : null;
+          return t ? (t.name || t.username) : (v.usuarioSoporte || 'N/A');
+        })()}</td>
                       <td><span class="badge badge-${v.trabajoRealizado ? 'success' : 'warning'}">${v.trabajoRealizado ? 'Completado' : 'Pendiente'}</span></td>
                     </tr>
                   `;

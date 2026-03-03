@@ -48,7 +48,7 @@ const ProformasModule = (() => {
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar por número o cliente..." 
                        value="${filterState.search}"
-                       onkeyup="ProformasModule.handleSearch(this.value)">
+                       oninput="ProformasModule.handleSearch(this.value)">
               </div>
               <select class="form-select" style="width: 180px;" 
                       onchange="ProformasModule.handleClienteFilter(this.value)">

@@ -1452,8 +1452,38 @@ const App = (() => {
     navigate,
     refreshCurrentModule: () => {
       // Re-render current module content without full page reload if possible
-      // For now, full render is safest
+      // Save active element state to restore focus, specially for search bars
+      let activeId = null;
+      let activeSelectionStart = null;
+      let activeSelectionEnd = null;
+
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+        if (document.activeElement.id) {
+          activeId = '#' + document.activeElement.id;
+        } else if (document.activeElement.placeholder) {
+          // Valid css selector for placeholders with spaces
+          activeId = `input[placeholder="${document.activeElement.placeholder}"]`;
+        }
+
+        if (document.activeElement.type === 'text') {
+          activeSelectionStart = document.activeElement.selectionStart;
+          activeSelectionEnd = document.activeElement.selectionEnd;
+        }
+      }
+
       render();
+
+      if (activeId) {
+        setTimeout(() => {
+          const el = document.querySelector(activeId);
+          if (el) {
+            el.focus();
+            if (el.type === 'text' && activeSelectionStart !== null) {
+              el.setSelectionRange(activeSelectionStart, activeSelectionEnd);
+            }
+          }
+        }, 0);
+      }
     },
     handleRefreshData,
     toggleNotifications,

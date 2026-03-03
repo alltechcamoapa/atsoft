@@ -411,7 +411,8 @@ const DataService = (() => {
                 const s = filter.search.toLowerCase();
                 matches = (c.nombreCliente || '').toLowerCase().includes(s) ||
                     (c.empresa || '').toLowerCase().includes(s) ||
-                    (c.correo || '').toLowerCase().includes(s);
+                    (c.correo || '').toLowerCase().includes(s) ||
+                    (c.clienteId || '').toLowerCase().includes(s);
             }
             if (filter.status && filter.status !== 'all') matches = matches && c.estado === filter.status;
             return matches;
@@ -467,7 +468,10 @@ const DataService = (() => {
                 const cliente = getClienteById(c.clienteId);
                 const s = filter.search.toLowerCase();
                 matches = (c.contratoId || '').toLowerCase().includes(s) ||
-                    (cliente?.empresa || '').toLowerCase().includes(s);
+                    (c.numero_contrato || '').toLowerCase().includes(s) ||
+                    (cliente?.empresa || '').toLowerCase().includes(s) ||
+                    (cliente?.nombreCliente || '').toLowerCase().includes(s) ||
+                    (cliente?.clienteId || '').toLowerCase().includes(s);
             }
             if (filter.status && filter.status !== 'all') matches = matches && c.estadoContrato === filter.status;
             if (filter.tipo && filter.tipo !== 'all') matches = matches && c.tipoContrato === filter.tipo;
@@ -543,8 +547,14 @@ const DataService = (() => {
             let matches = true;
             if (filter.search) {
                 const s = filter.search.toLowerCase();
+                const cliente = getClienteById(e.clienteId);
                 matches = (e.nombreEquipo || '').toLowerCase().includes(s) ||
-                    (e.marca || '').toLowerCase().includes(s);
+                    (e.marca || '').toLowerCase().includes(s) ||
+                    (e.modelo || '').toLowerCase().includes(s) ||
+                    (e.serie || '').toLowerCase().includes(s) ||
+                    (e.equipoId || '').toLowerCase().includes(s) ||
+                    (cliente?.empresa || '').toLowerCase().includes(s) ||
+                    (cliente?.nombreCliente || '').toLowerCase().includes(s);
             }
             if (filter.clienteId && filter.clienteId !== 'all') matches = matches && e.clienteId === filter.clienteId;
             return matches;
@@ -610,8 +620,10 @@ const DataService = (() => {
                 const descripcion = (v.descripcionTrabajo || '').toLowerCase();
                 matches = descripcion.includes(s) ||
                     (v.visitaId || '').toLowerCase().includes(s) ||
+                    (v.numero_visita || '').toLowerCase().includes(s) ||
                     (cliente?.empresa || '').toLowerCase().includes(s) ||
-                    (cliente?.nombreCliente || '').toLowerCase().includes(s);
+                    (cliente?.nombreCliente || '').toLowerCase().includes(s) ||
+                    (cliente?.clienteId || '').toLowerCase().includes(s);
             }
             if (filter.tipo && filter.tipo !== 'all') matches = matches && v.tipoVisita === filter.tipo;
             if (filter.hasContrato && filter.hasContrato !== 'all') {
@@ -1092,7 +1104,8 @@ const DataService = (() => {
                 matches = (p.nombre || '').toLowerCase().includes(s) ||
                     (p.codigo || '').toLowerCase().includes(s) ||
                     (p.descripcion || '').toLowerCase().includes(s) ||
-                    (p.categoria || '').toLowerCase().includes(s);
+                    (p.categoria || '').toLowerCase().includes(s) ||
+                    (p.productoId || '').toLowerCase().includes(s);
             }
             if (filter.tipo && filter.tipo !== 'all') matches = matches && p.tipo === filter.tipo;
             if (filter.estado && filter.estado !== 'all') matches = matches && p.estado === filter.estado;
@@ -1155,7 +1168,9 @@ const DataService = (() => {
                 matches = (s.nombreSoftware || '').toLowerCase().includes(term) ||
                     (s.numeroLicencia || '').toLowerCase().includes(term) ||
                     (s.numeroSerie || '').toLowerCase().includes(term) ||
-                    clienteNombre.toLowerCase().includes(term);
+                    (s.softwareId || '').toLowerCase().includes(term) ||
+                    clienteNombre.toLowerCase().includes(term) ||
+                    (s.cliente?.clienteId || '').toLowerCase().includes(term);
             }
             if (filter.tipo && filter.tipo !== 'all') matches = matches && s.tipoLicencia === filter.tipo;
             if (filter.activacion && filter.activacion !== 'all') matches = matches && s.modoActivacion === filter.activacion;
@@ -1235,7 +1250,9 @@ const DataService = (() => {
                 const cliente = getClienteById(p.clienteId || p.cliente_id);
                 matches = (p.proformaId || p.codigo_proforma || '').toLowerCase().includes(s) ||
                     String(p.numero || p.numero_proforma || '').includes(s) ||
-                    (cliente?.empresa || '').toLowerCase().includes(s);
+                    (cliente?.empresa || '').toLowerCase().includes(s) ||
+                    (cliente?.nombreCliente || '').toLowerCase().includes(s) ||
+                    (cliente?.clienteId || '').toLowerCase().includes(s);
             }
             if (filter.clienteId && filter.clienteId !== 'all') {
                 matches = matches && (p.clienteId === filter.clienteId || p.cliente_id === filter.clienteId || p.id === filter.clienteId);

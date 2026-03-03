@@ -44,7 +44,7 @@ const VisitasModule = (() => {
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar..." 
                        value="${filterState.search}"
-                       onkeyup="VisitasModule.handleSearch(this.value)">
+                       oninput="VisitasModule.handleSearch(this.value)">
               </div>
               <select class="form-select" style="width: 180px;" 
                       onchange="VisitasModule.handleClienteFilter(this.value)">

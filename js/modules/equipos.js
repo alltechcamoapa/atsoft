@@ -44,7 +44,7 @@ const EquiposModule = (() => {
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar equipo..." 
                        value="${filterState.search}"
-                       onkeyup="EquiposModule.handleSearch(this.value)">
+                       oninput="EquiposModule.handleSearch(this.value)">
               </div>
               <select class="form-select" style="width: 200px;" 
                       onchange="EquiposModule.handleClienteFilter(this.value)">

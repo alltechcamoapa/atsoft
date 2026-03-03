@@ -41,7 +41,7 @@ const SoftwareModule = (() => {
                        class="form-input" 
                        placeholder="Buscar software, serie, registro..." 
                        value="${filterState.search}"
-                       onkeyup="SoftwareModule.handleSearch(this.value)">
+                       oninput="SoftwareModule.handleSearch(this.value)">
               </div>
               <select class="form-select" style="width: 150px;" 
                       onchange="SoftwareModule.handleTipoFilter(this.value)">

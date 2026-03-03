@@ -41,7 +41,7 @@ const ClientesModule = (() => {
                        class="form-input" 
                        placeholder="Buscar cliente..." 
                        value="${filterState.search}"
-                       onkeyup="ClientesModule.handleSearch(this.value)">
+                       oninput="ClientesModule.handleSearch(this.value)">
               </div>
               <select class="form-select" 
                       style="width: 160px;" 
