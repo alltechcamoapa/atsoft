@@ -188,7 +188,7 @@ const EquiposModule = (() => {
     const clientes = DataService.getClientesSync();
 
     return `
-      <div class="modal-overlay open" onclick="EquiposModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Equipo' : 'Nuevo Equipo'}</h3>
@@ -289,7 +289,7 @@ const EquiposModule = (() => {
     const canDelete = DataService.canPerformAction(user.role, 'equipos', 'delete');
 
     return `
-      <div class="modal-overlay open" onclick="EquiposModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--xl" onclick="event.stopPropagation()">
           <div class="modal__header">
             <div>
@@ -416,7 +416,7 @@ const EquiposModule = (() => {
     const tecnicos = ['Técnico Juan', 'Técnico María', 'Técnico Carlos'];
 
     return `
-      <div class="modal-overlay open" onclick="EquiposModule.closeReparacionModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Reparación' : 'Nueva Reparación'}</h3>

@@ -239,7 +239,7 @@ const ProformasModule = (() => {
     currentFormCurrency = proforma?.moneda || 'USD';
 
     return `
-      <div class="modal-overlay open" onclick="ProformasModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--lg" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Proforma' : 'Nueva Proforma'}</h3>
@@ -418,7 +418,7 @@ const ProformasModule = (() => {
     const proformaNumero = proforma.numero || proforma.numero_proforma || '';
 
     return `
-      <div class="modal-overlay open" onclick="ProformasModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--lg" onclick="event.stopPropagation()">
           <div class="modal__header">
             <div>
@@ -523,7 +523,7 @@ const ProformasModule = (() => {
   const renderReportModal = () => {
     const clientes = DataService.getClientesSync();
     return `
-      <div class="modal-overlay open" onclick="ProformasModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${Icons.barChart} Reportes de Proformas</h3>

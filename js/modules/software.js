@@ -167,7 +167,7 @@ const SoftwareModule = (() => {
     const clientes = DataService.getClientesSync();
 
     return `
-      <div class="modal-overlay open" onclick="SoftwareModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Licencia' : 'Nueva Licencia'}</h3>
@@ -251,7 +251,7 @@ const SoftwareModule = (() => {
     const cliente = DataService.getClienteById(software.cliente_id || software.clienteId);
 
     return `
-      <div class="modal-overlay open" onclick="SoftwareModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <div>
@@ -338,7 +338,7 @@ const SoftwareModule = (() => {
     const registros = DataService.getSoftwareUniqueRegistros();
 
     return `
-      <div class="modal-overlay open" onclick="SoftwareModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${Icons.fileText} Reporte por Registro</h3>

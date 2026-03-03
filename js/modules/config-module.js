@@ -796,7 +796,7 @@ const ConfigModule = (() => {
   const openEditProfile = () => {
     const user = State.get('user');
     document.getElementById('configModal').innerHTML = `
-      <div class="modal-overlay open" onclick="ConfigModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">Editar Perfil</h3>
@@ -869,7 +869,7 @@ const ConfigModule = (() => {
     ];
 
     document.getElementById('configModal').innerHTML = `
-      <div class="modal-overlay open" onclick="ConfigModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">Crear Nuevo Usuario</h3>
@@ -1024,7 +1024,7 @@ const ConfigModule = (() => {
     const userModules = user.allowedModules || [];
 
     document.getElementById('configModal').innerHTML = `
-        <div class="modal-overlay open" onclick="ConfigModule.closeModal(event)">
+        <div class="modal-overlay open">
           <div class="modal" onclick="event.stopPropagation()" style="max-width: 700px;">
             <div class="modal__header">
               <h3 class="modal__title">Editar Usuario</h3>

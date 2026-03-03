@@ -87,22 +87,24 @@ const ProductosModule = (() => {
         <tbody class="data-table__body">
           ${productos.map(p => `
             <tr>
-              <td><span class="font-medium">${p.codigo}</span></td>
-              <td>
-                <div class="font-medium">${p.nombre}</div>
-                <div class="text-xs text-muted">${p.descripcion || ''}</div>
+              <td data-label="Código"><span class="font-medium">${p.codigo}</span></td>
+              <td data-label="Nombre / Descripción" class="producto-desc-td">
+                <div>
+                  <div class="font-medium" style="white-space: normal;">${p.nombre}</div>
+                  <div class="text-xs text-muted" style="white-space: normal; line-height: 1.2; word-break: break-word; margin-top: 4px;">${p.descripcion || ''}</div>
+                </div>
               </td>
-              <td>${p.categoria || '-'}</td>
-              <td>
+              <td data-label="Categoría">${p.categoria || '-'}</td>
+              <td data-label="Tipo">
                 <span class="badge ${p.tipo === 'Servicio' ? 'badge--info' : 'badge--primary'}">${p.tipo}</span>
               </td>
-              <td class="font-medium">$${parseFloat(p.precio_venta || p.precio || 0).toFixed(2)}</td>
-              <td>
+              <td data-label="Precio Unit." class="font-medium">$${parseFloat(p.precio_venta || p.precio || 0).toFixed(2)}</td>
+              <td data-label="Estado">
                 <span class="badge ${p.estado === 'Activo' ? 'badge--success' : 'badge--warning'}">
                   ${p.estado}
                 </span>
               </td>
-              <td>
+              <td data-label="Acciones">
                 <div class="flex gap-xs">
                   ${canUpdate ? `
                   <button class="btn btn--ghost btn--icon btn--sm" onclick="ProductosModule.openEditModal('${p.id}')" title="Editar">
@@ -147,7 +149,7 @@ const ProductosModule = (() => {
     const isEdit = producto !== null;
 
     return `
-      <div class="modal-overlay open" onclick="ProductosModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Item' : 'Nuevo Producto / Servicio'}</h3>

@@ -216,7 +216,7 @@ const ContratosModule = (() => {
     const clientes = DataService.getClientesSync();
 
     return `
-      <div class="modal-overlay open" onclick="ContratosModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Contrato' : 'Nuevo Contrato'}</h3>
@@ -319,7 +319,7 @@ const ContratosModule = (() => {
     }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
     return `
-      <div class="modal-overlay open" onclick="ContratosModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--xl" onclick="event.stopPropagation()">
           <div class="modal__header">
             <div>
@@ -434,7 +434,7 @@ const ContratosModule = (() => {
     const cliente = DataService.getClienteById(contrato?.clienteId);
 
     return `
-      <div class="modal-overlay open" onclick="ContratosModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${Icons.fileText} Reporte de Contrato</h3>

@@ -255,7 +255,7 @@ const GestionTecnicosModule = (() => {
             // Wrapper: .modal-overlay (controla visibilidad y backdrop)
             // Card: .modal (contenido, fondo blanco, sombra)
             const modalHtml = `
-                <div class="modal-overlay" id="${modalId}" style="z-index: 10000;" onclick="if(event.target === this) GestionTecnicosModule.closeModal('${modalId}')">
+                <div class="modal-overlay" id="${modalId}" style="z-index: 10000;">
                     <div class="modal modal--lg">
                         <div class="modal__header">
                             <h3 class="modal__title">Generar Pago a Técnico</h3>

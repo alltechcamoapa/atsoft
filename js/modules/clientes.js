@@ -164,7 +164,7 @@ const ClientesModule = (() => {
     const title = isEdit ? 'Editar Cliente' : 'Nuevo Cliente';
 
     return `
-      <div class="modal-overlay open" onclick="ClientesModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${title}</h3>
@@ -254,7 +254,7 @@ const ClientesModule = (() => {
     const proformas = DataService.getProformasByCliente(uuid);
 
     return `
-      <div class="modal-overlay open" onclick="ClientesModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--lg" onclick="event.stopPropagation()">
           <div class="modal__header">
             <div class="flex items-center gap-md">
@@ -471,7 +471,7 @@ const ClientesModule = (() => {
 
   const renderDeleteConfirm = (cliente) => {
     return `
-      <div class="modal-overlay open" onclick="ClientesModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--confirm" onclick="event.stopPropagation()">
           <div class="modal__body" style="padding-top: var(--spacing-xl);">
             <div class="modal__icon modal__icon--danger">

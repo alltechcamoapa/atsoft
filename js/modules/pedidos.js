@@ -353,7 +353,7 @@ const PedidosModule = (() => {
         currentItems = isEdit ? [...(pedido.items || [])].map(item => ({ ...item, completado: item.completado || false })) : [];
 
         return `
-            <div class="modal-overlay open" onclick="PedidosModule.closeModal(event)">
+            <div class="modal-overlay open">
                 <div class="modal modal--lg animate-scaleIn" onclick="event.stopPropagation()">
                     <div class="modal__header">
                         <h3 class="modal__title">${isEdit ? 'Editar Pedido' : 'Nuevo Pedido'}</h3>
@@ -700,7 +700,7 @@ const PedidosModule = (() => {
         const categoria = categorias.find(c => c.id === pedido.categoria) || categorias[categorias.length - 1];
 
         document.getElementById('pedidoModal').innerHTML = `
-            <div class="modal-overlay open" onclick="PedidosModule.closeModal(event)">
+            <div class="modal-overlay open">
                 <div class="modal modal--lg animate-scaleIn" onclick="event.stopPropagation()">
                     <div class="modal__header">
                         <div>
@@ -885,7 +885,7 @@ const PedidosModule = (() => {
         const clientes = DataService.getClientesSync();
 
         document.getElementById('pedidoModal').innerHTML = `
-            <div class="modal-overlay open" onclick="PedidosModule.closeModal(event)">
+            <div class="modal-overlay open">
                 <div class="modal animate-scaleIn" onclick="event.stopPropagation()">
                     <div class="modal__header">
                         <h3 class="modal__title">${Icons.barChart} Reportes de Pedidos</h3>
@@ -1041,7 +1041,7 @@ const PedidosModule = (() => {
     // ========== GESTIÓN DE CATEGORÍAS ==========
     const openCategoriasModal = () => {
         const content = `
-          <div class="modal-overlay open" onclick="PedidosModule.closeModal(event)">
+          <div class="modal-overlay open">
             <div class="modal" onclick="event.stopPropagation()" style="width: 500px; max-width: 95%;">
               <div class="modal__header">
                 <h3 class="modal__title">Gestionar Categorías</h3>

@@ -240,7 +240,7 @@ const VisitasModule = (() => {
     const contratosCliente = selectedClienteId ? DataService.getContratosByCliente(selectedClienteId).filter(c => c.estadoContrato === 'Activo') : [];
 
     return `
-      <div class="modal-overlay open" onclick="VisitasModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--lg" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Visita' : 'Nueva Visita'}</h3>
@@ -369,7 +369,7 @@ const VisitasModule = (() => {
     const equipo = visita.equipoId ? DataService.getEquipoById(visita.equipoId) : null;
 
     return `
-      <div class="modal-overlay open" onclick="VisitasModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--lg" onclick="event.stopPropagation()">
           <div class="modal__header">
             <div>
@@ -458,7 +458,7 @@ const VisitasModule = (() => {
   const renderReportModal = () => {
     const clientes = DataService.getClientesSync();
     return `
-      <div class="modal-overlay open" onclick="VisitasModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${Icons.fileText} Generar Reporte de Visitas</h3>
@@ -709,7 +709,7 @@ const VisitasModule = (() => {
     }
 
     const equipoModal = `
-      <div class="modal-overlay open" style="z-index: 1001;" onclick="VisitasModule.closeEquipoModal(event)">
+      <div class="modal-overlay open" style="z-index: 1001;">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">Crear Nuevo Equipo</h3>

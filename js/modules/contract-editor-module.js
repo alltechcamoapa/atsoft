@@ -24,7 +24,7 @@ const ContractEditorModule = (() => {
     const templates = DataService.getContractTemplates();
 
     return `
-      <div class="modal-overlay open" onclick="ContractEditorModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--lg" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${Icons.fileText} Plantillas de Contratos</h3>
@@ -89,7 +89,7 @@ const ContractEditorModule = (() => {
     const isEdit = !!template;
 
     return `
-      <div class="modal-overlay open" onclick="ContractEditorModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal modal--xl" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Plantilla' : 'Nueva Plantilla'}</h3>
@@ -257,7 +257,7 @@ const ContractEditorModule = (() => {
     const optionsHtml = templates.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
 
     document.getElementById('contratoModal').innerHTML = `
-      <div class="modal-overlay open" onclick="ContractEditorModule.closeModal(event)">
+      <div class="modal-overlay open">
         <div class="modal" onclick="event.stopPropagation()" style="width: 400px; max-width: 90%;">
           <div class="modal__header">
             <h3 class="modal__title">Imprimir Contrato</h3>

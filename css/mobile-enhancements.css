@@ -1210,3 +1210,15 @@
         padding: 0;
     }
 }
+/* Producto Description specific mobile rules */
+@media (max-width: 768px) {
+  .data-table tbody td.producto-desc-td {
+    flex: 1 1 100%;
+    align-items: flex-start;
+    margin-top: 8px;
+  }
+  .data-table tbody td.producto-desc-td > div {
+    text-align: right;
+    width: 100%;
+  }
+}

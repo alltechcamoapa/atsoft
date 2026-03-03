@@ -45,12 +45,27 @@ const DataService = (() => {
         const normalized = {};
         for (const key in data) {
             normalized[toCamelCase(key)] = data[key];
+            normalized[key] = data[key]; // Preserve original snake_case key for compatibility
         }
 
-        // Mapeos críticos de compatibilidad
+        // Mapeos crticos de compatibilidad
         if (table === 'clientes') normalized.clienteId = data.codigo_cliente || data.id;
         if (table === 'contratos') normalized.contratoId = data.codigo_contrato || data.id;
         if (table === 'equipos') normalized.equipoId = data.codigo_equipo || data.id;
+        if (table === 'productos') {
+            normalized.productoId = data.id;
+            normalized.precio = parseFloat(data.precio_venta || data.precio) || 0;
+        }
+        if (table === 'proformas') {
+            normalized.proformaId = data.codigo_proforma || data.id;
+            normalized.numero = data.numero_proforma || data.numero;
+            normalized.clienteId = data.cliente_id;
+        }
+        if (table === 'pedidos') {
+            normalized.pedidoId = data.pedido_id || data.id;
+            normalized.numeroPedido = data.numero_pedido || data.numero;
+            normalized.clienteId = data.cliente_id;
+        }
 
         if (table === 'visitas') {
             normalized.visitaId = data.codigo_visita || data.id;
@@ -209,6 +224,7 @@ const DataService = (() => {
                 contratos,
                 equipos,
                 visitas,
+                productos,
                 nominas,
                 software,
                 ausencias
@@ -217,6 +233,7 @@ const DataService = (() => {
                 SupabaseDataService.getContratosSync(),
                 SupabaseDataService.getEquiposSync(),
                 SupabaseDataService.getVisitasSync(),
+                SupabaseDataService.getProductosSync(),
                 SupabaseDataService.getRecentNominas?.() || Promise.resolve([]),
                 SupabaseDataService.getSoftwareSync(),
                 SupabaseDataService.getAllAusencias?.() || Promise.resolve([])
@@ -227,6 +244,11 @@ const DataService = (() => {
             cache.contratos = (contratos || []).map(c => ({ ...normalizeSupabaseData('contratos', c), cliente: normalizeSupabaseData('clientes', c.cliente) }));
             cache.equipos = (equipos || []).map(e => ({ ...normalizeSupabaseData('equipos', e), cliente: normalizeSupabaseData('clientes', e.cliente) }));
             cache.visitas = (visitas || []).map(v => normalizeSupabaseData('visitas', v));
+            cache.productos = (productos || []).map(p => ({
+                ...p,
+                productoId: p.id,
+                precio: parseFloat(p.precio_venta) || 0
+            }));
             cache.nominas = (nominas || []).map(n => ({ ...n, empleadoNombre: n.empleado?.nombre || 'Desconocido', empleadoCargo: n.empleado?.cargo || '-' }));
             cache.software = (software || []).map(s => ({ ...normalizeSupabaseData('software', s), cliente: s.cliente ? normalizeSupabaseData('clientes', s.cliente) : null }));
             cache.ausencias = (ausencias || []).map(a => ({
@@ -345,11 +367,11 @@ const DataService = (() => {
             const { table, eventType, new: newRecord, old: oldRecord } = payload;
 
             // Mapear tabla DB a propiedad del caché
-            let target = null;
-            if (table === 'clientes') target = cache.clientes;
-            if (table === 'contratos') target = cache.contratos;
-            if (table === 'equipos') target = cache.equipos;
-            if (table === 'visitas') target = cache.visitas;
+            let target = cache[table] || cache[table.toLowerCase()];
+
+            if (!target) {
+                if (table === 'tecnicos' || table === 'empleados') target = cache.empleados;
+            }
 
             if (!target) return;
 

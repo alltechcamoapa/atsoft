@@ -943,7 +943,7 @@ const PrestacionesModule = (() => {
     const empleados = DataService.getEmpleadosSync();
     // Modal HTML para crear feriado
     const modalHTML = `
-      <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
+      <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;">
         <div class="modal modal--large" onclick="event.stopPropagation()">
             <div class="modal__header">
                 <h3 class="modal__title">Registrar Día Feriado Trabajado</h3>
@@ -1262,7 +1262,7 @@ const PrestacionesModule = (() => {
   const registrarPrestamo = () => {
     const empleados = DataService.getEmpleadosSync();
     document.getElementById('prestacionesModal').innerHTML = `
-        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
+        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;">
             <div class="modal" onclick="event.stopPropagation()">
               <div class="modal__header">
                 <h3 class="modal__title">Registrar Préstamo / Crédito</h3>
@@ -1320,7 +1320,7 @@ const PrestacionesModule = (() => {
     `).join('') : '<tr><td colspan="3" class="text-center text-muted">No se han registrado abonos</td></tr>';
 
     document.getElementById('prestacionesModal').innerHTML = `
-        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick="PrestacionesModule.closeModal(event)">
+        <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;">
             <div class="modal" onclick="event.stopPropagation()">
               <div class="modal__header">
                 <h3 class="modal__title">Detalle de Préstamo</h3>
@@ -1385,7 +1385,7 @@ const PrestacionesModule = (() => {
 
     const html = `
 
-          <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+          <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" >
             <div class="modal" onclick="event.stopPropagation()">
               <div class="modal__header">
 
@@ -1445,7 +1445,7 @@ const PrestacionesModule = (() => {
 
     const html = `
 
-  <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" >
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal__header">
 
@@ -1503,7 +1503,7 @@ const PrestacionesModule = (() => {
 
     const html = `
 
-  <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style = "display: flex; justify-content: center; align-items: center;" >
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal__header">
 
@@ -2906,7 +2906,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -3206,7 +3206,7 @@ const PrestacionesModule = (() => {
 
     const contenido = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
@@ -3352,7 +3352,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
@@ -3530,7 +3530,7 @@ const PrestacionesModule = (() => {
 
       document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -3654,7 +3654,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
@@ -4072,7 +4072,7 @@ const PrestacionesModule = (() => {
 
       const content = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -4478,7 +4478,7 @@ const PrestacionesModule = (() => {
 
       const content = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal modal--large" onclick="event.stopPropagation()">
 
@@ -4958,7 +4958,7 @@ const PrestacionesModule = (() => {
 
     document.getElementById('prestacionesModal').innerHTML = `
 
-  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" onclick = "PrestacionesModule.closeModal(event)" >
+  <div class="modal-overlay open" style="display: flex; justify-content: center; align-items: center;" >
 
     <div class="modal" onclick="event.stopPropagation()">
 
