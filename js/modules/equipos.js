@@ -4,7 +4,117 @@
  */
 
 const EquiposModule = (() => {
-  let filterState = { search: '', estado: 'all', clienteId: 'all' };
+  let filterState = { search: '', estado: 'all', clienteId: 'all', view: 'list' };
+
+  const getTiposEquipo = () => {
+    const defaultTipos = ["Laptop", "Computadora", "Servidor", "Impresora", "Router", "Switch", "Firewall", "UPS", "NAS", "Otro"];
+    try {
+      const stored = localStorage.getItem('tiposEquipo');
+      if (stored) return JSON.parse(stored);
+    } catch { }
+    return defaultTipos;
+  };
+
+  const saveTiposEquipo = (tipos) => {
+    localStorage.setItem('tiposEquipo', JSON.stringify(tipos));
+  };
+
+  const openTiposModal = () => {
+    const equipoModal = document.getElementById('equipoModal');
+    if (!equipoModal) return;
+
+    const existing = document.getElementById('tiposModal');
+    if (existing) existing.remove();
+
+    equipoModal.insertAdjacentHTML('beforeend', `<div id="tiposModal">${renderTiposModal()}</div>`);
+  };
+
+  const closeTiposModal = () => {
+    const modal = document.getElementById('tiposModal');
+    if (modal) modal.remove();
+    const datalist = document.getElementById('tipoEquipoList');
+    if (datalist) {
+      datalist.innerHTML = getTiposEquipo().map(t => `<option value="${t}">`).join('');
+    }
+  };
+
+  const addTipoEquipo = () => {
+    const input = document.getElementById('nuevoTipoInput');
+    const val = input.value.trim();
+    if (val) {
+      const tipos = getTiposEquipo();
+      if (!tipos.includes(val)) {
+        tipos.push(val);
+        saveTiposEquipo(tipos);
+        document.getElementById('tiposModal').innerHTML = renderTiposModal();
+      } else {
+        alert('Este tipo de equipo ya existe.');
+      }
+    }
+  };
+
+  const deleteTipoEquipo = (index) => {
+    if (confirm('¿Eliminar este tipo de equipo?')) {
+      const tipos = getTiposEquipo();
+      tipos.splice(index, 1);
+      saveTiposEquipo(tipos);
+      document.getElementById('tiposModal').innerHTML = renderTiposModal();
+    }
+  };
+
+  const editTipoEquipo = (index) => {
+    const tipos = getTiposEquipo();
+    const current = tipos[index];
+    const val = prompt('Editar tipo de equipo:', current);
+    if (val !== null && val.trim() !== '' && val.trim() !== current) {
+      if (!tipos.includes(val.trim())) {
+        tipos[index] = val.trim();
+        saveTiposEquipo(tipos);
+        document.getElementById('tiposModal').innerHTML = renderTiposModal();
+      } else {
+        alert('Este tipo de equipo ya existe.');
+      }
+    }
+  };
+
+  const renderTiposModal = () => {
+    const tipos = getTiposEquipo();
+    return `
+      <div class="modal-overlay open" style="z-index: 10001; background-color: rgba(0,0,0,0.6);" >
+        <div class="modal modal--sm" onclick="event.stopPropagation()">
+          <div class="modal__header">
+            <h3 class="modal__title">Tipos de Equipos</h3>
+            <button class="modal__close" type="button" onclick="EquiposModule.closeTiposModal()">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+          </div>
+          <div class="modal__body">
+            <div class="form-group" style="display: flex; gap: 8px;">
+              <input type="text" id="nuevoTipoInput" class="form-input" placeholder="Nuevo tipo..." onkeydown="if(event.key === 'Enter') { event.preventDefault(); EquiposModule.addTipoEquipo(); }">
+              <button type="button" class="btn btn--primary" onclick="EquiposModule.addTipoEquipo()">Añadir</button>
+            </div>
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+              ${tipos.map((t, idx) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border-color);">
+                  <span>${t}</span>
+                  <div style="display: flex; gap: 4px;">
+                    <button type="button" class="btn btn--icon btn--ghost btn--sm" onclick="EquiposModule.editTipoEquipo(${idx})" title="Editar">
+                      <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 20h9"></path><path d="M16.5 3.5l4 4L7 21l-4 1 1-4L16.5 3.5z"></path></svg>
+                    </button>
+                    <button type="button" class="btn btn--icon btn--ghost btn--sm text-danger" onclick="EquiposModule.deleteTipoEquipo(${idx})" title="Eliminar">
+                      <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6V20a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path></svg>
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+              ${tipos.length === 0 ? '<div style="padding: 12px; text-align:center; color: var(--text-muted)">Sin tipos</div>' : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
 
   const render = () => {
     const equipos = DataService.getEquiposFiltered(filterState);
@@ -43,6 +153,7 @@ const EquiposModule = (() => {
               <div class="search-input" style="flex: 1; max-width: 300px;">
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar equipo..." 
+                       id="searchInput"
                        value="${filterState.search}"
                        oninput="EquiposModule.handleSearch(this.value)">
               </div>
@@ -62,12 +173,20 @@ const EquiposModule = (() => {
                 <option value="En Reparación" ${filterState.estado === 'En Reparación' ? 'selected' : ''}>En Reparación</option>
                 <option value="Fuera de Servicio" ${filterState.estado === 'Fuera de Servicio' ? 'selected' : ''}>Fuera de Servicio</option>
               </select>
+              <div class="view-toggle" style="display: flex; gap: 5px;">
+                <button class="btn btn--icon ${filterState.view === 'list' ? 'btn--primary' : 'btn--ghost'}" onclick="EquiposModule.handleViewToggle('list')" title="Vista de Lista">
+                  ${Icons.list || '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>'}
+                </button>
+                <button class="btn btn--icon ${filterState.view === 'grid' ? 'btn--primary' : 'btn--ghost'}" onclick="EquiposModule.handleViewToggle('grid')" title="Vista de Cuadrícula">
+                  ${Icons.grid || '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Equipment Grid -->
-        <div class="equipment-grid">
+        <div class="${filterState.view === 'list' ? 'equipment-list' : 'equipment-grid'}" style="${filterState.view === 'list' ? 'display: block;' : ''}">
           ${equipos.length > 0 ? renderEquipmentCards(equipos) : renderEmptyState()}
         </div>
       </div>
@@ -101,9 +220,65 @@ const EquiposModule = (() => {
     const canUpdate = DataService.canPerformAction(user.role, 'equipos', 'update');
     const canDelete = DataService.canPerformAction(user.role, 'equipos', 'delete');
 
+    if (filterState.view === 'list') {
+      let rows = equipos.map(equipo => {
+        const cliente = DataService.getClienteById(equipo.clienteId);
+        const reparaciones = DataService.getRecepcionesByEquipo(equipo.equipoId || equipo.id) || [];
+        const statusClass = equipo.estado === 'Operativo' ? 'success' : equipo.estado === 'En Reparación' ? 'warning' : 'danger';
+        return `
+          <tr>
+            <td>
+              <div style="font-weight: 500;">${equipo.nombreEquipo}</div>
+              <div style="font-size: 0.85rem; color: #666;">${equipo.marca} ${equipo.modelo}</div>
+            </td>
+            <td><span class="badge badge--${statusClass}">${equipo.estado}</span></td>
+            <td>${equipo.serie || 'N/A'}</td>
+            <td>
+              <div style="display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="EquiposModule.viewClientDetail('${equipo.clienteId}')">
+                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(cliente?.nombreCliente || 'N')}&background=1a73e8&color=fff&size=24" style="border-radius: 50%; width: 24px; height: 24px;">
+                <div>
+                   <div style="line-height:1.2;">${cliente?.nombreCliente || 'Sin cliente'}</div>
+                   <div style="font-size: 0.75rem; color: #666;">${cliente?.empresa || ''}</div>
+                </div>
+              </div>
+            </td>
+            <td>${reparaciones.length} rep.</td>
+            <td style="text-align: right;">
+              <div style="display: flex; gap: 5px; justify-content: flex-end;">
+                  <button class="btn btn--ghost btn--icon btn--sm" onclick="EquiposModule.viewDetail('${equipo.equipoId}')" title="Ver">${Icons.eye || 'O'}</button>
+                  ${canUpdate ? `<button class="btn btn--ghost btn--icon btn--sm" onclick="EquiposModule.openEditModal('${equipo.equipoId}')" title="Editar">${Icons.edit || 'E'}</button>` : ''}
+                  ${canDelete ? `<button class="btn btn--ghost btn--icon btn--sm text-danger" onclick="EquiposModule.deleteEquipo('${equipo.equipoId}')" title="Eliminar">${Icons.trash || 'X'}</button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <div class="table-responsive card" style="width: 100%; border-radius: 8px; overflow: visible;">
+          <table class="table" style="width: 100%; min-width: 800px; border-collapse: collapse;">
+            <thead style="background: var(--bg-color); border-bottom: 1px solid var(--border-color);">
+              <tr>
+                <th style="padding: 12px 15px; text-align: left; font-weight: 600;">Equipo</th>
+                <th style="padding: 12px 15px; text-align: left; font-weight: 600;">Estado</th>
+                <th style="padding: 12px 15px; text-align: left; font-weight: 600;">Serie</th>
+                <th style="padding: 12px 15px; text-align: left; font-weight: 600;">Cliente</th>
+                <th style="padding: 12px 15px; text-align: left; font-weight: 600;">Reparaciones</th>
+                <th style="padding: 12px 15px; text-align: right; font-weight: 600;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    // Grid View (Default)
     return equipos.map(equipo => {
       const cliente = DataService.getClienteById(equipo.clienteId);
-      const reparaciones = DataService.getReparacionesByEquipo(equipo.equipoId);
+      const reparaciones = DataService.getRecepcionesByEquipo(equipo.equipoId || equipo.id) || [];
       const statusClass = equipo.estado === 'Operativo' ? 'success' : equipo.estado === 'En Reparación' ? 'warning' : 'danger';
 
       return `
@@ -182,31 +357,49 @@ const EquiposModule = (() => {
       </div>
     `;
   };
-
   const renderFormModal = (equipo = null) => {
     const isEdit = equipo !== null;
     const clientes = DataService.getClientesSync();
 
+    const selectedClienteId = equipo?.clienteId || equipo?.cliente_id || '';
+    const selectedClienteObj = selectedClienteId ? clientes.find(c => c.id === selectedClienteId || c.clienteId === selectedClienteId) : null;
+    const clientDisplayFormat = c => `${c.codigo || c.clienteId || c.id || ''} - ${c.nombreCliente || c.empresa || 'Sin Nombre'}`;
+    const selectedClienteLabel = selectedClienteObj ? clientDisplayFormat(selectedClienteObj) : '';
+
     return `
-      <div class="modal-overlay open">
+      <style>
+         .cliente-option:hover { background: var(--color-primary-50); color: var(--color-primary-700); }
+      </style>
+      <div class="modal-overlay open" style="display: flex; align-items: center; justify-content: center;">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Equipo' : 'Nuevo Equipo'}</h3>
             <button class="modal__close" onclick="EquiposModule.closeModal()">${Icons.x}</button>
           </div>
-          <form class="modal__body" onsubmit="EquiposModule.handleSubmit(event)">
+          <form class="modal__body" style="overflow: visible;" onsubmit="EquiposModule.handleSubmit(event)">
             <input type="hidden" name="equipoId" value="${equipo?.equipoId || ''}">
             
-            <div class="form-group">
-              <label class="form-label form-label--required">Cliente</label>
-              <select name="clienteId" class="form-select" required>
-                <option value="">Seleccionar cliente...</option>
-                ${clientes.map(c => `
-                  <option value="${c.clienteId}" ${equipo?.clienteId === c.clienteId ? 'selected' : ''}>
-                    ${c.empresa} - ${c.nombreCliente}
-                  </option>
-                `).join('')}
-              </select>
+            <div class="form-group" style="position: relative;">
+                <label class="form-label form-label--required">Cliente</label>
+                <input type="hidden" name="clienteId" id="hiddenClienteId" value="${selectedClienteId}" required>
+                <input type="text" id="searchClienteInput" class="form-input" placeholder="Buscar código o nombre..." 
+                       value="${selectedClienteLabel}" 
+                       autocomplete="off" 
+                       onfocus="EquiposModule.showClientesList()" 
+                       onblur="setTimeout(() => { const d = document.getElementById('clientesDropdownList'); if(d) d.style.display = 'none'; }, 250)"
+                       oninput="EquiposModule.filterClientesList(this.value)" required>
+                <div id="clientesDropdownList" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 9999; background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--border-radius-md); box-shadow: var(--shadow-lg); max-height: 250px; overflow-y: auto;">
+                  ${clientes.map(c => `
+                    <div class="cliente-option" 
+                         data-id="${c.id || c.clienteId}" 
+                         data-label="${clientDisplayFormat(c)}" 
+                         onclick="EquiposModule.selectClienteInline('${c.id || c.clienteId}', this.getAttribute('data-label'))" 
+                         style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border-color); transition: background 0.2s;">
+                      <div style="font-weight: 500;">${c.codigo || c.clienteId || c.id} - ${c.nombreCliente || c.empresa || ''}</div>
+                    </div>
+                  `).join('')}
+                  ${clientes.length === 0 ? `<div style="padding: 10px 14px; color: var(--text-muted);">No hay clientes...</div>` : ''}
+                </div>
             </div>
 
             <div class="form-group">
@@ -217,21 +410,17 @@ const EquiposModule = (() => {
             </div>
             
             <div class="form-group">
-                <label class="form-label form-label--required">Tipo de Equipo</label>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <label class="form-label form-label--required" style="margin-bottom: 0;">Tipo de Equipo</label>
+                  <button type="button" class="btn btn--icon btn--ghost btn--sm" onclick="EquiposModule.openTiposModal()" title="Administrar tipos de equipo" style="height: 24px; width: 24px; padding: 2px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                  </button>
+                </div>
                 <input type="text" name="tipoEquipo" class="form-input" list="tipoEquipoList"
                        value="${equipo?.tipoEquipo || ''}" 
                        placeholder="Ej: Laptop, PC, Servidor..." required>
                 <datalist id="tipoEquipoList">
-                    <option value="Laptop">
-                    <option value="Computadora">
-                    <option value="Servidor">
-                    <option value="Impresora">
-                    <option value="Router">
-                    <option value="Switch">
-                    <option value="Firewall">
-                    <option value="UPS">
-                    <option value="NAS">
-                    <option value="Otro">
+                    ${getTiposEquipo().map(t => `<option value="${t}">`).join('')}
                 </datalist>
             </div>
 
@@ -282,14 +471,31 @@ const EquiposModule = (() => {
 
   const renderDetailModal = (equipo) => {
     const cliente = DataService.getClienteById(equipo.clienteId);
-    const reparaciones = DataService.getReparacionesByEquipo(equipo.equipoId);
+    const reparaciones = DataService.getRecepcionesByEquipo(equipo.equipoId || equipo.id) || [];
+    const visitas = (DataService.getVisitasSync() || []).filter(v => v.equipo_id === (equipo.equipoId || equipo.id) || v.equipoId === (equipo.equipoId || equipo.id));
+
+    // Unificar historial y ordenar por fecha descendente
+    const historial = [
+      ...reparaciones.map(r => ({ ...r, tipoIngreso: 'Recepción en Tienda', _esVisita: false })),
+      ...visitas.map(v => ({ ...v, tipoIngreso: 'Visita / Asistencia Remota', _esVisita: true }))
+    ].sort((a, b) => new Date(b.fecha_recepcion || b.created_at || b.fecha || b.fecha_visita || new Date()) - new Date(a.fecha_recepcion || a.created_at || a.fecha || a.fecha_visita || new Date()));
+
+    const allUsers = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync() : [];
+    const getAtendidoPor = (h) => {
+      if (h._esVisita) {
+        const tech = allUsers.find(u => u.id === h.usuarioSoporte);
+        return tech ? (tech.name || tech.username) : (h.usuarioSoporte || 'N/A');
+      } else {
+        return h.creador?.full_name || h.creador?.name || h.usuario?.full_name || h.creador?.username || h.tecnico || h.recibido_por || h.creado_por || 'Sistema';
+      }
+    };
 
     const user = State.get('user');
     const canUpdate = DataService.canPerformAction(user.role, 'equipos', 'update');
     const canDelete = DataService.canPerformAction(user.role, 'equipos', 'delete');
 
     return `
-      <div class="modal-overlay open">
+      <div class="modal-overlay open" style="display: flex; align-items: center; justify-content: center;">
         <div class="modal modal--xl" onclick="event.stopPropagation()">
           <div class="modal__header">
             <div>
@@ -332,55 +538,52 @@ const EquiposModule = (() => {
             <!-- Repair History Section -->
             <div class="repair-history-section">
               <div class="repair-history-header">
-                <h4>Historial de Reparaciones (${reparaciones.length})</h4>
+                <h4>Historial de Atenciones (${historial.length})</h4>
                 <div class="repair-history-actions">
                   <button class="btn btn--secondary btn--sm" onclick="EquiposModule.exportEquipoPDF('${equipo.equipoId}')">
                     ${Icons.fileText} Exportar PDF
                   </button>
                   ${canUpdate ? `
-                  <button class="btn btn--primary btn--sm" onclick="EquiposModule.openReparacionModal('${equipo.equipoId}')">
-                    ${Icons.plus} Nueva Reparación
+                  <button class="btn btn--primary btn--sm" onclick="EquiposModule.openIngresoOpciones('${equipo.equipoId}', '${equipo.clienteId}')">
+                    ${Icons.plus} Ingresar
                   </button>
                   ` : ''}
                 </div>
               </div>
               
-              ${reparaciones.length > 0 ? `
+              ${historial.length > 0 ? `
                 <table class="data-table">
                   <thead class="data-table__head">
                     <tr>
                       <th>Fecha</th>
-                      <th>Descripción del Problema</th>
-                      <th>Trabajo Realizado</th>
-                      <th>Técnico</th>
-                      <th>Costo</th>
+                      <th>Tipo de Atención</th>
+                      <th>Diagnóstico / Problema</th>
+                      <th>Atendido por</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody class="data-table__body">
-                    ${reparaciones.map(r => `
+                    ${historial.map(h => `
                       <tr>
-                        <td>${new Date(r.fecha).toLocaleDateString('es-NI')}</td>
-                        <td style="max-width: 200px;">${r.problema}</td>
-                        <td style="max-width: 200px;">${r.trabajoRealizado}</td>
-                        <td>${r.tecnico}</td>
-                        <td>${r.costo > 0 ? `$${r.costo.toFixed(2)}` : 'Garantía'}</td>
+                        <td>${new Date(h.fecha_recepcion || h.created_at || h.fecha || h.fecha_visita || new Date()).toLocaleDateString('es-NI')}</td>
+                        <td><span class="badge ${h._esVisita ? 'badge--info' : 'badge--primary'}">${h.tipoIngreso}</span></td>
+                        <td style="max-width: 250px;">${h.diagnostico_cliente || h.diagnostico_inicial || h.problema || '-'}</td>
+                        <td>${getAtendidoPor(h)}</td>
                         <td>
                           <div class="flex gap-xs">
-                            ${canUpdate ? `
-                            <button class="btn btn--ghost btn--icon btn--sm" 
-                                    onclick="EquiposModule.openEditReparacion('${equipo.equipoId}', '${r.reparacionId}')"
-                                    title="Editar">
-                              ${Icons.edit}
-                            </button>
-                            ` : ''}
-                            ${canDelete ? `
-                            <button class="btn btn--ghost btn--icon btn--sm" 
-                                    onclick="EquiposModule.deleteReparacion('${r.reparacionId}')"
-                                    title="Eliminar">
-                              ${Icons.trash}
-                            </button>
-                            ` : ''}
+                            ${h._esVisita ? `
+                              <button class="btn btn--ghost btn--icon btn--sm" 
+                                      onclick="EquiposModule.closeModal(); App.navigate('visitas'); setTimeout(()=> { if(window.VisitasModule) VisitasModule.viewDetail('${h.id || h.visitaId}'); }, 300)"
+                                      title="Ver Visita">
+                                ${Icons.eye || 'V'}
+                              </button>
+                            ` : `
+                              <button class="btn btn--ghost btn--icon btn--sm" 
+                                      onclick="EquiposModule.closeModal(); RecepcionesModule.viewDetail('${h.id || h.recepcionId}')"
+                                      title="Ver Recepción">
+                                ${Icons.eye || 'V'}
+                              </button>
+                            `}
                           </div>
                         </td>
                       </tr>
@@ -389,10 +592,10 @@ const EquiposModule = (() => {
                 </table>
               ` : `
                 <div class="empty-state empty-state--compact">
-                  <p class="text-muted">No hay reparaciones registradas para este equipo.</p>
+                  <p class="text-muted">No hay atenciones registradas para este equipo.</p>
                   ${canUpdate ? `
-                  <button class="btn btn--primary btn--sm" onclick="EquiposModule.openReparacionModal('${equipo.equipoId}')">
-                    ${Icons.plus} Registrar Primera Reparación
+                  <button class="btn btn--primary btn--sm" onclick="EquiposModule.openIngresoOpciones('${equipo.equipoId}', '${equipo.clienteId}')">
+                    ${Icons.plus} Ingresar
                   </button>
                   ` : ''}
                 </div>
@@ -416,7 +619,7 @@ const EquiposModule = (() => {
     const tecnicos = ['Técnico Juan', 'Técnico María', 'Técnico Carlos'];
 
     return `
-      <div class="modal-overlay open">
+      <div class="modal-overlay open" style="display: flex; align-items: center; justify-content: center;">
         <div class="modal" onclick="event.stopPropagation()">
           <div class="modal__header">
             <h3 class="modal__title">${isEdit ? 'Editar Reparación' : 'Nueva Reparación'}</h3>
@@ -691,11 +894,24 @@ const EquiposModule = (() => {
   };
 
   // ========== EVENT HANDLERS ==========
-  const handleSearch = (value) => { filterState.search = value; App.refreshCurrentModule(); };
+  let searchTimeout;
+  const handleSearch = (value) => {
+    filterState.search = value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      App.refreshCurrentModule();
+    }, 300);
+  };
   const handleClienteFilter = (value) => { filterState.clienteId = value; App.refreshCurrentModule(); };
   const handleEstadoFilter = (value) => { filterState.estado = value; App.refreshCurrentModule(); };
 
   let isSubmitting = false; // Flag para prevenir doble submit
+
+
+  const handleViewToggle = (view) => {
+    filterState.view = view;
+    App.refreshCurrentModule();
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -741,7 +957,11 @@ const EquiposModule = (() => {
         'TELEFONO': 'Otro',
         'OTRO': 'Otro'
       };
-      return dict[tipo.toUpperCase().trim()] || 'Otro';
+
+      const upper = tipo.toUpperCase().trim();
+      if (dict[upper]) return dict[upper];
+
+      return tipo.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
     };
 
     const data = {
@@ -814,6 +1034,32 @@ const EquiposModule = (() => {
     const equipo = DataService.getEquipoById(id);
     if (equipo) document.getElementById('equipoModal').innerHTML = renderDetailModal(equipo);
   };
+  const showClientesList = () => {
+    const dropdown = document.getElementById('clientesDropdownList');
+    if (dropdown) dropdown.style.display = 'block';
+  };
+
+  const filterClientesList = (val) => {
+    const dropdown = document.getElementById('clientesDropdownList');
+    if (dropdown) dropdown.style.display = 'block';
+    const term = val.toLowerCase();
+    document.querySelectorAll('.cliente-option').forEach(el => {
+      const label = (el.getAttribute('data-label') || '').toLowerCase();
+      el.style.display = label.includes(term) ? 'block' : 'none';
+      const hiddenInput = document.getElementById('hiddenClienteId');
+      if (hiddenInput && hiddenInput.value !== '') {
+        hiddenInput.value = '';
+      }
+    });
+  };
+
+  const selectClienteInline = (id, label) => {
+    document.getElementById('hiddenClienteId').value = id;
+    document.getElementById('searchClienteInput').value = label;
+    document.getElementById('clientesDropdownList').style.display = 'none';
+    document.getElementById('searchClienteInput').setCustomValidity('');
+  };
+
   const closeModal = (event) => {
     if (event && event.target !== event.currentTarget) return;
     document.getElementById('equipoModal').innerHTML = '';
@@ -864,11 +1110,54 @@ const EquiposModule = (() => {
       }
     }
   };
+  const openIngresoOpciones = (equipoId, clienteId) => {
+    const html = `
+      <div class="modal-overlay open" id="ingresoOpcionesModal" style="z-index: 10005; display: flex; align-items: center; justify-content: center;">
+        <div class="modal modal--sm" onclick="event.stopPropagation()">
+          <div class="modal__header">
+            <h3 class="modal__title">Tipo de Ingreso</h3>
+            <button class="modal__close" onclick="document.getElementById('ingresoOpcionesModal').remove()">${Icons.x}</button>
+          </div>
+          <div class="modal__body" style="display: flex; flex-direction: column; gap: 15px;">
+            <p>Seleccione cómo desea procesar este equipo:</p>
+            <button class="btn btn--primary btn--block" onclick="EquiposModule.ingresarComoRecepcion('${equipoId}', '${clienteId}')">
+              💻 Recepción en Tienda
+            </button>
+            <button class="btn btn--secondary btn--block" onclick="EquiposModule.ingresarComoVisita('${equipoId}', '${clienteId}')">
+              🚗 Visita / Asistencia Remota
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+  };
+
+  const ingresarComoRecepcion = (equipoId, clienteId) => {
+    const modal = document.getElementById('ingresoOpcionesModal');
+    if (modal) modal.remove();
+    EquiposModule.closeModal();
+    App.navigate('recepciones');
+    // Call next-tick instead of relying on arbitrary timeout
+    setTimeout(() => { if (window.RecepcionesModule) RecepcionesModule.openCreateModal({ clienteId, equipoId }); }, 150);
+  };
+
+  const ingresarComoVisita = (equipoId, clienteId) => {
+    const modal = document.getElementById('ingresoOpcionesModal');
+    if (modal) modal.remove();
+    EquiposModule.closeModal();
+    App.navigate('visitas');
+    // Call next-tick instead of relying on arbitrary timeout
+    setTimeout(() => { if (window.VisitasModule) VisitasModule.openCreateModal({ clienteId, equipoId }); }, 150);
+  };
 
   return {
     render, openCreateModal, openEditModal, viewDetail, closeModal,
     handleSearch, handleClienteFilter, handleEstadoFilter, handleSubmit,
     openReparacionModal, openEditReparacion, closeReparacionModal, deleteReparacion,
-    handleReparacionSubmit, exportEquipoPDF, exportGeneralPDF, viewClientDetail, deleteEquipo
+    handleReparacionSubmit, exportEquipoPDF, exportGeneralPDF, viewClientDetail, deleteEquipo,
+    showClientesList, filterClientesList, selectClienteInline,
+    openTiposModal, closeTiposModal, addTipoEquipo, deleteTipoEquipo, editTipoEquipo,
+    handleViewToggle, openIngresoOpciones, ingresarComoRecepcion, ingresarComoVisita
   };
 })();

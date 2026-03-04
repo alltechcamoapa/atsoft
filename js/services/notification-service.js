@@ -455,6 +455,7 @@ const NotificationService = (() => {
         init,
         refresh,
         add: showToast,
+        show: showToast, // Alias for backward compatibility
         renderList,
         handleClick,
         markAllAsRead,

@@ -36,6 +36,7 @@ const ProductosModule = (() => {
               <div class="search-input" style="flex: 1; max-width: 400px;">
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar por nombre, código o descripción..." 
+                       id="searchInput"
                        value="${filterState.search}"
                        oninput="ProductosModule.handleSearch(this.value)">
               </div>
@@ -219,7 +220,14 @@ const ProductosModule = (() => {
 
   // ========== EVENT HANDLERS ==========
 
-  const handleSearch = (value) => { filterState.search = value; App.refreshCurrentModule(); };
+  let searchTimeout;
+  const handleSearch = (value) => {
+    filterState.search = value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      App.refreshCurrentModule();
+    }, 300);
+  };
   const handleTipoFilter = (value) => { filterState.tipo = value; App.refreshCurrentModule(); };
   const handleEstadoFilter = (value) => { filterState.estado = value; App.refreshCurrentModule(); };
 

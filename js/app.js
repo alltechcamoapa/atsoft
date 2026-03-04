@@ -16,6 +16,7 @@ const App = (() => {
       { id: 'pedidos', label: 'Pedidos', icon: Icons.shoppingCart },
       { id: 'productos', label: 'Productos / Servicios', icon: Icons.package },
       { id: 'equipos', label: 'Equipos', icon: Icons.monitor },
+      { id: 'recepciones', label: 'Recepción de Equipos', icon: Icons.inbox },
       { id: 'contratos', label: 'Contratos', icon: Icons.fileText },
       { id: 'visitas', label: 'Visitas / Servicios', icon: Icons.wrench },
       { id: 'software', label: 'Software', icon: Icons.monitor },
@@ -91,7 +92,7 @@ const App = (() => {
         visibleItems.forEach(item => {
           if (['proformas', 'clientes', 'pedidos', 'productos'].includes(item.id)) {
             groups['VENTAS'].push(item);
-          } else if (['equipos', 'contratos', 'visitas', 'software', 'gestion-tecnicos', 'calendario'].includes(item.id)) {
+          } else if (['equipos', 'recepciones', 'contratos', 'visitas', 'software', 'gestion-tecnicos', 'calendario'].includes(item.id)) {
             groups['Servicios Técnicos'].push(item);
           } else if (['prestaciones', 'reportes', 'configuracion'].includes(item.id)) {
             groups['Administración'].push(item);
@@ -171,6 +172,7 @@ const App = (() => {
       proformas: 'Proformas / Cotizaciones',
       productos: 'Productos y Servicios',
       equipos: 'Equipos',
+      recepciones: 'Recepción de Equipos',
       software: 'Software y Licencias',
       prestaciones: 'Prestaciones Laborales',
       calendario: 'Calendario',
@@ -298,348 +300,233 @@ const App = (() => {
   const renderDashboard = () => {
     const stats = DataService.getDashboardStats();
     const activities = DataService.getRecentActivities();
-    const savingsPlans = DataService.getSavingsPlans();
-    const bankAccounts = DataService.getBankAccounts();
     const user = State.get('user');
     const proformas = DataService.getProformasSync().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 5);
 
     // Get upcoming visits
     const allVisitas = DataService.getVisitasSync();
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const upcomingVisitas = allVisitas
-      .filter(v => new Date(v.fechaInicio) >= today && !v.trabajoRealizado)
-      .sort((a, b) => new Date(a.fechaInicio) - new Date(b.fechaInicio))
+      .filter(v => new Date(v.fechaInicio || v.fecha) >= today && !v.trabajoRealizado && (v.estado !== 'Cancelada'))
+      .sort((a, b) => new Date(a.fechaInicio || a.fecha) - new Date(b.fechaInicio || b.fecha))
       .slice(0, 5);
 
+    const currentHour = new Date().getHours();
+    const greeting = currentHour < 12 ? 'Buenos días' : currentHour < 18 ? 'Buenas tardes' : 'Buenas noches';
+
     return `
-      <div class="dashboard">
-        <!-- Stats Row -->
-        <div class="dashboard__row dashboard__row--stats">
-          <div class="stat-card stat-card--primary" onclick="App.navigate('clientes')" title="Ver Clientes">
-            <div class="stat-card__header">
-              <div class="stat-card__icon">${Icons.users}</div>
-              <span class="stat-card__trend stat-card__trend--${stats.clientesActivos.trendDirection}">
-                ${stats.clientesActivos.trendDirection === 'up' ? Icons.trendingUp : Icons.trendingDown}
-                ${Math.abs(stats.clientesActivos.trend)}%
-              </span>
-            </div>
-            <span class="stat-card__label">Clientes Activos</span>
-            <span class="stat-card__value">${stats.clientesActivos.value}</span>
-            <span class="stat-card__period">Click para ver más →</span>
-          </div>
+      <style>
+        .dashboard-v2 { padding: var(--spacing-lg); display: flex; flex-direction: column; gap: var(--spacing-xl); background: var(--bg-body); animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .welcome-banner { background: linear-gradient(135deg, var(--color-primary-600) 0%, var(--color-primary-800) 100%); border-radius: 20px; padding: 2.5rem; color: white; box-shadow: 0 10px 30px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; }
+        .welcome-banner::after { content: ''; position: absolute; right: -50px; top: -50px; width: 400px; height: 400px; background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%); border-radius: 50%; pointer-events: none; }
+        .welcome-text h1 { font-size: 2.2rem; font-weight: 700; margin-bottom: 0.5rem; letter-spacing: -0.5px; }
+        .welcome-text p { color: rgba(255,255,255,0.85); font-size: 1.1rem; }
+        
+        .metric-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.5rem; }
+        .metric-card { background: var(--bg-surface); border-radius: 16px; padding: 1.5rem; box-shadow: 0 4px 20px rgba(0,0,0,0.03); transition: transform 0.2s, box-shadow 0.2s; border: 1px solid var(--border-color); display: flex; flex-direction: column; position: relative; overflow: hidden; }
+        .metric-card:hover { transform: translateY(-5px); box-shadow: 0 12px 30px rgba(0,0,0,0.08); }
+        .metric-card__icon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.6rem; margin-bottom: 1.2rem; }
+        .metric-card.primary .metric-card__icon { background: var(--color-primary-50); color: var(--color-primary-600); }
+        .metric-card.success .metric-card__icon { background: var(--color-success-light); color: var(--color-success); }
+        .metric-card.warning .metric-card__icon { background: var(--color-warning-light); color: var(--color-warning); }
+        .metric-card.info .metric-card__icon { background: #e0f2fe; color: #0284c7; }
+        .metric-card__label { color: var(--text-secondary); font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.5px; }
+        .metric-card__value { color: var(--text-primary); font-size: 2.2rem; font-weight: 700; line-height: 1.1; letter-spacing: -1px; }
+        .metric-card__trend { margin-top: 1rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.35rem; font-weight: 500; color: var(--text-muted); }
+        .metric-card__trend.up { color: var(--color-success); }
+        
+        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
+        @media (max-width: 1024px) { .dashboard-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) { .welcome-banner { flex-direction: column; align-items: flex-start; gap: 1.5rem; padding: 1.5rem; } }
+        
+        .modern-card { background: var(--bg-surface); border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); border: 1px solid var(--border-color); overflow: hidden; height: 100%; display: flex; flex-direction: column; }
+        .modern-card__header { padding: 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface); }
+        .modern-card__title { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 0.6rem; margin: 0; }
+        .modern-card__body { padding: 1.5rem; flex: 1; overflow-y: auto; }
+        
+        .quick-actions { display: flex; gap: 1rem; overflow-x: auto; scrollbar-width: none; flex-wrap: wrap; }
+        .quick-actions::-webkit-scrollbar { display: none; }
+        .quick-action-btn { flex: 0 0 auto; display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); padding: 0.75rem 1.25rem; border-radius: 12px; font-weight: 500; color: white; transition: all 0.2s; cursor: pointer; backdrop-filter: blur(4px); }
+        .quick-action-btn:hover { background: white; color: var(--color-primary-700); border-color: white; transform: translateY(-2px); }
+        
+        .visit-item { display: flex; align-items: center; gap: 1rem; padding: 1rem; border-radius: 12px; transition: background 0.2s; border: 1px solid transparent; background: var(--bg-body); }
+        .visit-item:hover { background: var(--color-primary-50); border-color: var(--color-primary-100); }
+        .visit-date { background: white; color: var(--color-primary-600); padding: 0.6rem; border-radius: 10px; text-align: center; min-width: 65px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .visit-date .day { font-size: 1.4rem; font-weight: 800; line-height: 1; }
+        .visit-date .month { font-size: 0.7rem; text-transform: uppercase; font-weight: 700; margin-top: 0.3rem; letter-spacing: 0.5px; }
+        .visit-info { flex: 1; overflow: hidden; }
+        .visit-title { font-weight: 600; color: var(--text-primary); margin-bottom: 0.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 1rem; }
+        .visit-subtitle { font-size: 0.85rem; color: var(--text-secondary); display: flex; align-items: center; gap: 0.3rem; }
+      </style>
 
-          <div class="stat-card stat-card--success" onclick="App.navigate('visitas')" title="Ver Visitas">
-            <div class="stat-card__header">
-              <div class="stat-card__icon">${Icons.calendar}</div>
-              <span class="stat-card__trend stat-card__trend--${stats.serviciosMes.trendDirection}">
-                ${stats.serviciosMes.trendDirection === 'up' ? Icons.trendingUp : Icons.trendingDown}
-                ${Math.abs(stats.serviciosMes.trend)}%
-              </span>
-            </div>
-            <span class="stat-card__label">Servicios del Mes</span>
-            <span class="stat-card__value">${stats.serviciosMes.value}</span>
-            <span class="stat-card__period">Click para ver más →</span>
+      <div class="dashboard-v2">
+        <div class="welcome-banner">
+          <div class="welcome-text">
+            <h1>${greeting}, ${user?.name?.split(' ')[0] || 'Usuario'}! 👋</h1>
+            <p>Aquí tienes el resumen de tu negocio el día de hoy.</p>
           </div>
-
-          <div class="stat-card stat-card--warning" onclick="App.navigate('proformas')" title="Ver Proformas">
-            <div class="stat-card__header">
-              <div class="stat-card__icon">${Icons.fileText}</div>
-              <span class="stat-card__trend stat-card__trend--${stats.ingresosMes.trendDirection}">
-                ${stats.ingresosMes.trendDirection === 'up' ? Icons.trendingUp : Icons.trendingDown}
-                ${Math.abs(stats.ingresosMes.trend)}%
-              </span>
-            </div>
-            <span class="stat-card__label">Ingresos (USD)</span>
-            <span class="stat-card__value">$${stats.ingresosMes.value.toFixed(2)}</span>
-            <span class="stat-card__period">Click para ver más →</span>
-          </div>
-
-          <div class="stat-card stat-card--info" onclick="App.navigate('contratos')" title="Ver Contratos">
-            <div class="stat-card__header">
-              <div class="stat-card__icon">${Icons.fileText}</div>
-              <span class="stat-card__trend stat-card__trend--${stats.contratosActivos.trendDirection}">
-                ${stats.contratosActivos.trendDirection === 'up' ? Icons.trendingUp : Icons.trendingDown}
-                ${Math.abs(stats.contratosActivos.trend)}%
-              </span>
-            </div>
-            <span class="stat-card__label">Contratos Activos</span>
-            <span class="stat-card__value">${stats.contratosActivos.value}</span>
-            <span class="stat-card__period">Click para ver más →</span>
+          <div class="quick-actions">
+            <button class="quick-action-btn" onclick="App.navigate('visitas')" style="background: white; color: var(--color-primary-700);">
+              ${Icons.plus} Nueva Visita
+            </button>
+            <button class="quick-action-btn" onclick="App.navigate('clientes')">
+              ${Icons.users} Nuevo Cliente
+            </button>
+            <button class="quick-action-btn" onclick="ReportesModule.generateGeneralReport()">
+              ${Icons.barChart} Reporte
+            </button>
           </div>
         </div>
 
-        <!-- Upcoming Visits Alert -->
-        ${upcomingVisitas.length > 0 ? `
-          <div class="card" style="background: linear-gradient(135deg, var(--color-primary-50) 0%, var(--bg-secondary) 100%); border-left: 4px solid var(--color-primary-500);">
-            <div class="card__header">
-              <h3 class="card__title">${Icons.calendar} Próximas Visitas Programadas</h3>
-              <button class="btn btn--ghost btn--sm" onclick="App.navigate('visitas')">
-                Ver Todas
-              </button>
-            </div>
-            <div class="card__body">
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--spacing-md);">
-                ${upcomingVisitas.map(visita => {
-      const cliente = DataService.getClienteById(visita.clienteId);
-      const equipo = DataService.getEquipoById(visita.equipoId);
-      const fechaVisita = new Date(visita.fechaInicio);
-      const diasRestantes = Math.ceil((fechaVisita - today) / (1000 * 60 * 60 * 24));
+        <div class="metric-cards">
+          <div class="metric-card primary" onclick="App.navigate('clientes')">
+            <div class="metric-card__icon">${Icons.users}</div>
+            <div class="metric-card__label">Clientes Activos</div>
+            <div class="metric-card__value">${stats.clientesActivos ? stats.clientesActivos.value : 0}</div>
+            <div class="metric-card__trend up"><span>Total Activos</span></div>
+          </div>
+          <div class="metric-card success" onclick="App.navigate('visitas')">
+            <div class="metric-card__icon">${Icons.calendar}</div>
+            <div class="metric-card__label">Servicios del Mes</div>
+            <div class="metric-card__value">${stats.serviciosMes ? stats.serviciosMes.value : 0}</div>
+            <div class="metric-card__trend up"><span>Visitas programadas</span></div>
+          </div>
+          <div class="metric-card warning" onclick="App.navigate('contratos')">
+            <div class="metric-card__icon">${Icons.creditCard || Icons.fileText}</div>
+            <div class="metric-card__label">Ingresos Recurrentes</div>
+            <div class="metric-card__value">$${(stats.ingresosMes ? stats.ingresosMes.value : 0).toFixed(2)}</div>
+            <div class="metric-card__trend up"><span>Base contratada</span></div>
+          </div>
+          <div class="metric-card info" onclick="App.navigate('contratos')">
+            <div class="metric-card__icon">${Icons.fileText}</div>
+            <div class="metric-card__label">Contratos Activos</div>
+            <div class="metric-card__value">${stats.contratosActivos ? stats.contratosActivos.value : 0}</div>
+            <div class="metric-card__trend up"><span>Mantenimientos</span></div>
+          </div>
+          <div class="metric-card" style="border-left: 4px solid var(--color-primary-600);" onclick="App.navigate('equipos')">
+            <div class="metric-card__icon" style="background: var(--color-primary-50); color: var(--color-primary-600);">${Icons.monitor || Icons.box}</div>
+            <div class="metric-card__label">Total Equipos</div>
+            <div class="metric-card__value">${stats.equiposActivos ? stats.equiposActivos.value : 0}</div>
+            <div class="metric-card__trend up"><span>En sistema</span></div>
+          </div>
+          <div class="metric-card" style="border-left: 4px solid var(--color-warning);" onclick="App.navigate('recepciones')">
+            <div class="metric-card__icon" style="background: var(--color-warning-light); color: var(--color-warning);">${Icons.tool || Icons.briefcase}</div>
+            <div class="metric-card__label">Recepciones Activas</div>
+            <div class="metric-card__value">${stats.recepcionesActivas ? stats.recepcionesActivas.value : 0}</div>
+            <div class="metric-card__trend up"><span>En proceso</span></div>
+          </div>
+          <div class="metric-card" style="border-left: 4px solid var(--color-success);" onclick="App.navigate('proformas')">
+            <div class="metric-card__icon" style="background: var(--color-success-light); color: var(--color-success);">${Icons.fileText}</div>
+            <div class="metric-card__label">Proformas Activas</div>
+            <div class="metric-card__value">${stats.proformasActivas ? stats.proformasActivas.value : 0}</div>
+            <div class="metric-card__trend up"><span>Pendientes/Aprobadas</span></div>
+          </div>
+        </div>
 
+        <div class="dashboard-grid">
+          <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Chart / Gráfico Principal -->
+            <div class="modern-card">
+              <div class="modern-card__header">
+                <h3 class="modern-card__title">${Icons.barChart} Rendimiento de Servicios Semanal</h3>
+                <button class="btn btn--ghost btn--sm" onclick="ReportesModule.generateGeneralReport()">Ver Reporte</button>
+              </div>
+              <div class="modern-card__body">
+                <div style="height: 320px; width: 100%; position: relative;">
+                  <canvas id="statsChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- Servicios Recientes -->
+            <div class="modern-card">
+              <div class="modern-card__header">
+                <h3 class="modern-card__title">${Icons.activity} Servicios Recientes</h3>
+                <button class="btn btn--ghost btn--sm" onclick="App.navigate('visitas')">Ver Todos</button>
+              </div>
+              <div class="modern-card__body" style="padding: 0;">
+                <table class="data-table" style="margin: 0; box-shadow: none; border-radius: 0; border: none;">
+                  <thead style="background: var(--bg-body);">
+                    <tr><th>Servicio / Fecha</th><th>Cliente</th><th style="text-align: right;">Estado</th></tr>
+                  </thead>
+                  <tbody>
+                    ${activities.length > 0 ? activities.map(a => `
+                      <tr onclick="App.navigate('visitas')" style="cursor: pointer;">
+                        <td><strong style="color: var(--color-primary-600);">${a.numero}</strong><div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem;">${a.fecha}</div></td>
+                        <td style="font-weight: 500;">${a.cliente}</td>
+                        <td style="text-align: right;"><span class="badge ${a.estado === 'Completado' ? 'badge--success' : 'badge--warning'}">${a.estado}</span></td>
+                      </tr>
+                    `).join('') : '<tr><td colspan="3" class="text-center text-muted" style="padding: 2rem;">No hay servicios recientes</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Próximas Visitas -->
+            <div class="modern-card">
+              <div class="modern-card__header">
+                <h3 class="modern-card__title">${Icons.calendar} Próximas Visitas</h3>
+              </div>
+              <div class="modern-card__body" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                ${upcomingVisitas.length > 0 ? upcomingVisitas.map(visita => {
+      const cliente = DataService.getClienteById(visita.clienteId || visita.cliente_id);
+      const d = new Date(visita.fechaInicio || visita.fecha);
       return `
-                    <div class="upcoming-visit-card" style="padding: var(--spacing-md); background: var(--bg-secondary); border-radius: var(--border-radius-md); border: 1px solid var(--border-color);">
-                      <div style="display: flex; gap: var(--spacing-md); margin-bottom: var(--spacing-sm);">
-                        <div style="flex-shrink: 0; width: 48px; height: 48px; border-radius: var(--border-radius-md); background: var(--color-primary-100); color: var(--color-primary-600); display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: var(--font-weight-bold);">
-                          <div style="font-size: var(--font-size-lg);">${fechaVisita.getDate()}</div>
-                          <div style="font-size: var(--font-size-xs); text-transform: uppercase;">${fechaVisita.toLocaleDateString('es-NI', { month: 'short' })}</div>
-                        </div>
-                        <div style="flex: 1; min-width: 0;">
-                          <div style="font-weight: var(--font-weight-semibold); color: var(--text-primary); margin-bottom: var(--spacing-xs);">${visita.tipoVisita}</div>
-                          <div style="font-size: var(--font-size-sm); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            ${Icons.user} ${cliente?.nombreCliente || 'Cliente N/A'}
-                          </div>
-                          ${equipo ? `
-                            <div style="font-size: var(--font-size-xs); color: var(--text-muted); margin-top: 2px;">
-                              ${Icons.monitor} ${equipo.nombreEquipo}
-                            </div>
-                          ` : ''}
-                        </div>
-                      </div>
-                      <div style="display: flex; align-items: center; justify-content: space-between; padding-top: var(--spacing-sm); border-top: 1px solid var(--border-color);">
-                        <span class="badge badge--${diasRestantes === 0 ? 'danger' : diasRestantes <= 2 ? 'warning' : 'primary'}" style="font-size: var(--font-size-xs);">
-                          ${diasRestantes === 0 ? 'Hoy' : diasRestantes === 1 ? 'Mañana' : `En ${diasRestantes} días`}
-                        </span>
-                        <button class="btn btn--ghost btn--icon btn--sm" onclick="App.navigate('visitas')" title="Ver detalles">
-                          ${Icons.arrowRight}
-                        </button>
-                      </div>
+                  <div class="visit-item" onclick="App.navigate('visitas')" style="cursor: pointer;">
+                    <div class="visit-date">
+                      <div class="day">${d.getDate()}</div>
+                      <div class="month">${d.toLocaleDateString('es-NI', { month: 'short' })}</div>
                     </div>
-                  `;
-    }).join('')}
-              </div>
-            </div>
-          </div>
-        ` : ''}
-
-        <!-- Quick Actions Row (Moved to top) -->
-        <div class="card">
-          <div class="card__header">
-            <h3 class="card__title">Acciones Rápidas</h3>
-          </div>
-          <div class="card__body">
-            <div style="display: flex; gap: var(--spacing-md); flex-wrap: wrap;">
-              <button class="btn btn--primary" onclick="App.navigate('visitas')">
-                ${Icons.plus} Nueva Visita
-              </button>
-              <button class="btn btn--secondary" onclick="App.navigate('clientes')">
-                ${Icons.users} Nuevo Cliente
-              </button>
-              <button class="btn btn--secondary" onclick="App.navigate('proformas')">
-                ${Icons.fileText} Nueva Proforma
-              </button>
-              <button class="btn btn--secondary" onclick="App.navigate('contratos')">
-                ${Icons.fileText} Nuevo Contrato
-              </button>
-              <button class="btn btn--secondary" onclick="App.navigate('equipos')">
-                ${Icons.monitor} Nuevo Equipo
-              </button>
-              <button class="btn btn--secondary" onclick="ReportesModule.generateGeneralReport()">
-                ${Icons.barChart} Reporte General
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Main Row -->
-        <div class="dashboard__row dashboard__row--main">
-          <!-- Chart Card -->
-          <div class="card">
-            <div class="card__header">
-              <h3 class="card__title">Estadísticas ALLTECH</h3>
-              <div class="dropdown">
-                <button class="btn btn--ghost btn--sm dropdown__trigger">
-                  Esta Semana
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div class="card__body">
-              <div style="display: flex; align-items: baseline; gap: var(--spacing-md); margin-bottom: var(--spacing-lg);">
-                <span class="text-sm text-muted">Ingresos por mes</span>
-                <span style="font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);">$12,345.00</span>
-                <span class="text-sm text-success">+5%</span>
-              </div>
-              <div style="display: flex; gap: var(--spacing-lg); margin-bottom: var(--spacing-md);">
-                <div style="display: flex; align-items: center; gap: var(--spacing-xs);">
-                  <span style="width: 12px; height: 12px; background: var(--color-primary-500); border-radius: 2px;"></span>
-                  <span class="text-sm">Ingresos</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: var(--spacing-xs);">
-                  <span style="width: 12px; height: 12px; background: var(--color-success); border-radius: 2px;"></span>
-                  <span class="text-sm">Beneficio</span>
-                </div>
-              </div>
-              <div class="chart-container">
-                <canvas id="statsChart"></canvas>
-              </div>
-            </div>
-          </div>
-
-          <!-- Right Panel -->
-          <div style="display: flex; flex-direction: column; gap: var(--spacing-lg);">
-            <!-- User Profile Card -->
-            <div class="card">
-              <div class="user-profile-card">
-                <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=1a73e8&color=fff&size=80" 
-                     alt="${user?.name || 'User'}" 
-                     class="user-profile-card__avatar">
-                <div class="user-profile-card__name">${user?.name || 'Invitado'}</div>
-                <div class="user-profile-card__email">${user?.email || 'No disponible'}</div>
-                <div class="user-profile-card__actions">
-                  <div class="user-profile-card__action">
-                    <div class="user-profile-card__action-icon">${Icons.phone}</div>
-                    <span class="user-profile-card__action-label">Contacto</span>
+                    <div class="visit-info">
+                      <div class="visit-title">${visita.tipoVisita || 'Servicio Técnico'}</div>
+                      <div class="visit-subtitle text-muted">${Icons.mapPin} ${cliente?.nombreCliente || cliente?.empresa || 'Cliente de Contrato'}</div>
+                    </div>
                   </div>
-                  <div class="user-profile-card__action">
-                    <div class="user-profile-card__action-icon">${Icons.user}</div>
-                    <span class="user-profile-card__action-label">Perfil</span>
+                `}).join('') : `
+                  <div style="text-align: center; padding: 2.5rem; color: var(--text-muted);">
+                    <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.4;">📅</div>
+                    <p>No hay visitas próximas programadas.</p>
                   </div>
-                  <div class="user-profile-card__action">
-                    <div class="user-profile-card__action-icon">${Icons.info}</div>
-                    <span class="user-profile-card__action-label">Info</span>
-                  </div>
+                `}
+                <div style="margin-top: 0.5rem;">
+                  <button class="btn btn--outline" style="width: 100%; border-radius: 10px;" onclick="App.navigate('calendario')">Ver Calendario Completo</button>
                 </div>
               </div>
             </div>
 
-            <!-- Savings Plans -->
-             <div class="card">
-              <div class="card__header">
-                <h3 class="card__title">Plan de Metas</h3>
-                <button class="btn btn--ghost btn--icon">${Icons.moreVertical}</button>
+            <!-- Proformas Recientes -->
+            <div class="modern-card">
+              <div class="modern-card__header">
+                <h3 class="modern-card__title">${Icons.fileText} Últimas Cotizaciones</h3>
               </div>
-              <div class="card__body" style="padding: var(--spacing-md) 0;">
-                <div class="savings-plan">
-                  ${savingsPlans.map(plan => `
-                    <div class="savings-plan__item">
-                      <div class="savings-plan__icon" style="background: ${plan.id === 1 ? 'var(--color-primary-50)' : 'var(--color-success-light)'};">
-                        ${plan.icon}
-                      </div>
-                      <div class="savings-plan__info">
-                        <div class="savings-plan__title">${plan.title}</div>
-                        <div class="savings-plan__subtitle">${plan.subtitle}</div>
-                      </div>
-                      <div class="savings-plan__progress">
-                        <div class="progress ${plan.id === 1 ? '' : 'progress--success'}">
-                          <div class="progress__bar" style="width: ${plan.percent}%"></div>
-                        </div>
-                      </div>
-                      <div class="savings-plan__amount">
-                        <div class="savings-plan__value">$${plan.target.toLocaleString()}</div>
-                        <div class="savings-plan__percent">${plan.percent}%</div>
-                      </div>
-                    </div >
-  `).join('')}
-                </div>
+              <div class="modern-card__body" style="display: flex; flex-direction: column; gap: 0.8rem;">
+                ${proformas.length > 0 ? proformas.map(p => {
+        const cliente = DataService.getClienteById(p.clienteId || p.cliente_id);
+        const isAprobada = p.estado === 'Aprobada';
+        return `
+                  <div class="visit-item" onclick="App.navigate('proformas')" style="cursor: pointer;">
+                    <div style="width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: ${isAprobada ? 'var(--color-success-light)' : 'var(--bg-body)'}; color: ${isAprobada ? 'var(--color-success)' : 'var(--text-secondary)'}; flex-shrink: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.05); font-size: 1.2rem;">
+                      ${isAprobada ? Icons.check : Icons.fileText}
+                    </div>
+                    <div class="visit-info">
+                      <div class="visit-title">${p.codigo_proforma || p.proformaId}</div>
+                      <div class="visit-subtitle">${cliente?.empresa || cliente?.nombreCliente || 'N/A'}</div>
+                    </div>
+                    <div style="text-align: right; font-weight: 700; color: var(--text-primary); font-size: 1.05rem;">
+                      ${p.moneda === 'USD' ? '$' : 'C$'}${(p.total || 0).toFixed(2)}
+                      <div style="font-size: 0.75rem; font-weight: 500; color: ${isAprobada ? 'var(--color-success)' : 'var(--text-muted)'}; margin-top: 0.2rem;">${p.estado}</div>
+                    </div>
+                  </div>
+                `}).join('') : `
+                  <p class="text-muted text-center py-4">No hay cotizaciones recientes.</p>
+                `}
               </div>
             </div>
-
-            <!-- Recent Proformas -->
-            <div class="card">
-              <div class="card__header">
-                <h3 class="card__title">Proformas Recientes</h3>
-                <button class="btn btn--ghost btn--sm" onclick="App.navigate('proformas')">
-                  Ver Todas
-                </button>
-              </div>
-              <div class="card__body" style="padding: 0;">
-                ${proformas.length > 0 ? `
-                  <table class="data-table">
-                    <tbody class="data-table__body">
-                      ${proformas.map(p => {
-      const cliente = DataService.getClienteById(p.clienteId);
-      return `
-                          <tr style="cursor: pointer;" onclick="App.navigate('proformas')">
-                            <td>
-                              <div style="font-weight: var(--font-weight-medium);">${p.proformaId}</div>
-                              <div class="text-xs text-muted">${cliente?.empresa || 'N/A'}</div>
-                            </td>
-                            <td>
-                              <span class="badge ${p.estado === 'Activa' ? 'badge--primary' :
-          p.estado === 'Aprobada' ? 'badge--success' :
-            p.estado === 'Vencida' ? 'badge--warning' : 'badge--neutral'
-        }">
-                                ${p.estado}
-                              </span>
-                            </td>
-                            <td style="text-align: right;">
-                              <div style="font-weight: var(--font-weight-semibold);">${p.moneda === 'USD' ? '$' : 'C$'}${p.total.toFixed(2)}</div>
-                              <div class="text-xs text-muted">${new Date(p.fecha).toLocaleDateString('es-NI')}</div>
-                            </td>
-                          </tr>
-                        `;
-    }).join('')}
-                    </tbody>
-                  </table>
-                ` : '<p class="text-muted text-center" style="padding: var(--spacing-lg);">No hay proformas</p>'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Recent Activities Table -->
-        <div class="card">
-          <div class="card__header">
-            <h3 class="card__title">Actividades Recientes</h3>
-            <div style="display: flex; gap: var(--spacing-md);">
-              <div class="header__search" style="width: 200px;">
-                <span class="header__search-icon">${Icons.search}</span>
-                <input type="text" 
-                       class="header__search-input" 
-                       placeholder="Buscar archivo...">
-              </div>
-              <button class="btn btn--ghost btn--sm">
-                ${Icons.filter} Filtrar
-              </button>
-            </div>
-          </div>
-          <div class="card__body" style="padding: 0;">
-            <table class="data-table">
-              <thead class="data-table__head">
-                <tr>
-                  <th>No</th>
-                  <th>No. Servicio</th>
-                  <th>Cliente</th>
-                  <th>Fecha</th>
-                  <th>Estado</th>
-                  <th>Monto</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody class="data-table__body">
-                ${activities.map((activity, index) => `
-                  <tr>
-                    <td>${index + 1}</td>
-                    <td><span class="font-medium">${activity.numero}</span></td>
-                    <td>${activity.cliente}</td>
-                    <td>${activity.fecha}</td>
-                    <td>
-                      <span class="badge ${activity.estado === 'Completado' ? 'badge--success' : 'badge--warning'}">
-                        ${activity.estado}
-                      </span>
-                    </td>
-                    <td>${activity.monto}</td>
-                    <td>
-                      <div style="display: flex; gap: var(--spacing-xs);">
-                        <button class="btn btn--ghost btn--icon btn--sm">${Icons.eye}</button>
-                        <button class="btn btn--ghost btn--icon btn--sm">${Icons.edit}</button>
-                      </div>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
           </div>
         </div>
       </div>
@@ -861,6 +748,9 @@ const App = (() => {
       case 'software':
         moduleContent = SoftwareModule.render();
         break;
+      case 'recepciones':
+        moduleContent = typeof RecepcionesModule !== 'undefined' ? RecepcionesModule.render() : renderModulePlaceholder(currentModule);
+        break;
       case 'calendario':
         moduleContent = CalendarioModule.render();
         break;
@@ -889,6 +779,7 @@ const App = (() => {
       proformas: 'Proformas / Cotizaciones',
       productos: 'Productos y Servicios',
       equipos: 'Equipos',
+      recepciones: 'Recepción de Equipos',
       software: 'Software y Licencias',
       prestaciones: 'Prestaciones Laborales',
       calendario: 'Calendario',
@@ -904,7 +795,57 @@ const App = (() => {
       // 1. Update ONLY the module content
       const contentEl = document.querySelector('.main .content');
       if (contentEl) {
+        // Save focus state
+        const activeElement = document.activeElement;
+        let activeElementData = null;
+
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) {
+          activeElementData = {
+            tagName: activeElement.tagName,
+            className: activeElement.className,
+            placeholder: activeElement.placeholder,
+            id: activeElement.id,
+            name: activeElement.name,
+            selectionStart: null,
+            selectionEnd: null
+          };
+          try {
+            activeElementData.selectionStart = activeElement.selectionStart;
+            activeElementData.selectionEnd = activeElement.selectionEnd;
+          } catch (e) { }
+        }
+
         contentEl.innerHTML = moduleContent;
+
+        // Restore focus state
+        if (activeElementData) {
+          let target = null;
+          if (activeElementData.id) {
+            target = document.getElementById(activeElementData.id);
+          } else {
+            const selectors = [activeElementData.tagName];
+            if (activeElementData.name) selectors.push(`[name="${activeElementData.name}"]`);
+            if (activeElementData.placeholder) selectors.push(`[placeholder="${activeElementData.placeholder}"]`);
+            if (activeElementData.className) {
+              const classes = activeElementData.className.split(' ').map(c => c.trim()).filter(c => c).join('.');
+              if (classes) selectors.push('.' + classes);
+            }
+
+            const selectorStr = selectors.join('');
+            try {
+              target = contentEl.querySelector(selectorStr);
+            } catch (e) { console.error('Error finding target for focus', e); }
+          }
+
+          if (target) {
+            target.focus();
+            try {
+              if (activeElementData.selectionStart !== null) {
+                target.setSelectionRange(activeElementData.selectionStart, activeElementData.selectionEnd);
+              }
+            } catch (e) { }
+          }
+        }
       }
 
       // 2. Update Header Title
@@ -1452,38 +1393,8 @@ const App = (() => {
     navigate,
     refreshCurrentModule: () => {
       // Re-render current module content without full page reload if possible
-      // Save active element state to restore focus, specially for search bars
-      let activeId = null;
-      let activeSelectionStart = null;
-      let activeSelectionEnd = null;
-
-      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
-        if (document.activeElement.id) {
-          activeId = '#' + document.activeElement.id;
-        } else if (document.activeElement.placeholder) {
-          // Valid css selector for placeholders with spaces
-          activeId = `input[placeholder="${document.activeElement.placeholder}"]`;
-        }
-
-        if (document.activeElement.type === 'text') {
-          activeSelectionStart = document.activeElement.selectionStart;
-          activeSelectionEnd = document.activeElement.selectionEnd;
-        }
-      }
-
+      // Focus state preservation is now handled synchronously inside render()
       render();
-
-      if (activeId) {
-        setTimeout(() => {
-          const el = document.querySelector(activeId);
-          if (el) {
-            el.focus();
-            if (el.type === 'text' && activeSelectionStart !== null) {
-              el.setSelectionRange(activeSelectionStart, activeSelectionEnd);
-            }
-          }
-        }, 0);
-      }
     },
     handleRefreshData,
     toggleNotifications,

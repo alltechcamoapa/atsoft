@@ -45,6 +45,7 @@ const ContratosModule = (() => {
                 <input type="text" 
                        class="form-input" 
                        placeholder="Buscar contrato..." 
+                       id="searchInput"
                        value="${filterState.search}"
                        oninput="ContratosModule.handleSearch(this.value)">
               </div>
@@ -781,7 +782,14 @@ const ContratosModule = (() => {
   };
 
   // ========== EVENT HANDLERS ==========
-  const handleSearch = (value) => { filterState.search = value; App.refreshCurrentModule(); };
+  let searchTimeout;
+  const handleSearch = (value) => {
+    filterState.search = value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      App.refreshCurrentModule();
+    }, 300);
+  };
   const handleStatusFilter = (value) => { filterState.status = value; App.refreshCurrentModule(); };
   const handleTipoFilter = (value) => { filterState.tipo = value; App.refreshCurrentModule(); };
 

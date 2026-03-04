@@ -47,6 +47,7 @@ const ProformasModule = (() => {
               <div class="search-input" style="flex: 1; max-width: 300px;">
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar por número o cliente..." 
+                       id="searchInput"
                        value="${filterState.search}"
                        oninput="ProformasModule.handleSearch(this.value)">
               </div>
@@ -450,8 +451,8 @@ const ProformasModule = (() => {
                 <div class="detail-item__value">${fechaProforma ? new Date(fechaProforma).toLocaleDateString('es-NI') : '-'}</div>
               </div>
               <div class="detail-item">
-                <div class="detail-item__label">Creado Por</div>
-                <div class="detail-item__value">${proforma.creadoPor || proforma.creado_por_nombre || 'Sistema'}</div>
+                <div class="detail-item__label">Atendido por</div>
+                <div class="detail-item__value">${proforma.creadoPor || proforma.creado_por_nombre || State.get('user')?.name || 'Sistema'}</div>
               </div>
               <div class="detail-item">
                 <div class="detail-item__label">Válida Hasta</div>
@@ -610,11 +611,12 @@ const ProformasModule = (() => {
           <p>Soluciones en Tecnología</p>
         </div>
         <div class="proforma-info">
-          <h2>PROFORMA</h2>
-          <p><strong>Nº:</strong> ${String(proformaNumero).padStart(4, '0')}</p>
-          <p><strong>Fecha:</strong> ${fechaProforma ? new Date(fechaProforma).toLocaleDateString('es-NI') : '-'}</p>
-          <p><strong>Válida hasta:</strong> ${fechaVencimiento.toLocaleDateString('es-NI')}</p>
-        </div>
+        <h2>PROFORMA</h2>
+        <p><strong>Nº:</strong> ${String(proformaNumero).padStart(4, '0')}</p>
+        <p><strong>Fecha:</strong> ${fechaProforma ? new Date(fechaProforma).toLocaleDateString('es-NI') : '-'}</p>
+        <p><strong>Válida hasta:</strong> ${fechaVencimiento.toLocaleDateString('es-NI')}</p>
+        <p><strong>Atendido por:</strong> ${proforma.creadoPor || proforma.creado_por_nombre || State.get('user')?.name || 'Sistema'}</p>
+      </div>
       </div>
 
       <div class="section">
@@ -900,7 +902,14 @@ const ProformasModule = (() => {
 
   // ========== EVENT HANDLERS ==========
 
-  const handleSearch = (value) => { filterState.search = value; App.refreshCurrentModule(); };
+  let searchTimeout;
+  const handleSearch = (value) => {
+    filterState.search = value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      App.refreshCurrentModule();
+    }, 300);
+  };
   const handleClienteFilter = (value) => { filterState.clienteId = value; App.refreshCurrentModule(); };
   const handleEstadoFilter = (value) => { filterState.estado = value; App.refreshCurrentModule(); };
 

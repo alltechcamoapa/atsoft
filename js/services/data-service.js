@@ -21,6 +21,7 @@ const DataService = (() => {
         nominas: [],
         pagosTecnicos: [],
         ausencias: [],
+        recepciones: [],
         config: {
             monedaPrincipal: 'USD',
             tipoCambio: 36.5,
@@ -66,6 +67,9 @@ const DataService = (() => {
             normalized.numeroPedido = data.numero_pedido || data.numero;
             normalized.clienteId = data.cliente_id;
         }
+        if (table === 'recepciones_equipos') {
+            normalized.recepcionId = data.codigo_recepcion || data.id;
+        }
 
         if (table === 'visitas') {
             normalized.visitaId = data.codigo_visita || data.id;
@@ -100,7 +104,8 @@ const DataService = (() => {
             const [
                 clientes, contratos, equipos, visitas, productos, proformas, pedidos,
                 empleados, nominas, software, users, pagosTecnicos, ausencias,
-                horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos
+                horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos,
+                recepciones
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -120,7 +125,8 @@ const DataService = (() => {
                 SupabaseDataService.getAdelantosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getFeriadosTrabajadosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getPrestamosSync?.() || Promise.resolve([]),
-                SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([])
+                SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getRecepcionesSync?.() || Promise.resolve([])
             ]);
 
             // Normalizar y almacenar en caché
@@ -150,6 +156,16 @@ const DataService = (() => {
                 numeroPedido: p.numero_pedido,
                 clienteId: p.cliente_id,
                 cliente: p.cliente ? normalizeSupabaseData('clientes', p.cliente) : null
+            }));
+
+            cache.recepciones = (recepciones || []).map(r => ({
+                ...r,
+                recepcionId: r.codigo_recepcion,
+                numero: r.numero_recepcion,
+                clienteId: r.cliente_id,
+                equipoId: r.equipo_id,
+                cliente: r.cliente ? normalizeSupabaseData('clientes', r.cliente) : null,
+                equipo: r.equipo ? normalizeSupabaseData('equipos', r.equipo) : null
             }));
             cache.empleados = (empleados || []).map(e => ({
                 ...e,
@@ -224,7 +240,8 @@ const DataService = (() => {
             const [
                 clientes, contratos, equipos, visitas, productos, proformas, pedidos,
                 empleados, nominas, software, users, pagosTecnicos, ausencias,
-                horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos
+                horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos,
+                recepciones
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -244,13 +261,33 @@ const DataService = (() => {
                 SupabaseDataService.getAdelantosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getFeriadosTrabajadosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getPrestamosSync?.() || Promise.resolve([]),
-                SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([])
+                SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getRecepcionesSync?.() || Promise.resolve([])
             ]);
 
-            // Actualizar caché
-            cache.clientes = (clientes || []).map(c => normalizeSupabaseData('clientes', c));
-            cache.contratos = (contratos || []).map(c => ({ ...normalizeSupabaseData('contratos', c), cliente: normalizeSupabaseData('clientes', c.cliente) }));
-            cache.equipos = (equipos || []).map(e => ({ ...normalizeSupabaseData('equipos', e), cliente: normalizeSupabaseData('clientes', e.cliente) }));
+            // Helper function for Smart Merge to preserve recent local additions
+            const smartMerge = (localCache, fetchedData) => {
+                const missingLocals = (localCache || []).filter(localItem => {
+                    if (!localItem.id) return false;
+                    const isFound = fetchedData.some(fetchedItem => fetchedItem.id === localItem.id);
+                    if (!isFound) {
+                        const localAge = new Date() - new Date(localItem.created_at || Date.now());
+                        return localAge < 30000;
+                    }
+                    return false;
+                });
+                return [...missingLocals, ...fetchedData];
+            };
+
+            // Actualizar caché preservando creaciones nuevas
+            const fetchedClientes = (clientes || []).map(c => normalizeSupabaseData('clientes', c));
+            cache.clientes = smartMerge(cache.clientes, fetchedClientes);
+
+            const fetchedContratos = (contratos || []).map(c => ({ ...normalizeSupabaseData('contratos', c), cliente: normalizeSupabaseData('clientes', c.cliente) }));
+            cache.contratos = smartMerge(cache.contratos, fetchedContratos);
+
+            const fetchedEquipos = (equipos || []).map(e => ({ ...normalizeSupabaseData('equipos', e), cliente: normalizeSupabaseData('clientes', e.cliente) }));
+            cache.equipos = smartMerge(cache.equipos, fetchedEquipos);
             cache.visitas = (visitas || []).map(v => normalizeSupabaseData('visitas', v));
             cache.productos = (productos || []).map(p => ({
                 ...p,
@@ -271,6 +308,18 @@ const DataService = (() => {
                 clienteId: p.cliente_id,
                 cliente: p.cliente ? normalizeSupabaseData('clientes', p.cliente) : null
             }));
+            const fetchedRecepciones = (recepciones || []).map(r => ({
+                ...r,
+                recepcionId: r.codigo_recepcion,
+                numero: r.numero_recepcion,
+                clienteId: r.cliente_id,
+                equipoId: r.equipo_id,
+                cliente: r.cliente ? normalizeSupabaseData('clientes', r.cliente) : null,
+                equipo: r.equipo ? normalizeSupabaseData('equipos', r.equipo) : null
+            }));
+
+            // Smart Merge: Preserve new local items that might not have synced via Supabase replicate yet
+            cache.recepciones = smartMerge(cache.recepciones, fetchedRecepciones);
             cache.empleados = (empleados || []).map(e => ({
                 ...e,
                 fechaAlta: e.fecha_alta || e.fechaAlta,
@@ -366,6 +415,7 @@ const DataService = (() => {
             "contratos": { create: true, read: true, update: true, delete: true },
             "visitas": { create: true, read: true, update: true, delete: true },
             "equipos": { create: true, read: true, update: true, delete: true },
+            "recepciones": { create: true, read: true, update: true, delete: true },
             "software": { create: true, read: true, update: true, delete: true },
             "productos": { create: true, read: true, update: true, delete: true },
             "pedidos": { create: true, read: true, update: true, delete: true },
@@ -383,6 +433,7 @@ const DataService = (() => {
             "contratos": { create: true, read: true, update: true, delete: false },
             "visitas": { create: false, read: true, update: false, delete: false },
             "equipos": { create: false, read: true, update: false, delete: false },
+            "recepciones": { create: false, read: true, update: false, delete: false },
             "software": { create: false, read: true, update: false, delete: false },
             "productos": { create: true, read: true, update: true, delete: false },
             "pedidos": { create: true, read: true, update: true, delete: false },
@@ -922,11 +973,16 @@ const DataService = (() => {
     // Dashboard & Reports
     const getDashboardStats = () => {
         // Calcular estadísticas localmente desde el caché
-        // Manejar tanto formato legacy como Supabase
         const clientesActivos = cache.clientes.filter(c => {
             const estado = (c.estado || c.status || '').toUpperCase();
             return estado === 'ACTIVO';
         }).length;
+
+        const equiposActivos = cache.equipos.length;
+
+        const recepcionesActivas = cache.recepciones?.filter(r => r.estado !== 'Entregado').length || 0;
+
+        const proformasActivas = cache.proformas?.filter(p => p.estado === 'Activa' || p.estado === 'Aprobada').length || 0;
 
         const contratosActivos = cache.contratos.filter(c => {
             const estado = (c.estadoContrato || c.estado_contrato || c.status || '').toUpperCase();
@@ -953,20 +1009,25 @@ const DataService = (() => {
                 return sum + valor;
             }, 0);
 
-        console.log('📊 Dashboard Stats:', {
-            total_clientes: cache.clientes.length,
-            clientesActivos,
-            total_contratos: cache.contratos.length,
-            contratosActivos,
-            total_visitas: cache.visitas.length,
-            visitasMes,
-            ingresosMes
-        });
-
         return {
             clientesActivos: {
                 value: clientesActivos || 0,
                 trend: clientesActivos > 0 ? 12 : 0,
+                trendDirection: 'up'
+            },
+            equiposActivos: {
+                value: equiposActivos || 0,
+                trend: equiposActivos > 0 ? 5 : 0,
+                trendDirection: 'up'
+            },
+            recepcionesActivas: {
+                value: recepcionesActivas || 0,
+                trend: recepcionesActivas > 0 ? 8 : 0,
+                trendDirection: 'up'
+            },
+            proformasActivas: {
+                value: proformasActivas || 0,
+                trend: proformasActivas > 0 ? 10 : 0,
                 trendDirection: 'up'
             },
             serviciosMes: {
@@ -1313,6 +1374,8 @@ const DataService = (() => {
         const fechaVenc = new Date(fechaEmision);
         fechaVenc.setDate(fechaVenc.getDate() + validezDias);
 
+        const userState = typeof State !== 'undefined' ? State.get('user') : null;
+
         // Map to actual DB columns (proformas table)
         const proformaData = {
             codigo_proforma: `PROF-${String(numero).padStart(4, '0')}`,
@@ -1325,7 +1388,8 @@ const DataService = (() => {
             subtotal: data.items?.reduce((sum, i) => sum + (i.total || 0), 0) || 0,
             total: data.items?.reduce((sum, i) => sum + (i.total || 0), 0) || 0,
             notas: data.notas || '',
-            estado: 'Activa'
+            estado: 'Activa',
+            creado_por_nombre: userState?.name || 'Sistema'
             // created_by is set automatically by supabase-data-service
         };
 
@@ -1482,7 +1546,100 @@ const DataService = (() => {
         completados: cache.pedidos?.filter(p => p.estado === 'Completado').length || 0,
         valorTotal: cache.pedidos?.reduce((sum, p) => sum + (p.total || 0), 0) || 0
     });
+    // ========== RECEPCIONES DE EQUIPOS ==========
+    const getRecepcionesSync = () => [...(cache.recepciones || [])];
 
+    const getRecepcionesFiltered = (filter = {}) => {
+        let list = getRecepcionesSync();
+        if (filter.search) {
+            const q = filter.search.toLowerCase();
+            list = list.filter(r =>
+                (r.numero_recepcion && r.numero_recepcion.toString().includes(q)) ||
+                (r.codigo_recepcion && r.codigo_recepcion.toLowerCase().includes(q)) ||
+                (r.cliente?.nombre_cliente?.toLowerCase().includes(q)) ||
+                (r.equipo?.nombre_equipo?.toLowerCase().includes(q)) ||
+                (r.equipo?.numero_serie?.toLowerCase().includes(q))
+            );
+        }
+        if (filter.estado && filter.estado !== 'all') {
+            list = list.filter(r => r.estado === filter.estado);
+        }
+        return list;
+    };
+
+    const getRecepcionById = (id) => cache.recepciones?.find(r => r.id === id || r.recepcionId === id);
+    const getRecepcionesByCliente = (clienteId) => cache.recepciones?.filter(r => r.clienteId === clienteId || r.cliente?.id === clienteId || r.cliente?.clienteId === clienteId);
+    const getRecepcionesByEquipo = (equipoId) => cache.recepciones?.filter(r => r.equipoId === equipoId || r.equipo_id === equipoId || r.equipo?.id === equipoId || r.equipo?.equipoId === equipoId) || [];
+
+    const createRecepcion = async (data) => {
+        const res = await SupabaseDataService.createRecepcion(data);
+        if (res.success) {
+            const item = { ...res.data };
+            item.recepcionId = item.codigo_recepcion;
+            item.numero = item.numero_recepcion;
+            item.clienteId = item.cliente_id;
+            item.equipoId = item.equipo_id;
+
+            // Attach relationships manually for immediate cache availability
+            item.cliente = getClienteById(item.clienteId) || null;
+            item.equipo = getEquipoById(item.equipoId) || null;
+
+            if (!cache.recepciones) cache.recepciones = [];
+
+            // Remove any potential locally duplicated row with same ID
+            cache.recepciones = cache.recepciones.filter(r => r.id !== item.id);
+            cache.recepciones.unshift(item);
+
+            // No triggeramos refreshData inmediatamente para evitar race conditions con Supabase Realtime
+            // refreshData();
+
+            return item;
+        }
+        throw new Error(res.error || 'Error al crear recepción');
+    };
+
+    const updateRecepcion = async (id, data) => {
+        const current = getRecepcionById(id);
+        const uuid = current ? current.id : id;
+        const res = await SupabaseDataService.updateRecepcion(uuid, data);
+        if (res.success) {
+            if (cache.recepciones) {
+                const idx = cache.recepciones.findIndex(r => r.id === uuid || r.recepcionId === id);
+                if (idx !== -1) {
+                    const updated = { ...cache.recepciones[idx], ...res.data };
+                    // Ensure core fields are mirrored if they changed
+                    updated.clienteId = updated.cliente_id || updated.clienteId;
+                    updated.equipoId = updated.equipo_id || updated.equipoId;
+                    updated.cliente = getClienteById(updated.clienteId) || updated.cliente;
+                    updated.equipo = getEquipoById(updated.equipoId) || updated.equipo;
+                    cache.recepciones[idx] = updated;
+                }
+            }
+            refreshData();
+            return true;
+        }
+        throw new Error(res.error || 'Error al actualizar recepción');
+    };
+
+    const deleteRecepcion = async (id) => {
+        const current = getRecepcionById(id);
+        const uuid = current ? current.id : id;
+        const res = await SupabaseDataService.deleteRecepcion(uuid);
+        if (res.success) {
+            cache.recepciones = cache.recepciones.filter(r => r.id !== uuid);
+            return true;
+        }
+        throw new Error(res.error || 'Error al eliminar recepción');
+    };
+
+    const getRecepcionesStats = () => ({
+        total: cache.recepciones?.length || 0,
+        pendientes: cache.recepciones?.filter(r => r.estado === 'Recibido').length || 0,
+        enRevision: cache.recepciones?.filter(r => r.estado === 'En Revisión').length || 0,
+        esperandoAprobacion: cache.recepciones?.filter(r => r.estado === 'Esperando Aprobación').length || 0,
+        diagnosticado: cache.recepciones?.filter(r => r.estado === 'Diagnosticado').length || 0,
+        entregado: cache.recepciones?.filter(r => r.estado === 'Entregado').length || 0
+    });
 
     // ========== EMPLEADOS ==========
     const getEmpleadosSync = () => [...(cache.empleados || [])];
@@ -1607,6 +1764,7 @@ const DataService = (() => {
 
 
     return {
+
         init,
         refreshData,
         isRefreshing: () => isRefreshing,
@@ -1621,6 +1779,9 @@ const DataService = (() => {
 
         // Equipos
         getEquiposSync, getEquiposFiltered, getEquipoById, getEquiposByCliente, createEquipo, updateEquipo, deleteEquipo, getEquiposStats, getHistorialEquipo,
+
+        // Recepciones
+        getRecepcionesSync, getRecepcionesFiltered, getRecepcionById, getRecepcionesByCliente, getRecepcionesByEquipo, createRecepcion, updateRecepcion, deleteRecepcion, getRecepcionesStats,
 
         // Visitas
         getVisitasSync, getVisitasFiltered, getVisitaById, getVisitasByCliente, getVisitasByContrato, getVisitasByMonth, createVisita, updateVisita, deleteVisita, getVisitasStats,

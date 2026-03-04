@@ -40,6 +40,7 @@ const SoftwareModule = (() => {
                 <input type="text" 
                        class="form-input" 
                        placeholder="Buscar software, serie, registro..." 
+                       id="searchInput"
                        value="${filterState.search}"
                        oninput="SoftwareModule.handleSearch(this.value)">
               </div>
@@ -452,7 +453,14 @@ const SoftwareModule = (() => {
   };
 
   // ========== EVENT HANDLERS ==========
-  const handleSearch = (value) => { filterState.search = value; App.refreshCurrentModule(); };
+  let searchTimeout;
+  const handleSearch = (value) => {
+    filterState.search = value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      App.refreshCurrentModule();
+    }, 300);
+  };
   const handleTipoFilter = (value) => { filterState.tipo = value; App.refreshCurrentModule(); };
   const handleActivacionFilter = (value) => { filterState.activacion = value; App.refreshCurrentModule(); };
 

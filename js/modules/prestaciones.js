@@ -70,7 +70,8 @@ const PrestacionesModule = (() => {
       <div class="table-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
            <div style="flex: 1; max-width: 300px; display: flex; gap: 10px; align-items: center;">
               <input type="text" class="form-input" placeholder="Buscar..." 
-                     value="${s.search}" 
+                     id="searchInput"
+                       value="${s.search}" 
                      oninput="PrestacionesModule.updateTableState('${key}', { search: this.value, page: 1 })">
            </div>
            <div style="margin-left: 10px;">

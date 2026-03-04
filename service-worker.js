@@ -5,9 +5,9 @@
  * ============================================
  */
 
-const CACHE_NAME = 'alltech-support-v2';
-const STATIC_CACHE = 'alltech-static-v2';
-const DYNAMIC_CACHE = 'alltech-dynamic-v2';
+const CACHE_NAME = 'alltech-support-v12';
+const STATIC_CACHE = 'alltech-static-v12';
+const DYNAMIC_CACHE = 'alltech-dynamic-v12';
 
 // Assets to cache immediately on install
 const PRECACHE_ASSETS = [
@@ -49,6 +49,7 @@ const PRECACHE_ASSETS = [
   '/js/modules/contract-editor-module.js',
   '/js/modules/visitas.js',
   '/js/modules/equipos.js',
+  '/js/modules/recepciones.js',
   '/js/modules/software.js',
   '/js/modules/calendario.js',
   '/js/modules/reportes.js',

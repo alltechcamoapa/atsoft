@@ -43,6 +43,7 @@ const VisitasModule = (() => {
               <div class="search-input" style="flex: 1; max-width: 300px;">
                 <span class="search-input__icon">${Icons.search}</span>
                 <input type="text" class="form-input" placeholder="Buscar..." 
+                       id="searchInput"
                        value="${filterState.search}"
                        oninput="VisitasModule.handleSearch(this.value)">
               </div>
@@ -236,6 +237,9 @@ const VisitasModule = (() => {
     }
 
     const selectedClienteId = visita?.clienteId || '';
+    const selectedClienteObj = selectedClienteId ? clientes.find(c => c.id === selectedClienteId) : null;
+    const clientDisplayFormat = c => `${c.codigo || c.clienteId || c.id || ''} - ${c.nombreCliente || c.empresa || 'Sin Nombre'}`;
+    const selectedClienteLabel = selectedClienteObj ? clientDisplayFormat(selectedClienteObj) : '';
     const equiposCliente = selectedClienteId ? DataService.getEquiposByCliente(selectedClienteId) : [];
     const contratosCliente = selectedClienteId ? DataService.getContratosByCliente(selectedClienteId).filter(c => c.estadoContrato === 'Activo') : [];
 
@@ -246,20 +250,34 @@ const VisitasModule = (() => {
             <h3 class="modal__title">${isEdit ? 'Editar Visita' : 'Nueva Visita'}</h3>
             <button class="modal__close" onclick="VisitasModule.closeModal()">${Icons.x}</button>
           </div>
-          <form class="modal__body" onsubmit="VisitasModule.handleSubmit(event)">
+          <form class="modal__body" style="overflow: visible;" onsubmit="VisitasModule.handleSubmit(event)">
             <input type="hidden" name="visitaId" value="${visita?.visitaId || ''}">
             
             <div class="form-row">
-              <div class="form-group">
+              <style>
+         .cliente-option:hover { background: var(--color-primary-50); color: var(--color-primary-700); }
+      </style>
+      <div class="form-group" style="position: relative;">
                 <label class="form-label form-label--required">Cliente</label>
-                <select name="clienteId" class="form-select" required onchange="VisitasModule.onClienteChange(this.value)">
-                  <option value="">Seleccionar cliente...</option>
+                <input type="hidden" name="clienteId" id="hiddenClienteId" value="${selectedClienteId}" required>
+                <input type="text" id="searchClienteInput" class="form-input" placeholder="Buscar código o nombre..." 
+                       value="${selectedClienteLabel}" 
+                       autocomplete="off" 
+                       onfocus="VisitasModule.showClientesList()" 
+                       onblur="setTimeout(() => { const d = document.getElementById('clientesDropdownList'); if(d) d.style.display = 'none'; }, 250)"
+                       oninput="VisitasModule.filterClientesList(this.value)" required>
+                <div id="clientesDropdownList" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 9999; background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--border-radius-md); box-shadow: var(--shadow-lg); max-height: 250px; overflow-y: auto;">
                   ${clientes.map(c => `
-                    <option value="${c.id}" ${visita?.clienteId === c.id || visita?.clienteId === c.clienteId ? 'selected' : ''}>
-                      ${c.empresa} - ${c.nombreCliente}
-                    </option>
+                    <div class="cliente-option" 
+                         data-id="${c.id}" 
+                         data-label="${c.codigo || c.clienteId || c.id || ''} - ${c.nombreCliente || c.empresa || ''}" 
+                         onclick="VisitasModule.selectClienteInline('${c.id}', this.getAttribute('data-label'))" 
+                         style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border-color); transition: background 0.2s;">
+                      <div style="font-weight: 500;">${c.codigo || c.clienteId || c.id} - ${c.nombreCliente || c.empresa || ''}</div>
+                    </div>
                   `).join('')}
-                </select>
+                  ${clientes.length === 0 ? `<div style="padding: 10px 14px; color: var(--text-muted);">No hay clientes...</div>` : ''}
+                </div>
               </div>
               <div class="form-group">
                 <label class="form-label">Contrato (Opcional)</label>
@@ -779,7 +797,14 @@ const VisitasModule = (() => {
   };
 
   // ========== EVENT HANDLERS ==========
-  const handleSearch = (value) => { filterState.search = value; App.refreshCurrentModule(); };
+  let searchTimeout;
+  const handleSearch = (value) => {
+    filterState.search = value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      App.refreshCurrentModule();
+    }, 300);
+  };
   const handleTipoFilter = (value) => { filterState.tipo = value; App.refreshCurrentModule(); };
   const handleContratoFilter = (value) => { filterState.hasContrato = value; App.refreshCurrentModule(); };
   const handleClienteFilter = (value) => { filterState.clienteId = value; App.refreshCurrentModule(); };
@@ -929,7 +954,12 @@ const VisitasModule = (() => {
     }
   };
 
-  const openCreateModal = () => { document.getElementById('visitaModal').innerHTML = renderFormModal(); };
+  const openCreateModal = (initData = null) => {
+    document.getElementById('visitaModal').innerHTML = renderFormModal(initData);
+    if (initData && initData.clienteId) {
+      setTimeout(() => { VisitasModule.onClienteChange(initData.clienteId); }, 50);
+    }
+  };
   const openEditModal = (id) => {
     const visita = DataService.getVisitaById(id);
     if (visita) document.getElementById('visitaModal').innerHTML = renderFormModal(visita);
@@ -939,6 +969,31 @@ const VisitasModule = (() => {
     if (visita) document.getElementById('visitaModal').innerHTML = renderDetailModal(visita);
   };
   const openReportModal = () => { document.getElementById('visitaModal').innerHTML = renderReportModal(); };
+
+  const showClientesList = () => {
+    const dropdown = document.getElementById('clientesDropdownList');
+    if (dropdown) dropdown.style.display = 'block';
+  };
+
+  const filterClientesList = (val) => {
+    const dropdown = document.getElementById('clientesDropdownList');
+    if (dropdown) dropdown.style.display = 'block';
+    const term = val.toLowerCase();
+    document.querySelectorAll('.cliente-option').forEach(el => {
+      const label = (el.getAttribute('data-label') || '').toLowerCase();
+      el.style.display = label.includes(term) ? 'block' : 'none';
+    });
+    document.getElementById('hiddenClienteId').value = '';
+  };
+
+  const selectClienteInline = (id, label) => {
+    document.getElementById('hiddenClienteId').value = id;
+    document.getElementById('searchClienteInput').value = label;
+    document.getElementById('clientesDropdownList').style.display = 'none';
+    document.getElementById('searchClienteInput').setCustomValidity('');
+    VisitasModule.onClienteChange(id);
+  };
+
   const closeModal = (event) => {
     if (event && event.target !== event.currentTarget) return;
     document.getElementById('visitaModal').innerHTML = '';
@@ -948,6 +1003,7 @@ const VisitasModule = (() => {
     render, openCreateModal, openEditModal, viewDetail, completarVisita,
     closeModal, handleSearch, handleTipoFilter, handleContratoFilter, handleClienteFilter,
     handleSubmit, onClienteChange, openReportModal, generateReport,
-    openCreateEquipoModal, handleCreateEquipo, closeEquipoModal, deleteVisita
+    openCreateEquipoModal, handleCreateEquipo, closeEquipoModal, deleteVisita,
+    showClientesList, filterClientesList, selectClienteInline
   };
 })();

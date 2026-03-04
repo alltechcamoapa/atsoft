@@ -40,6 +40,7 @@ const ClientesModule = (() => {
                 <input type="text" 
                        class="form-input" 
                        placeholder="Buscar cliente..." 
+                       id="searchInput"
                        value="${filterState.search}"
                        oninput="ClientesModule.handleSearch(this.value)">
               </div>
@@ -497,9 +498,13 @@ const ClientesModule = (() => {
 
   // ========== EVENT HANDLERS ==========
 
+  let searchTimeout;
   const handleSearch = (value) => {
     filterState.search = value;
-    App.refreshCurrentModule();
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      App.refreshCurrentModule();
+    }, 300);
   };
 
   const handleStatusFilter = (value) => {

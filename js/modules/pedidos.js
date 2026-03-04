@@ -70,7 +70,8 @@ const PedidosModule = (() => {
                             <div class="search-input" style="flex: 1; min-width: 200px; max-width: 300px;">
                                 <span class="search-input__icon">${Icons.search}</span>
                                 <input type="text" class="form-input" placeholder="Buscar pedido..." 
-                                       value="${filterState.search}"
+                                       id="searchInput"
+                       value="${filterState.search}"
                                        oninput="PedidosModule.handleSearch(this.value)">
                             </div>
                             <select class="form-select" style="width: 180px;" 

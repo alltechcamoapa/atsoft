@@ -132,7 +132,14 @@ const SupabaseDataService = (() => {
     };
 
     const createCliente = async (clienteData) => {
-        if (!client) return { error: 'Not initialized' };
+        if (!client) return {
+            error: 'Not initialized',
+            getRecepcionesSync,
+            getRecepcionById,
+            createRecepcion,
+            updateRecepcion,
+            deleteRecepcion
+        };
 
         // Generar código secuencial si no existe (Formato: CLI-0001)
         if (!clienteData.codigo_cliente) {
@@ -952,27 +959,40 @@ const SupabaseDataService = (() => {
     const createProforma = async (proformaData) => {
         if (!client) return { error: 'Not initialized' };
 
+        // Extraemos variables que podrian fallar en DB
+        const { creado_por_nombre, ...dataToInsert } = proformaData;
+
         // Generar codigo si no existe
-        if (!proformaData.codigo_proforma) {
-            proformaData.codigo_proforma = 'PROF' + Date.now().toString().slice(-6);
+        if (!dataToInsert.codigo_proforma) {
+            dataToInsert.codigo_proforma = 'PROF' + Date.now().toString().slice(-6);
         }
 
         const user = await getCurrentUser();
         if (user) {
-            proformaData.created_by = user.id;
+            dataToInsert.created_by = user.id;
         }
 
-        console.log('📤 Creando proforma con datos:', proformaData);
+        if (creado_por_nombre) {
+            const notaAtendido = `Atendido por: ${creado_por_nombre}`;
+            dataToInsert.notas = dataToInsert.notas ? `${dataToInsert.notas}\n\n${notaAtendido}` : notaAtendido;
+        }
+
+        console.log('📤 Creando proforma con datos:', dataToInsert);
 
         const { data, error } = await client
             .from('proformas')
-            .insert([proformaData])
+            .insert([dataToInsert])
             .select()
             .single();
 
         if (error) {
             console.error('❌ Error en createProforma:', error);
             return { error: handleSupabaseError(error, 'createProforma') };
+        }
+
+        // Restore it for local cache
+        if (data) {
+            data.creado_por_nombre = creado_por_nombre;
         }
 
         console.log('✅ Proforma creada:', data);
@@ -2004,8 +2024,99 @@ const SupabaseDataService = (() => {
         return data.fecha_alta || data.created_at;
     };
 
+    // ========== RECEPCIONES DE EQUIPOS ==========
+
+    const getRecepcionesFiltered = async (filter) => {
+        if (!client) return [];
+        let query = client.from('recepciones_equipos').select('*, cliente:clientes(*), equipo:equipos(*)');
+        if (filter.search) {
+            query = query.or(`numero_recepcion.ilike.%${filter.search}%,codigo_recepcion.ilike.%${filter.search}%`);
+        }
+        if (filter.estado && filter.estado !== 'all') {
+            query = query.eq('estado', filter.estado);
+        }
+        query = query.order('created_at', { ascending: false });
+        const { data, error } = await query;
+        if (error) { console.error('Error fetching recepciones filtered:', error); return []; }
+        return data || [];
+    };
+
+    const getRecepcionesSync = async () => {
+        if (!client) return [];
+        const { data, error } = await client
+            .from('recepciones_equipos')
+            .select(`
+                *,
+                cliente:clientes(*),
+                equipo:equipos(*)
+            `)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching recepciones:', error);
+            return [];
+        }
+        return data || [];
+    };
+
+    const createRecepcion = async (recepcionData) => {
+        console.log('🔵 createRecepcion called with:', JSON.stringify(recepcionData));
+        if (!client) { console.error('❌ Supabase client not initialized'); return { error: 'Not initialized' }; }
+
+        const numero_recepcion_str = await generateCode('recepciones_equipos', 'REC-', 5, 'codigo_recepcion');
+        const matches = String(numero_recepcion_str).match(/\d+$/);
+        const numero_recepcion = matches ? parseInt(matches[0]) : Math.floor(Date.now() / 1000) % 100000;
+        recepcionData.numero_recepcion = parseInt(numero_recepcion);
+        if (!recepcionData.codigo_recepcion) {
+            recepcionData.codigo_recepcion = 'REC-' + String(numero_recepcion).padStart(5, '0');
+        }
+
+        const user = await getCurrentUser();
+        if (user) {
+            recepcionData.creado_por = user.id;
+        }
+
+        console.log('🔵 Inserting recepcion with final data:', JSON.stringify(recepcionData));
+        const { data, error } = await client
+            .from('recepciones_equipos')
+            .insert([recepcionData])
+            .select()
+            .single();
+
+        if (error) { console.error('❌ createRecepcion error:', error); return { error: handleSupabaseError(error, 'createRecepcion') }; }
+        console.log('✅ createRecepcion success:', data);
+        return { data, success: true };
+    };
+
+    const updateRecepcion = async (id, updates) => {
+        if (!client) return { error: 'Not initialized' };
+        updates.updated_at = new Date().toISOString();
+
+        const { data, error } = await client
+            .from('recepciones_equipos')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) return { error: handleSupabaseError(error, 'updateRecepcion') };
+        return { data, success: true };
+    };
+
+    const deleteRecepcion = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client
+            .from('recepciones_equipos')
+            .delete()
+            .eq('id', id);
+
+        if (error) return { error: handleSupabaseError(error, 'deleteRecepcion') };
+        return { success: true };
+    };
+
     // ========== PUBLIC API ==========
     return {
+        getRecepcionesFiltered,
         // Inicialización
         init,
         subscribeToChanges, // Exportar función
@@ -2129,6 +2240,12 @@ const SupabaseDataService = (() => {
         marcarVisitasComoPagadas,
         getVisitasPorTecnico,
         getAntiguedadTecnico,
+
+        // Recepciones de Equipos
+        getRecepcionesSync,
+        createRecepcion,
+        updateRecepcion,
+        deleteRecepcion,
 
         // Helpers
         generateCode
