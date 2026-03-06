@@ -223,14 +223,18 @@ const ConfigModule = (() => {
     const allRoles = DataService.getAvailableRoles();
     const allModulos = [
       { id: 'clientes', name: 'Clientes', icon: Icons.users },
+      { id: 'recepciones', name: 'Recepción de Equipos', icon: Icons.inbox },
+      { id: 'visitas', name: 'Visitas', icon: Icons.wrench },
+      { id: 'equipos', name: 'Equipos', icon: Icons.monitor },
+      { id: 'software', name: 'Software', icon: Icons.code },
       { id: 'contratos', name: 'Contratos', icon: Icons.fileText },
-      { id: 'visitas', name: 'Visitas', icon: Icons.calendar },
+      { id: 'calendario', name: 'Calendarios de Trabajos', icon: Icons.calendar },
       { id: 'pedidos', name: 'Pedidos', icon: Icons.shoppingCart },
       { id: 'proformas', name: 'Proformas', icon: Icons.fileText },
       { id: 'productos', name: 'Productos', icon: Icons.package },
-      { id: 'equipos', name: 'Equipos', icon: Icons.monitor },
-      { id: 'software', name: 'Software', icon: Icons.code },
-      { id: 'calendario', name: 'Calendario', icon: Icons.calendar },
+      { id: 'prestaciones', name: 'Prestaciones', icon: Icons.dollarSign },
+      { id: 'gestion-financiera', name: 'Gestión Financiera', icon: Icons.wallet },
+      { id: 'gestion-tecnicos', name: 'Gestión de Técnicos', icon: Icons.users },
       { id: 'reportes', name: 'Reportes', icon: Icons.barChart },
       { id: 'configuracion', name: 'Configuración', icon: Icons.settings },
       { id: 'usuarios', name: 'Usuarios', icon: Icons.users }
@@ -491,6 +495,7 @@ const ConfigModule = (() => {
       phone: '',
       slogan: ''
     };
+    const theme = State.get('theme') || 'light';
 
     return `
       <div class="card">
@@ -542,6 +547,15 @@ const ConfigModule = (() => {
                       <input type="text" class="form-input" value="${companyConfig.brandColor || '#1a73e8'}" readonly style="width: 100px;">
                   </div>
                   <span class="form-hint">Color principal para botones, enlaces y destacados.</span>
+              </div>
+
+              <div class="form-group">
+                  <label class="form-label">Tema del Sistema (Lado Derecho)</label>
+                  <select name="appTheme" class="form-select">
+                      <option value="light" ${theme === 'light' ? 'selected' : ''}>Claro</option>
+                      <option value="dark" ${theme === 'dark' ? 'selected' : ''}>Oscuro</option>
+                  </select>
+                  <span class="form-hint">Selecciona el modo visual del área principal.</span>
               </div>
 
               <div class="form-actions" style="margin-top: var(--spacing-lg);">
@@ -978,10 +992,16 @@ const ConfigModule = (() => {
     };
     State.set('companyConfig', newConfig);
 
+    const appTheme = formData.get('appTheme');
+    if (appTheme) {
+      setTheme(appTheme);
+    }
+
     // Apply Brand Color
     if (newConfig.brandColor) {
       document.documentElement.style.setProperty('--color-primary-500', newConfig.brandColor);
       document.documentElement.style.setProperty('--bg-sidebar-active', newConfig.brandColor);
+      document.documentElement.style.setProperty('--color-primary-600', newConfig.brandColor);
     }
 
     // Directly apply styles if App has the method, otherwise reload handles it via state init
@@ -990,7 +1010,7 @@ const ConfigModule = (() => {
     } else {
       // Fallback: reload strictly necessary parts or just refresh module
       const sidebar = document.getElementById('sidebar');
-      if (sidebar) sidebar.style.background = newConfig.sidebarColor;
+      if (sidebar) sidebar.style.setProperty('--sidebar-brand', newConfig.sidebarColor || '#0a1628');
 
       // Update logo
       const logo = document.querySelector('.sidebar__logo-img');

@@ -1984,6 +1984,43 @@ const SupabaseDataService = (() => {
         return { success: true };
     };
 
+    const marcarRecepcionesComoPagadas = async (pagoId, recepcionIds) => {
+        if (!client) return { error: 'Not initialized' };
+
+        const { error } = await client
+            .from('recepciones_equipos')
+            .update({ pago_id: pagoId })
+            .in('id', recepcionIds);
+
+        if (error) return { error: handleSupabaseError(error, 'marcarRecepcionesComoPagadas') };
+        return { success: true };
+    };
+
+    const deletePagoTecnico = async (pagoId) => {
+        if (!client) return { error: 'Not initialized' };
+
+        // 1. Desmarcar visitas asociadas (quitar pago_id)
+        await client
+            .from('visitas')
+            .update({ pago_id: null })
+            .eq('pago_id', pagoId);
+
+        // 2. Desmarcar recepciones asociadas (quitar pago_id)
+        await client
+            .from('recepciones_equipos')
+            .update({ pago_id: null })
+            .eq('pago_id', pagoId);
+
+        // 3. Eliminar el registro de pago
+        const { error } = await client
+            .from('pagos_tecnicos')
+            .delete()
+            .eq('id', pagoId);
+
+        if (error) return { error: handleSupabaseError(error, 'deletePagoTecnico') };
+        return { success: true };
+    };
+
     const getVisitasPorTecnico = async (tecnicoId, filter = {}) => {
         if (!client) return [];
         let query = client
@@ -2237,7 +2274,9 @@ const SupabaseDataService = (() => {
         // Gestión de Técnicos
         getPagosTecnicos,
         createPagoTecnico,
+        deletePagoTecnico,
         marcarVisitasComoPagadas,
+        marcarRecepcionesComoPagadas,
         getVisitasPorTecnico,
         getAntiguedadTecnico,
 

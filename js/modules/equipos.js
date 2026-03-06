@@ -232,7 +232,7 @@ const EquiposModule = (() => {
               <div style="font-size: 0.85rem; color: #666;">${equipo.marca} ${equipo.modelo}</div>
             </td>
             <td><span class="badge badge--${statusClass}">${equipo.estado}</span></td>
-            <td>${equipo.serie || 'N/A'}</td>
+            <td>${equipo.serie || equipo.numeroSerie || equipo.numero_serie || 'N/A'}</td>
             <td>
               <div style="display: flex; align-items: center; gap: 8px; cursor: pointer;" onclick="EquiposModule.viewClientDetail('${equipo.clienteId}')">
                 <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(cliente?.nombreCliente || 'N')}&background=1a73e8&color=fff&size=24" style="border-radius: 50%; width: 24px; height: 24px;">
@@ -296,7 +296,7 @@ const EquiposModule = (() => {
             <div class="equipment-card__details">
               <div class="equipment-card__detail">
                 <span class="text-muted">Serie:</span>
-                <span class="font-medium">${equipo.serie}</span>
+                <span class="font-medium">${equipo.serie || equipo.numeroSerie || equipo.numero_serie || 'N/A'}</span>
               </div>
               <div class="equipment-card__detail">
                 <span class="text-muted">Ubicación:</span>
@@ -441,7 +441,7 @@ const EquiposModule = (() => {
               <div class="form-group">
                 <label class="form-label form-label--required">Número de Serie</label>
                 <input type="text" name="serie" class="form-input" 
-                       value="${equipo?.serie || ''}" placeholder="Ej: SRV-2024-001" required>
+                       value="${equipo?.serie || equipo?.numeroSerie || equipo?.numero_serie || ''}" placeholder="Ej: SRV-2024-001" required>
               </div>
               <div class="form-group">
                 <label class="form-label">Ubicación</label>
@@ -483,10 +483,13 @@ const EquiposModule = (() => {
     const allUsers = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync() : [];
     const getAtendidoPor = (h) => {
       if (h._esVisita) {
-        const tech = allUsers.find(u => u.id === h.usuarioSoporte);
-        return tech ? (tech.name || tech.username) : (h.usuarioSoporte || 'N/A');
+        const tech = allUsers.find(u => u.id === h.usuarioSoporte || u.id === h.usuario_soporte);
+        return tech ? (tech.name || tech.username) : (h.usuarioSoporte || h.usuario_soporte || 'N/A');
       } else {
-        return h.creador?.full_name || h.creador?.name || h.usuario?.full_name || h.creador?.username || h.tecnico || h.recibido_por || h.creado_por || 'Sistema';
+        const creatorId = h.creado_por || h.recibido_por;
+        const tech = allUsers.find(u => u.id === creatorId);
+        const nameFromUUID = tech ? (tech.name || tech.username) : null;
+        return h.creador?.full_name || h.creador?.name || h.usuario?.full_name || h.creador?.username || h.tecnico || h.tecnico_asignado || nameFromUUID || creatorId || 'Sistema';
       }
     };
 
@@ -500,7 +503,7 @@ const EquiposModule = (() => {
           <div class="modal__header">
             <div>
               <h3 class="modal__title">${equipo.nombreEquipo}</h3>
-              <p class="text-sm text-muted">${equipo.marca} ${equipo.modelo} | Serie: ${equipo.serie}</p>
+              <p class="text-sm text-muted">${equipo.marca} ${equipo.modelo} | Serie: ${equipo.serie || equipo.numeroSerie || equipo.numero_serie || 'N/A'}</p>
             </div>
             <button class="modal__close" onclick="EquiposModule.closeModal()">${Icons.x}</button>
           </div>
@@ -939,7 +942,7 @@ const EquiposModule = (() => {
     // Mapear camelCase (UI) a snake_case (DB)
     // Mapear valor en MAYÚSCULAS para que cumpla con el ENUM de la base de datos (tipo_equipo_enum)
     const formatTipoEquipo = (tipo) => {
-      if (!tipo) return 'Equipo General';
+      if (!tipo) return 'Otro';
       const dict = {
         'LAPTOP': 'Laptop',
         'PC ESCRITORIO': 'Computadora',
@@ -961,7 +964,10 @@ const EquiposModule = (() => {
       const upper = tipo.toUpperCase().trim();
       if (dict[upper]) return dict[upper];
 
-      return tipo.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      const camelCased = tipo.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+      // Validar si es una opción permitida o fallar silenciosamente a Otro
+      if (Object.values(dict).includes(camelCased)) return camelCased;
+      return 'Otro';
     };
 
     const data = {

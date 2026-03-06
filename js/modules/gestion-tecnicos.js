@@ -4,11 +4,18 @@
  */
 
 const GestionTecnicosModule = (() => {
-    let currentTab = 'tecnicos';
+    let currentTab = 'trabajos';
     let technicians = [];
     let payments = [];
     let selectedTechnician = null;
     let technicianVisits = [];
+    let workFilters = {
+        tecnicoId: '',
+        fechaInicio: '',
+        fechaFin: '',
+        mes: '',
+        tipo: 'todos' // 'todos', 'taller', 'visita'
+    };
 
     const init = async () => {
         await loadData();
@@ -32,13 +39,32 @@ const GestionTecnicosModule = (() => {
         payments = DataService.getPagosTecnicos();
 
         if (currentTab === 'tecnicos') {
-            // Recalcular estadísticas rápidas para los técnicos
+            // Recalcular estadísticas rápidas para los técnicos (Visitas + Recepciones)
             const allVisitas = DataService.getVisitasSync();
+            const allRecepciones = DataService.getRecepcionesSync();
+
             technicians.forEach(t => {
-                const techVisits = allVisitas.filter(v => (v.tecnicoId || v.tecnico_id) === t.id);
+                // 1. Visitas terminadas
+                const techVisits = allVisitas.filter(v => (v.tecnicoId || v.tecnico_id || v.usuarioSoporte || v.usuario_soporte) === t.id);
+                const visitsCompleted = techVisits.filter(v => v.trabajoRealizado || v.trabajo_realizado);
+                const visitsPendingPayment = visitsCompleted.filter(v => !v.pago_id);
+
+                // 2. Recepciones terminadas (evitando las que ya generaron visita para no duplicar en el historial de pagos)
+                const techRecepciones = allRecepciones.filter(r =>
+                    (r.tecnico_asignado === t.id || r.tecnico_asignado === t.name || r.tecnico_asignado === t.full_name) &&
+                    (r.estado === 'Reparado' || r.estado === 'Entregado')
+                );
+
+                // Filtrar recepciones que no tienen una visita asociada (para no duplicar conteo)
+                const recepcionesPendingPayment = techRecepciones.filter(r => {
+                    const code = r.codigo_recepcion || r.numero_recepcion;
+                    const hasVisit = visitsCompleted.some(v => (v.tipoVisita || v.tipo_visita || '').includes(code));
+                    return !hasVisit && !r.pago_id;
+                });
+
                 t.stats = {
-                    total: techVisits.length,
-                    pendientes: techVisits.filter(v => v.trabajoRealizado && !v.pago_id).length
+                    total: visitsCompleted.length + techRecepciones.length,
+                    pendientes: visitsPendingPayment.length + recepcionesPendingPayment.length
                 };
             });
         }
@@ -60,14 +86,14 @@ const GestionTecnicosModule = (() => {
             </div>
 
             <div class="tabs-container" style="margin-bottom: var(--spacing-md);">
-                <button class="tab-btn ${currentTab === 'tecnicos' ? 'active' : ''}" onclick="GestionTecnicosModule.switchTab('tecnicos')">
-                    ${Icons.users} Técnicos
+                <button class="tab-btn ${currentTab === 'trabajos' ? 'active' : ''}" onclick="GestionTecnicosModule.switchTab('trabajos')">
+                    ${Icons.list} Trabajos Realizados
                 </button>
                 <button class="tab-btn ${currentTab === 'pagos' ? 'active' : ''}" onclick="GestionTecnicosModule.switchTab('pagos')">
                     ${Icons.dollarSign} Historial de Pagos
                 </button>
-                <button class="tab-btn ${currentTab === 'reportes' ? 'active' : ''}" onclick="GestionTecnicosModule.switchTab('reportes')">
-                    ${Icons.barChart} Reportes de Trabajo
+                <button class="tab-btn ${currentTab === 'tecnicos' ? 'active' : ''}" onclick="GestionTecnicosModule.switchTab('tecnicos')">
+                    ${Icons.users} Técnicos
                 </button>
             </div>
             <div class="tabs__content">
@@ -87,12 +113,12 @@ const GestionTecnicosModule = (() => {
 
     const renderTabContent = () => {
         switch (currentTab) {
-            case 'tecnicos':
-                return renderTecnicosTab();
+            case 'trabajos':
+                return renderTrabajosTab();
             case 'pagos':
                 return renderPagosTab();
-            case 'reportes':
-                return renderReportesTab();
+            case 'tecnicos':
+                return renderTecnicosTab();
             default:
                 return '';
         }
@@ -117,49 +143,83 @@ const GestionTecnicosModule = (() => {
     };
 
     const renderTechnicianCard = (tech) => {
-        // En un escenario real, calcularíamos estadísticas aquí
+        // Obtener los últimos 5 trabajos terminados para este técnico
+        const allVisitas = DataService.getVisitasSync() || [];
+        const allRecepciones = DataService.getRecepcionesSync() || [];
+
+        const vJobs = allVisitas.filter(v => (v.tecnicoId || v.tecnico_id || v.usuarioSoporte || v.usuario_soporte) === tech.id && (v.trabajoRealizado || v.trabajo_realizado))
+            .map(v => ({ fecha: v.fecha_inicio || v.fechaInicio, desc: v.tipo_visita || v.tipoVisita, cliente: v.cliente?.nombre_cliente || v.cliente?.empresa || 'Cliente' }));
+
+        const rJobs = allRecepciones.filter(r => (r.tecnico_asignado === tech.id || r.tecnico_asignado === tech.name || r.tecnico_asignado === tech.full_name) && (r.estado === 'Reparado' || r.estado === 'Entregado'))
+            .map(r => ({ fecha: r.fecha_recepcion || r.created_at, desc: 'Taller: ' + (r.codigo_recepcion || r.numero_recepcion), cliente: r.cliente?.nombre_cliente || r.cliente?.empresa || 'Cliente' }));
+
+        const lastJobs = [...vJobs, ...rJobs]
+            .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+            .slice(0, 5);
+
         return `
-            <div class="card tech-card" style="position: relative; overflow: hidden; height: 100%;">
-                <div class="card__body">
+            <div class="card tech-card" style="position: relative; overflow: hidden; display: flex; flex-direction: column; height: 100%;">
+                <div class="card__body" style="flex: 1;">
                     <div style="display: flex; gap: var(--spacing-md); align-items: center; margin-bottom: var(--spacing-md);">
                         <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(tech.name)}&background=1a73e8&color=fff&size=60" 
                              alt="${tech.name}" 
                              style="width: 60px; height: 60px; border-radius: 50%;">
                         <div>
-                            <h3 style="margin: 0; font-size: var(--font-size-lg);">${tech.name}</h3>
-                            <span class="badge badge--primary" style="font-size: 10px;">${tech.role}</span>
+                            <h3 style="margin: 0; font-size: var(--font-size-lg); line-height: 1.2;">${tech.name}</h3>
+                            <span class="badge badge--primary" style="font-size: 10px; margin-top: 4px;">${tech.role}</span>
                         </div>
                     </div>
                     
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-sm); margin-bottom: var(--spacing-md);">
                         <div style="padding: var(--spacing-sm); background: var(--bg-secondary); border-radius: var(--border-radius-sm); text-align: center;">
-                            <div style="font-size: var(--font-size-xs); color: var(--text-muted);">Servicios Totales</div>
-                            <div style="font-weight: var(--font-weight-bold); font-size: var(--font-size-lg);">${tech.stats?.total || 0}</div>
+                            <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Total</div>
+                            <div style="font-weight: var(--font-weight-bold); font-size: var(--font-size-md);">${tech.stats?.total || 0}</div>
                         </div>
                         <div style="padding: var(--spacing-sm); background: var(--bg-secondary); border-radius: var(--border-radius-sm); text-align: center;">
-                            <div style="font-size: var(--font-size-xs); color: var(--text-muted);">Pendientes Pago</div>
-                            <div style="font-weight: var(--font-weight-bold); font-size: var(--font-size-lg); color: var(--color-warning);">${tech.stats?.pendientes || 0}</div>
+                            <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase;">Pendientes</div>
+                            <div style="font-weight: var(--font-weight-bold); font-size: var(--font-size-md); color: var(--color-warning);">${tech.stats?.pendientes || 0}</div>
                         </div>
                     </div>
 
-                    <p style="font-size: var(--font-size-sm); color: var(--text-secondary); margin-bottom: var(--spacing-md);">
-                        ${Icons.mail} ${tech.email}
-                    </p>
-
-                    <div style="display: flex; gap: var(--spacing-sm);">
-                        <button class="btn btn--secondary btn--sm btn--block" onclick="GestionTecnicosModule.viewTechReport('${tech.id}')">
-                            ${Icons.barChart} Ver Reporte
-                        </button>
-                        <button class="btn btn--primary btn--sm btn--block" onclick="GestionTecnicosModule.renderPaymentModal('${tech.id}')">
-                            ${Icons.dollarSign} Pagar
-                        </button>
+                    <div style="margin-bottom: var(--spacing-md);">
+                        <h4 style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px;">Últimos 5 Trabajos</h4>
+                        ${lastJobs.length > 0 ? `
+                            <div style="display: flex; flex-direction: column; gap: 6px;">
+                                ${lastJobs.map(j => `
+                                    <div style="font-size: 11px; display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+                                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">
+                                            <span class="font-semibold">${j.desc}</span><br>
+                                            <span style="color: var(--text-muted); font-size: 10px;">${j.cliente}</span>
+                                        </div>
+                                        <span style="color: var(--text-muted); font-size: 10px; white-space: nowrap;">${new Date(j.fecha).toLocaleDateString('es-NI', { day: '2-digit', month: '2-digit' })}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : '<div style="font-size: 11px; color: var(--text-muted); font-style: italic;">Sin trabajos recientes</div>'}
                     </div>
+                </div>
+                <div class="card__footer" style="padding: var(--spacing-md); border-top: 1px solid var(--border-color); background: var(--bg-secondary);">
+                    <button class="btn btn--primary btn--sm btn--block" onclick="GestionTecnicosModule.renderPaymentModal('${tech.id}')">
+                        ${Icons.dollarSign} Gestionar Pago
+                    </button>
                 </div>
             </div>
         `;
     };
 
     const renderPagosTab = () => {
+        const allUsers = DataService.getUsersSync() || [];
+        const resolveTechName = (pago) => {
+            if (pago.tecnico?.full_name) return pago.tecnico.full_name;
+            if (pago.tecnico?.name) return pago.tecnico.name;
+            if (pago.tecnicoNombre && pago.tecnicoNombre !== 'Desconocido') return pago.tecnicoNombre;
+            if (pago.tecnico_id) {
+                const user = allUsers.find(u => u.id === pago.tecnico_id);
+                if (user) return user.name || user.full_name || user.username;
+            }
+            return 'Desconocido';
+        };
+
         if (payments.length === 0) {
             return `
                 <div class="empty-state">
@@ -188,20 +248,269 @@ const GestionTecnicosModule = (() => {
                         ${payments.map(p => `
                             <tr>
                                 <td><span class="font-bold">${p.numero_recibo || 'N/A'}</span></td>
-                                <td>${p.tecnico?.full_name || 'Desconocido'}</td>
+                                <td>${resolveTechName(p)}</td>
                                 <td>${formatDate(p.periodo_inicio)} - ${formatDate(p.periodo_fin)}</td>
                                 <td>C$${parseFloat(p.total_servicios).toFixed(2)}</td>
                                 <td><span class="text-success font-bold">C$${parseFloat(p.monto_pago).toFixed(2)}</span></td>
                                 <td>${formatDateTime(p.fecha_pago)}</td>
                                 <td style="text-align: right;">
-                                    <button class="btn btn--ghost btn--icon btn--sm" onclick="GestionTecnicosModule.printReceipt('${p.id}')" title="Imprimir Recibo">
-                                        ${Icons.printer}
-                                    </button>
+                                    <div style="display: flex; justify-content: flex-end; gap: 4px;">
+                                        <button class="btn btn--ghost btn--icon btn--sm" onclick="GestionTecnicosModule.printReceipt('${p.id}')" title="Imprimir Recibo">
+                                            ${Icons.printer}
+                                        </button>
+                                        <button class="btn btn--ghost btn--icon btn--sm" onclick="GestionTecnicosModule.deletePago('${p.id}')" title="Eliminar Pago" style="color: var(--color-danger);">
+                                            ${Icons.trash}
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
+            </div>
+        `;
+    };
+
+    const renderTrabajosTab = () => {
+        const allVisitas = DataService.getVisitasSync() || [];
+        const allRecepciones = DataService.getRecepcionesSync() || [];
+        const allUsers = DataService.getUsersSync();
+
+        const getTechName = (id) => {
+            if (!id) return 'N/A';
+
+            // Handle "UUID|Name" format from recepciones
+            let searchId = id;
+            if (typeof id === 'string' && id.includes('|')) {
+                searchId = id.split('|')[0];
+            }
+
+            // Normalización simple: trim y case-insensitive si es necesario
+            const u = allUsers.find(user =>
+                user.id === searchId ||
+                user.name === searchId ||
+                user.full_name === searchId ||
+                user.username === searchId ||
+                (typeof id === 'string' && (id.includes(user.name) || user.name.includes(id)))
+            );
+
+            if (u) return u.name || u.full_name || u.username;
+
+            // Búsqueda difusa si es el único técnico o si el nombre coincide parcialmente
+            if (typeof searchId === 'string' && searchId.length < 30) {
+                const fuzzy = allUsers.find(user =>
+                    user.name.toLowerCase().includes(searchId.toLowerCase()) ||
+                    searchId.toLowerCase().includes(user.name.toLowerCase())
+                );
+                if (fuzzy) return fuzzy.name || fuzzy.full_name;
+            }
+
+            // If it's a UUID and not found, return Desconocido
+            if (typeof searchId === 'string' && searchId.length > 20) return 'Desconocido';
+
+            // If it's the "ID|Name" format but not found in list, return the Name part if available
+            if (typeof id === 'string' && id.includes('|')) {
+                return id.split('|')[1];
+            }
+
+            return id;
+        };
+
+        // 1. Procesar Visitas (Servicios de campo/remotos)
+        const completedVisits = allVisitas.filter(v => v.trabajoRealizado || v.trabajo_realizado).map(v => {
+            const tipoRaw = v.tipoVisita || v.tipo_visita || 'Servicio';
+            const codigoVisita = v.codigo_visita || v.visitaId || v.id.substring(0, 8);
+            const tipoLabel = tipoRaw === 'Física' ? ('Física: ' + codigoVisita) : tipoRaw === 'Remota' ? ('Remota: ' + codigoVisita) : (tipoRaw + ': ' + codigoVisita);
+            return {
+                id: v.id,
+                fecha: v.fechaInicio || v.fecha_inicio,
+                tipo: tipoLabel,
+                tecnicoId: v.usuarioSoporte || v.usuario_soporte || v.tecnicoId || v.tecnico_id,
+                clienteId: v.clienteId || v.cliente_id,
+                equipoId: v.equipo_id || v.equipoId,
+                monto: parseFloat(v.costoServicio || v.costo_servicio || 0),
+                moneda: v.moneda || 'NIO',
+                pagoId: v.pago_id,
+                descripcion: v.descripcionTrabajo || v.descripcion_trabajo || '',
+                _original: v
+            };
+        });
+
+        // 2. Procesar Recepciones (Reparaciones de taller) que estén en Reparado o Entregado
+        const completedRecepciones = allRecepciones.filter(r =>
+            (r.estado === 'Reparado' || r.estado === 'Entregado') && (r.tecnico_asignado || r.recibido_por)
+        ).map(r => ({
+            id: r.id,
+            fecha: r.fecha_recepcion || r.created_at,
+            tipo: 'Taller: ' + (r.codigo_recepcion || r.numero_recepcion),
+            tecnicoId: r.tecnico_asignado || r.recibido_por,
+            clienteId: r.cliente_id || r.clienteId,
+            equipoId: r.equipo_id || r.equipoId,
+            monto: parseFloat(r.mano_de_obra || 0),
+            moneda: r.moneda || 'NIO',
+            pagoId: r.pago_id,
+            descripcion: 'Reparación en estado ' + r.estado,
+            _original: r
+        }));
+
+        // 3. Mezclar evitando duplicados (si la recepción ya generó una visita, priorizar visita)
+        let list = [...completedVisits];
+        completedRecepciones.forEach(r => {
+            const code = r.tipo.replace('Taller: ', '');
+            const exists = completedVisits.some(v => v.tipo.includes(code));
+            if (!exists) list.push(r);
+        });
+
+        // 4. Aplicar Filtros
+        if (workFilters.tecnicoId) {
+            list = list.filter(v => {
+                const techId = v.tecnicoId;
+                if (!techId) return false;
+                if (typeof techId === 'string' && techId.includes('|')) {
+                    return techId.split('|')[0] === workFilters.tecnicoId;
+                }
+                return techId === workFilters.tecnicoId;
+            });
+        }
+
+        if (workFilters.tipo === 'taller') {
+            list = list.filter(v => v.tipo.startsWith('Taller:'));
+        } else if (workFilters.tipo === 'visita') {
+            list = list.filter(v => !v.tipo.startsWith('Taller:'));
+        }
+
+        if (workFilters.fechaInicio) {
+            list = list.filter(v => v.fecha >= workFilters.fechaInicio);
+        }
+        if (workFilters.fechaFin) {
+            list = list.filter(v => v.fecha.split('T')[0] <= workFilters.fechaFin);
+        }
+        if (workFilters.mes) {
+            const [year, month] = workFilters.mes.split('-');
+            list = list.filter(v => {
+                const date = new Date(v.fecha);
+                return date.getFullYear() == year && (date.getMonth() + 1) == month;
+            });
+        }
+
+        // Ordenar por fecha descendente
+        list.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+        if (list.length === 0) {
+            return `
+                <div class="empty-state">
+                    <div class="empty-state__icon">${Icons.list || Icons.fileText}</div>
+                    <h3 class="empty-state__title">No hay trabajos realizados registrados</h3>
+                    <p class="empty-state__description">Los servicios finalizados y reparaciones de taller aparecerán aquí.</p>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="card card--no-padding">
+                    <div style="padding: var(--spacing-md); border-bottom: 1px solid var(--border-color);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-md);">
+                            <h3 style="margin: 0; font-size: var(--font-size-md);">${Icons.filter} Historial Unificado de Servicios</h3>
+                            <span class="badge badge--success">${list.length} Trabajos Terminados</span>
+                        </div>
+                        
+                        <!-- Barra de Filtros Compacta -->
+                        <div style="background: var(--bg-secondary); padding: 8px; border-radius: var(--border-radius-sm); display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;">
+                            <div style="flex: 1; min-width: 150px;">
+                                <label style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Técnico</label>
+                                <select class="form-input form-input--sm" id="workFilterTech" onchange="GestionTecnicosModule.setWorkFilter('tecnicoId', this.value)" style="height: 32px;">
+                                    <option value="">Todos los técnicos</option>
+                                    ${technicians.map(t => `<option value="${t.id}" ${workFilters.tecnicoId === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div style="flex: 0.8; min-width: 130px;">
+                                <label style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Origen</label>
+                                <select class="form-input form-input--sm" id="workFilterTipo" onchange="GestionTecnicosModule.setWorkFilter('tipo', this.value)" style="height: 32px;">
+                                    <option value="todos" ${workFilters.tipo === 'todos' ? 'selected' : ''}>Todos</option>
+                                    <option value="taller" ${workFilters.tipo === 'taller' ? 'selected' : ''}>Taller</option>
+                                    <option value="visita" ${workFilters.tipo === 'visita' ? 'selected' : ''}>Visitas</option>
+                                </select>
+                            </div>
+                            <div style="width: 140px;">
+                                <label style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Mes</label>
+                                <input type="month" class="form-input form-input--sm" value="${workFilters.mes}" onchange="GestionTecnicosModule.setWorkFilter('mes', this.value)" style="height: 32px;">
+                            </div>
+                            <div style="width: 110px;">
+                                <label style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Desde</label>
+                                <input type="date" class="form-input form-input--sm" value="${workFilters.fechaInicio}" onchange="GestionTecnicosModule.setWorkFilter('fechaInicio', this.value)" style="height: 32px;">
+                            </div>
+                            <div style="width: 110px;">
+                                <label style="display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Hasta</label>
+                                <input type="date" class="form-input form-input--sm" value="${workFilters.fechaFin}" onchange="GestionTecnicosModule.setWorkFilter('fechaFin', this.value)" style="height: 32px;">
+                            </div>
+                            <button class="btn btn--ghost btn--sm" onclick="GestionTecnicosModule.resetWorkFilters()" title="Limpiar" style="height: 32px; padding: 0 10px;">
+                                ${Icons.refreshCw}
+                            </button>
+                        </div>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="data-table">
+                            <thead class="data-table__head">
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Técnico</th>
+                                    <th>Cliente / Equipo</th>
+                                    <th>Detalles del Trabajo</th>
+                                    <th>Monto</th>
+                                    <th>Estado Pago</th>
+                                    <th style="text-align: right;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody class="data-table__body">
+                                ${list.map(v => {
+            const techName = getTechName(v.tecnicoId);
+            const cliente = DataService.getClienteById(v.clienteId);
+            const equipo = v.equipoId ? DataService.getEquipoById(v.equipoId) : null;
+            const isPaid = !!v.pagoId;
+            const isTaller = v.tipo.startsWith('Taller:');
+
+            return `
+                                        <tr>
+                                            <td>${formatDate(v.fecha)}</td>
+                                            <td>
+                                                <div style="display: flex; align-items: center; gap: 8px;">
+                                                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(techName)}&size=24&background=random" style="width: 24px; height: 24px; border-radius: 50%;">
+                                                    <span>${techName}</span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style="font-weight: 600;">${cliente?.empresa || cliente?.nombreCliente || 'N/A'}</div>
+                                                ${equipo ? `<div style="font-size: 11px; color: var(--text-muted);">${equipo.nombre_equipo || equipo.nombreEquipo || 'Equipo'} - ${equipo.serie || ''}</div>` : ''}
+                                            </td>
+                                            <td>
+                                                <div style="display: flex; align-items: center; gap: 4px;">
+                                                    <span style="color: ${isTaller ? 'var(--color-primary)' : 'var(--color-success)'}">${isTaller ? Icons.inbox : Icons.mapPin}</span>
+                                                    <div style="font-weight: 600;">${v.tipo}</div>
+                                                </div>
+                                                <div style="font-size: 11px; color: var(--text-muted); max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${v.descripcion}">
+                                                    ${v.descripcion}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="font-bold">${v.moneda === 'USD' ? '$' : 'C$'}${v.monto.toFixed(2)}</span>
+                                            </td>
+                                            <td>
+                                                <span class="badge badge--${isPaid ? 'success' : 'warning'}" style="font-size: 10px;">
+                                                    ${isPaid ? 'Pagado' : 'Pendiente'}
+                                                </span>
+                                            </td>
+                                            <td style="text-align: right;">
+                                                <button class="btn btn--ghost btn--icon btn--sm" onclick="GestionTecnicosModule.viewWorkDetail('${v.id}', '${isTaller ? 'recepcion' : 'visita'}')" title="Ver Detalles">
+                                                    ${Icons.eye}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    `;
+        }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         `;
     };
@@ -345,21 +654,21 @@ const GestionTecnicosModule = (() => {
         }
     };
 
-    const renderPaymentSummary = (visits, total, tipoCambio = 36.6) => {
+    const renderPaymentSummary = (items, total, tipoCambio = 36.6) => {
         const pagoMonto = total * 0.5;
 
-        if (visits.length === 0) {
+        if (items.length === 0) {
             return `
                 <div style="text-align: center; color: var(--text-muted); padding: var(--spacing-md);">
-                    ${Icons.info} Seleccione un técnico con servicios pendientes de pago para calcular.
+                    ${Icons.info} Seleccione un técnico con servicios o reparaciones pendientes de pago.
                 </div>
             `;
         }
 
         return `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
-                <span class="font-semibold">Servicios Pendientes:</span>
-                <span class="badge badge--info">${visits.length}</span>
+                <span class="font-semibold">Trabajos Pendientes:</span>
+                <span class="badge badge--info">${items.length}</span>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
                 <span class="font-semibold">Total Bruto Servicios:</span>
@@ -374,19 +683,22 @@ const GestionTecnicosModule = (() => {
                     <thead>
                         <tr>
                             <th>Fecha</th>
-                            <th>Servicio</th>
+                            <th>Trabajando</th>
                             <th style="text-align: right;">Costo</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${visits.map(v => {
+                        ${items.map(v => {
             const isNIO = v.moneda === 'NIO';
-            const orig = (parseFloat(v.costo_servicio) || 0);
+            const orig = (parseFloat(v.monto) || 0);
             const calc = isNIO ? orig : orig * tipoCambio;
             return `
                             <tr>
-                                <td>${formatDate(v.fecha_inicio)}</td>
-                                <td style="font-size: 11px;">${v.tipo_visita}</td>
+                                <td>${formatDate(v.fecha)}</td>
+                                <td style="font-size: 11px;">
+                                    <div style="font-weight: 600;">${v.tipo}</div>
+                                    <div style="font-size: 9px; color: var(--text-muted);">${v.cliente || ''}</div>
+                                </td>
                                 <td style="text-align: right;">
                                     <div style="font-weight: bold;">C$${calc.toFixed(2)}</div>
                                     <div style="font-size: 9px; color: var(--text-muted); margin-top: 2px;">${!isNIO && orig > 0 ? `($${orig.toFixed(2)} x ${tipoCambio})` : ''}</div>
@@ -399,7 +711,8 @@ const GestionTecnicosModule = (() => {
             </div>
             <input type="hidden" id="hiddenTotalServicios" value="${total}">
             <input type="hidden" id="hiddenPagoMonto" value="${pagoMonto}">
-            <input type="hidden" id="hiddenVisitaIds" value="${visits.map(v => v.id).join(',')}">
+            <input type="hidden" id="hiddenVisitaIds" value="${items.filter(i => i._type === 'visita').map(v => v.id).join(',')}">
+            <input type="hidden" id="hiddenRecepcionIds" value="${items.filter(i => i._type === 'recepcion').map(r => r.id).join(',')}">
         `;
     };
 
@@ -415,15 +728,68 @@ const GestionTecnicosModule = (() => {
 
         summaryDiv.innerHTML = `<div style="text-align: center; padding: 20px;">${Icons.refreshCw} Calculando...</div>`;
 
-        console.warn('🔍 updatePaymentCalculation - Tech ID:', techId);
-        const visits = await DataService.getVisitasPorTecnico(techId, { pendientesPago: true });
-        console.warn('🔍 updatePaymentCalculation - Visits found:', visits.length, visits);
+        // 1. Obtener Visitas pendientes
+        const rawVisits = await DataService.getVisitasPorTecnico(techId, { pendientesPago: true });
+        const visits = rawVisits.map(v => ({
+            id: v.id,
+            fecha: v.fecha_inicio || v.fechaInicio,
+            tipo: v.tipo_visita || v.tipoVisita,
+            monto: v.costo_servicio || v.costoServicio || 0,
+            moneda: v.moneda || 'NIO',
+            cliente: v.cliente?.empresa || v.cliente?.nombre_cliente || 'Cliente S/N',
+            _type: 'visita'
+        }));
 
-        // Debug: Check if there are ANY visits for this tech ignoring filters
-        if (visits.length === 0) {
-            const allVisits = await DataService.getVisitasPorTecnico(techId);
-            console.warn('🔍 Debug: Total visits for tech (ignoring payment status):', allVisits.length);
-        }
+        // 2. Obtener Recepciones pendientes
+        const allRecepciones = DataService.getRecepcionesSync() || [];
+        const tech = technicians.find(t => t.id === techId);
+
+        const recepciones = allRecepciones.filter(r => {
+            const assigned = r.tecnico_asignado || r.recibido_por;
+            if (!assigned) return false;
+
+            // Normalizar ID y Nombre para comparación
+            let currentTechId = assigned;
+            let currentTechName = assigned;
+
+            if (typeof assigned === 'string' && assigned.includes('|')) {
+                const parts = assigned.split('|');
+                currentTechId = parts[0];
+                currentTechName = parts[1];
+            }
+
+            // Comparar contra el técnico seleccionado
+            const isMatch = (
+                currentTechId === techId ||
+                currentTechId === tech?.name ||
+                currentTechId === tech?.full_name ||
+                currentTechName === tech?.name ||
+                currentTechName === tech?.full_name
+            );
+
+            // Estado debe ser Reparado o Entregado y NO tener pago_id
+            const isCompleted = (r.estado === 'Reparado' || r.estado === 'Entregado');
+            const isUnpaid = !r.pago_id && !r.pagoId;
+
+            return isMatch && isCompleted && isUnpaid;
+        }).map(r => ({
+            id: r.id,
+            fecha: r.fecha_recepcion || r.created_at,
+            tipo: 'Taller: ' + (r.codigo_recepcion || r.numero_recepcion),
+            monto: parseFloat(r.mano_de_obra || 0),
+            moneda: r.moneda || 'NIO',
+            cliente: r.cliente?.empresa || r.cliente?.nombre_cliente || 'Cliente S/N',
+            _type: 'recepcion'
+        }));
+
+        // 3. Unificar evitando duplicados
+        const items = [...visits];
+        recepciones.forEach(r => {
+            const code = r.tipo.replace('Taller: ', '');
+            // Verificar si el código de recepción ya está contemplado en una visita de campo
+            const alreadyInVisits = visits.some(v => (v.tipo || '').includes(code));
+            if (!alreadyInVisits) items.push(r);
+        });
 
         let tipoCambio = 36.6;
         try {
@@ -431,21 +797,22 @@ const GestionTecnicosModule = (() => {
             if (cacheConfig && cacheConfig.tipoCambio) tipoCambio = parseFloat(cacheConfig.tipoCambio);
         } catch (error) { }
 
-        const total = visits.reduce((sum, v) => {
-            const costo = parseFloat(v.costo_servicio) || 0;
-            if (v.moneda === 'NIO') return sum + costo;
+        const total = items.reduce((sum, item) => {
+            const costo = parseFloat(item.monto) || 0;
+            if (item.moneda === 'NIO') return sum + costo;
             return sum + (costo * tipoCambio);
         }, 0);
 
-        summaryDiv.innerHTML = renderPaymentSummary(visits, total, tipoCambio);
-        btnSave.disabled = (visits.length === 0);
+        summaryDiv.innerHTML = renderPaymentSummary(items, total, tipoCambio);
+        btnSave.disabled = (items.length === 0);
     };
 
     const savePayment = async () => {
         const techId = document.getElementById('pagoTechId').value;
         const totalServicios = parseFloat(document.getElementById('hiddenTotalServicios').value);
         const montoPago = parseFloat(document.getElementById('hiddenPagoMonto').value);
-        const visitaIds = document.getElementById('hiddenVisitaIds').value.split(',');
+        const visitaIds = document.getElementById('hiddenVisitaIds').value.split(',').filter(id => id);
+        const recepcionIds = document.getElementById('hiddenRecepcionIds').value.split(',').filter(id => id);
         const pInicio = document.getElementById('pagoInicio').value;
         const pFin = document.getElementById('pagoFin').value;
         const pRecibo = document.getElementById('pagoRecibo').value;
@@ -467,12 +834,15 @@ const GestionTecnicosModule = (() => {
                 notas: pNotas
             };
 
-            const result = await DataService.createPagoTecnico(pagoData, visitaIds);
+            const result = await DataService.createPagoTecnico(pagoData, visitaIds, recepcionIds);
 
             if (result) {
                 alert('Pago registrado correctamente');
                 closeModal('paymentModal');
-                render();
+                // Refrescar caché completo para reflejar los pago_id actualizados en visitas y recepciones
+                await DataService.refreshCache();
+                await loadData();
+                App.render();
             }
         } catch (error) {
             console.error('Error saving payment:', error);
@@ -483,7 +853,6 @@ const GestionTecnicosModule = (() => {
     const generateReport = async () => {
         const techId = document.getElementById('reportTechId').value;
         const start = document.getElementById('reportStartDate').value;
-        const end = document.getElementById('reportEndDate').value;
         const resultsDiv = document.getElementById('reportResults');
 
         if (!techId) {
@@ -493,10 +862,52 @@ const GestionTecnicosModule = (() => {
 
         resultsDiv.innerHTML = `<div style="text-align: center; padding: 40px;">${Icons.refreshCw} Cargando reporte...</div>`;
 
+        // 1. Obtener Visitas
         const visits = await DataService.getVisitasPorTecnico(techId, {
             fechaInicio: start,
             fechaFin: end
         });
+
+        // 2. Obtener Recepciones
+        const allRecepciones = DataService.getRecepcionesSync() || [];
+        const tech = technicians.find(t => t.id === techId);
+        const techNameMatch = tech ? (tech.name || tech.full_name) : null;
+
+        const recepciones = allRecepciones.filter(r => {
+            const isTech = r.tecnico_asignado === techId || r.tecnico_asignado === techNameMatch;
+            const date = r.fecha_recepcion || r.created_at;
+            const inDateRange = (!start || date >= start) && (!end || date <= end);
+            return isTech && inDateRange;
+        });
+
+        // 3. Unificar
+        const unifiedItems = visits.map(v => ({
+            fecha: v.fecha_inicio || v.fechaInicio,
+            cliente: v.cliente?.empresa || v.cliente?.nombre_cliente || 'N/A',
+            servicio: v.tipo_visita || v.tipoVisita || 'Servicio',
+            completado: v.trabajo_realizado || v.trabajoRealizado,
+            monto: parseFloat(v.costo_servicio || v.costoServicio || 0),
+            moneda: v.moneda || 'NIO',
+            tipo: 'visita'
+        }));
+
+        recepciones.forEach(r => {
+            const code = r.codigo_recepcion || r.numero_recepcion;
+            const alreadyInVisits = visits.some(v => (v.tipo_visita || v.tipoVisita || '').includes(code));
+            if (!alreadyInVisits) {
+                unifiedItems.push({
+                    fecha: r.fecha_recepcion || r.created_at,
+                    cliente: r.cliente?.empresa || r.cliente?.nombre_cliente || 'N/A',
+                    servicio: 'Taller: ' + code,
+                    completado: r.estado === 'Reparado' || r.estado === 'Entregado',
+                    monto: parseFloat(r.mano_de_obra || 0),
+                    moneda: r.moneda || 'NIO',
+                    tipo: 'recepcion'
+                });
+            }
+        });
+
+        unifiedItems.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
         let tipoCambio = 36.6;
         try {
@@ -504,12 +915,13 @@ const GestionTecnicosModule = (() => {
             if (cacheConfig && cacheConfig.tipoCambio) tipoCambio = parseFloat(cacheConfig.tipoCambio);
         } catch (error) { }
 
-        const totalCosto = visits.reduce((sum, v) => {
-            const costo = parseFloat(v.costo_servicio) || 0;
+        const totalCosto = unifiedItems.reduce((sum, v) => {
+            const costo = v.monto || 0;
             if (v.moneda === 'NIO') return sum + costo;
             return sum + (costo * tipoCambio);
         }, 0);
-        const completadas = visits.filter(v => v.trabajo_realizado).length;
+
+        const completadas = unifiedItems.filter(v => v.completado).length;
         const antiguedad = await DataService.getAntiguedadTecnico(techId);
 
         resultsDiv.innerHTML = `
@@ -525,15 +937,15 @@ const GestionTecnicosModule = (() => {
                 <div class="card__body">
                     <div class="grid grid--cols-1 grid--md-cols-4 gap-md" style="margin-bottom: var(--spacing-lg);">
                         <div style="padding: var(--spacing-md); background: var(--color-primary-50); border-radius: var(--border-radius-md);">
-                            <div class="text-xs text-muted">Total Servicios</div>
-                            <div class="font-bold" style="font-size: var(--font-size-xl);">${visits.length}</div>
+                            <div class="text-xs text-muted">Total Trabajos</div>
+                            <div class="font-bold" style="font-size: var(--font-size-xl);">${unifiedItems.length}</div>
                         </div>
                         <div style="padding: var(--spacing-md); background: var(--color-success-light); border-radius: var(--border-radius-md);">
                             <div class="text-xs text-muted">Completados</div>
                             <div class="font-bold" style="font-size: var(--font-size-xl);">${completadas}</div>
                         </div>
                         <div style="padding: var(--spacing-md); background: var(--bg-secondary); border-radius: var(--border-radius-md);">
-                            <div class="text-xs text-muted">Monto Generado</div>
+                            <div class="text-xs text-muted">Monto Generado (Bruto)</div>
                             <div class="font-bold" style="font-size: var(--font-size-xl);">C$${totalCosto.toFixed(2)}</div>
                         </div>
                         <div style="padding: var(--spacing-md); background: var(--bg-secondary); border-radius: var(--border-radius-md);">
@@ -547,19 +959,19 @@ const GestionTecnicosModule = (() => {
                             <tr>
                                 <th>Fecha</th>
                                 <th>Cliente</th>
-                                <th>Servicio</th>
+                                <th>Servicio / Reparación</th>
                                 <th>Estado</th>
                                 <th style="text-align: right;">Monto</th>
                             </tr>
                         </thead>
                         <tbody class="data-table__body">
-                            ${visits.map(v => `
+                            ${unifiedItems.map(v => `
                                 <tr>
-                                    <td>${formatDate(v.fecha_inicio)}</td>
-                                    <td>${v.cliente?.empresa || 'N/A'}</td>
-                                    <td>${v.tipo_visita}</td>
-                                    <td><span class="badge ${v.trabajo_realizado ? 'badge--success' : 'badge--warning'}">${v.trabajo_realizado ? 'Realizado' : 'Pendiente'}</span></td>
-                                    <td style="text-align: right;">${v.moneda === 'NIO' ? 'C$' : '$'}${(parseFloat(v.costo_servicio) || 0).toFixed(2)}</td>
+                                    <td>${formatDate(v.fecha)}</td>
+                                    <td>${v.cliente}</td>
+                                    <td>${v.servicio}</td>
+                                    <td><span class="badge ${v.completado ? 'badge--success' : 'badge--warning'}">${v.completado ? 'Realizado' : 'Pendiente'}</span></td>
+                                    <td style="text-align: right;">${v.moneda === 'USD' ? '$' : 'C$'}${v.monto.toFixed(2)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -838,11 +1250,176 @@ const GestionTecnicosModule = (() => {
         printWindow.document.close();
     };
 
-    const printReport = () => {
-        window.print();
+    const printReport = () => alert('Generando PDF de Reporte...');
+
+    const setWorkFilter = (key, value) => {
+        workFilters[key] = value;
+        // Si cambia el mes, limpiamos los rangos de fecha para evitar conflicto visual
+        if (key === 'mes' && value) {
+            workFilters.fechaInicio = '';
+            workFilters.fechaFin = '';
+        } else if ((key === 'fechaInicio' || key === 'fechaFin') && value) {
+            workFilters.mes = '';
+        }
+        App.render();
     };
 
-    // Helpres
+    const resetWorkFilters = () => {
+        workFilters = {
+            tecnicoId: '',
+            fechaInicio: '',
+            fechaFin: '',
+            mes: '',
+            tipo: 'todos'
+        };
+        App.render();
+    };
+
+    const viewWorkDetail = (id, type) => {
+        let work = null;
+        let originalSource = null;
+
+        if (type === 'recepcion') {
+            const allRecepciones = DataService.getRecepcionesSync() || [];
+            originalSource = allRecepciones.find(r => r.id === id);
+            if (originalSource) {
+                work = {
+                    id: originalSource.id,
+                    fecha: originalSource.fecha_recepcion || originalSource.created_at,
+                    tipo: 'Reparación de Taller: ' + (originalSource.codigo_recepcion || originalSource.numero_recepcion),
+                    tecnico: originalSource.tecnico_asignado,
+                    cliente: originalSource.cliente?.nombre_cliente || originalSource.cliente?.empresa || 'Cliente S/N',
+                    equipo: originalSource.equipo?.nombre_equipo || 'Equipo',
+                    detalle: originalSource.diagnostico_inicial || 'Sin diagnóstico',
+                    monto: originalSource.mano_de_obra || 0,
+                    moneda: originalSource.moneda || 'NIO',
+                    isPaid: !!originalSource.pago_id
+                };
+            }
+        } else {
+            const allVisitas = DataService.getVisitasSync() || [];
+            originalSource = allVisitas.find(v => v.id === id);
+            if (originalSource) {
+                work = {
+                    id: originalSource.id,
+                    fecha: originalSource.fecha_inicio || originalSource.fechaInicio,
+                    tipo: originalSource.tipo_visita || originalSource.tipoVisita,
+                    tecnico: originalSource.usuario_soporte || originalSource.usuarioSoporte,
+                    cliente: originalSource.cliente?.empresa || originalSource.cliente?.nombre_cliente || 'Cliente S/N',
+                    equipo: originalSource.equipo?.nombre_equipo || originalSource.equipo?.nombreEquipo || 'Varios',
+                    detalle: originalSource.descripcion_trabajo || originalSource.descripcionTrabajo || 'Sin descripción',
+                    monto: originalSource.costo_servicio || originalSource.costoServicio || 0,
+                    moneda: originalSource.moneda || 'NIO',
+                    isPaid: !!originalSource.pago_id
+                };
+            }
+        }
+
+        if (!work) {
+            alert('No se pudieron encontrar los detalles del trabajo.');
+            return;
+        }
+
+        const modalId = 'workDetailModal';
+        const existing = document.getElementById(modalId);
+        if (existing) existing.remove();
+
+        const allUsers = DataService.getUsersSync();
+        const getTName = (tid) => {
+            if (!tid) return 'Desconocido';
+            const searchId = typeof tid === 'string' && tid.includes('|') ? tid.split('|')[0] : tid;
+            const u = allUsers.find(user => user.id === searchId || user.name === searchId || user.full_name === searchId);
+            return u ? (u.name || u.full_name) : (typeof tid === 'string' && tid.includes('|') ? tid.split('|')[1] : tid);
+        };
+
+        const modalHtml = `
+            <div class="modal-overlay open" id="${modalId}" style="z-index: 10001; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center;">
+                <div class="modal modal--md" style="margin: 0; max-height: 90vh; overflow-y: auto;">
+                    <div class="modal__header">
+                        <h3 class="modal__title">Detalle del Trabajo</h3>
+                        <button class="modal__close" onclick="GestionTecnicosModule.closeModal('${modalId}')">&times;</button>
+                    </div>
+                    <div class="modal__body">
+                        <div style="background: var(--bg-secondary); padding: var(--spacing-md); border-radius: var(--border-radius-md); margin-bottom: var(--spacing-md);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-sm);">
+                                <span class="badge ${type === 'recepcion' ? 'badge--primary' : 'badge--success'}">${type === 'recepcion' ? 'Taller' : 'Visita/Servicio'}</span>
+                                <span style="font-size: var(--font-size-sm); color: var(--text-muted);">${formatDateTime(work.fecha)}</span>
+                            </div>
+                            <h4 style="margin: 0; color: var(--color-primary);">${work.tipo}</h4>
+                        </div>
+
+                        <div class="grid grid--cols-1 grid--md-cols-2 gap-md">
+                            <div>
+                                <label class="text-xs text-muted" style="display: block; margin-bottom: 2px;">Técnico Responsable</label>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(getTName(work.tecnico))}&size=32&background=random" style="width: 32px; height: 32px; border-radius: 50%;">
+                                    <span class="font-semibold">${getTName(work.tecnico)}</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="text-xs text-muted" style="display: block; margin-bottom: 2px;">Estado de Pago</label>
+                                <span class="badge badge--${work.isPaid ? 'success' : 'warning'}">
+                                    ${work.isPaid ? 'Pagado al Técnico' : 'Pendiente de Pago'}
+                                </span>
+                            </div>
+                            <div>
+                                <label class="text-xs text-muted" style="display: block; margin-bottom: 2px;">Cliente</label>
+                                <div class="font-medium">${work.cliente}</div>
+                            </div>
+                            <div>
+                                <label class="text-xs text-muted" style="display: block; margin-bottom: 2px;">Equipo</label>
+                                <div class="font-medium">${work.equipo}</div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: var(--spacing-lg);">
+                            <label class="text-xs text-muted" style="display: block; margin-bottom: 4px;">Descripción / Diagnóstico</label>
+                            <div style="padding: var(--spacing-md); border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); white-space: pre-wrap; font-size: var(--font-size-sm);">
+                                ${work.detalle}
+                            </div>
+                        </div>
+
+                        <div style="margin-top: var(--spacing-lg); padding: var(--spacing-md); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); display: flex; justify-content: space-between; align-items: center;">
+                            <span class="font-bold">Monto Generado (Mano de Obra):</span>
+                             <span class="font-bold" style="font-size: var(--font-size-xl); color: var(--color-primary);">${work.moneda === 'USD' ? '$' : 'C$'}${work.monto.toFixed(2)}</span>
+                        </div>
+                    </div>
+                    <div class="modal__footer">
+                        <button class="btn btn--secondary" onclick="GestionTecnicosModule.closeModal('${modalId}')">Cerrar</button>
+                        <button class="btn btn--primary" onclick="GestionTecnicosModule.openOriginalModule('${id}', '${type}')">
+                            ${Icons.chevronRight} Ver Registro Original
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+
+    const openOriginalModule = (id, type) => {
+        closeModal('workDetailModal');
+        if (type === 'recepcion') {
+            if (typeof App !== 'undefined' && App.switchModule) {
+                App.switchModule('recepciones');
+                // Intentar abrir el detalle después de un pequeño delay
+                setTimeout(() => {
+                    if (window.RecepcionesModule && window.RecepcionesModule.viewDetail) {
+                        window.RecepcionesModule.viewDetail(id);
+                    }
+                }, 500);
+            }
+        } else {
+            if (typeof App !== 'undefined' && App.switchModule) {
+                App.switchModule('visitas');
+                setTimeout(() => {
+                    if (window.VisitasModule && window.VisitasModule.viewVisitDetails) {
+                        window.VisitasModule.viewVisitDetails(id);
+                    }
+                }, 500);
+            }
+        }
+    };
+
     const closeModal = (id) => {
         const modal = document.getElementById(id);
         if (modal) {
@@ -863,33 +1440,53 @@ const GestionTecnicosModule = (() => {
         return date.toLocaleString('es-NI');
     };
 
-    const refresh = () => App.render();
-
     return {
         init,
         render,
+        refresh: () => {
+            DataService.refreshCache().then(() => {
+                loadData().then(() => App.render());
+            });
+        },
         switchTab,
+        renderTabContent,
+        renderTecnicosTab,
+        renderPagosTab,
+        renderReportesTab,
+        renderTrabajosTab,
+        viewTechReport: (id) => {
+            currentTab = 'reportes';
+            App.render();
+            setTimeout(() => {
+                const select = document.getElementById('reportTechId');
+                if (select) {
+                    select.value = id;
+                    generateReport();
+                }
+            }, 100);
+        },
         renderPaymentModal,
-        closeModal,
         updatePaymentCalculation,
         savePayment,
         generateReport,
-        viewTechReport: (id) => {
-            currentTab = 'reportes';
-            if (typeof App !== 'undefined' && App.render) {
-                App.render();
-                setTimeout(() => {
-                    const select = document.getElementById('reportTechId');
-                    if (select) {
-                        select.value = id;
-                        GestionTecnicosModule.generateReport();
-                    }
-                }, 100);
-            }
-        },
         printReceipt,
-        printReport,
-        refresh
+        printReport: () => alert('Generando PDF de Reporte...'),
+        closeModal,
+        setWorkFilter,
+        resetWorkFilters,
+        viewWorkDetail,
+        openOriginalModule,
+        deletePago: async (pagoId) => {
+            if (!confirm('¿Está seguro de eliminar este pago? Los servicios asociados volverán a estado pendiente de pago.')) return;
+            try {
+                await DataService.deletePagoTecnico(pagoId);
+                alert('Pago eliminado correctamente.');
+                App.render();
+            } catch (error) {
+                console.error('Error al eliminar pago:', error);
+                alert('Error al eliminar: ' + error.message);
+            }
+        }
     };
 })();
 

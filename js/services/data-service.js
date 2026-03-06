@@ -639,6 +639,8 @@ const DataService = (() => {
                     (e.marca || '').toLowerCase().includes(s) ||
                     (e.modelo || '').toLowerCase().includes(s) ||
                     (e.serie || '').toLowerCase().includes(s) ||
+                    (e.numeroSerie || '').toLowerCase().includes(s) ||
+                    (e.numero_serie || '').toLowerCase().includes(s) ||
                     (e.equipoId || '').toLowerCase().includes(s) ||
                     (cliente?.empresa || '').toLowerCase().includes(s) ||
                     (cliente?.nombreCliente || '').toLowerCase().includes(s);
@@ -1871,17 +1873,34 @@ const DataService = (() => {
             if (id) return cache.pagosTecnicos.filter(p => p.tecnico_id === id);
             return [...cache.pagosTecnicos];
         },
-        createPagoTecnico: async (data, visitaIds) => {
+        createPagoTecnico: async (data, visitaIds = [], recepcionIds = []) => {
             const res = await SupabaseDataService.createPagoTecnico(data);
             if (res.success) {
-                // Marcar visitas como pagadas en DB
+                const pagoId = res.data.id;
+                // 1. Marcar visitas como pagadas en DB
                 if (visitaIds && visitaIds.length > 0) {
-                    await SupabaseDataService.marcarVisitasComoPagadas(res.data.id, visitaIds);
+                    await SupabaseDataService.marcarVisitasComoPagadas(pagoId, visitaIds);
+                    // Actualizar cache local de visitas
+                    visitaIds.forEach(vId => {
+                        const visita = cache.visitas.find(v => v.id === vId);
+                        if (visita) visita.pago_id = pagoId;
+                    });
                 }
 
-                // Actualizar cache
+                // 2. Marcar recepciones como pagadas en DB
+                if (recepcionIds && recepcionIds.length > 0) {
+                    await SupabaseDataService.marcarRecepcionesComoPagadas(pagoId, recepcionIds);
+                    // Actualizar cache local de recepciones
+                    recepcionIds.forEach(rId => {
+                        const recepcion = cache.recepciones.find(r => r.id === rId);
+                        if (recepcion) recepcion.pago_id = pagoId;
+                    });
+                }
+
+                // Actualizar cache de pagos
                 const newPago = {
                     ...res.data,
+                    tecnico: cache.users.find(u => u.id === data.tecnico_id) || null,
                     tecnicoNombre: cache.users.find(u => u.id === data.tecnico_id)?.name || 'Desconocido'
                 };
                 cache.pagosTecnicos.unshift(newPago);
@@ -1889,6 +1908,22 @@ const DataService = (() => {
                 return res.data;
             }
             throw new Error(res.error);
+        },
+        deletePagoTecnico: async (pagoId) => {
+            const res = await SupabaseDataService.deletePagoTecnico(pagoId);
+            if (res.success) {
+                // Restaurar pago_id en cache de visitas y recepciones
+                cache.visitas.forEach(v => {
+                    if (v.pago_id === pagoId) v.pago_id = null;
+                });
+                cache.recepciones.forEach(r => {
+                    if (r.pago_id === pagoId) r.pago_id = null;
+                });
+                // Eliminar el pago del cache
+                cache.pagosTecnicos = cache.pagosTecnicos.filter(p => p.id !== pagoId);
+                return true;
+            }
+            throw new Error(res.error || 'Error al eliminar pago');
         },
         getVisitasPorTecnico: (id, filter) => SupabaseDataService.getVisitasPorTecnico(id, filter),
         getAntiguedadTecnico: (id) => SupabaseDataService.getAntiguedadTecnico(id),

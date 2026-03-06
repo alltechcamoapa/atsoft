@@ -12,18 +12,20 @@ const App = (() => {
   const renderSidebar = () => {
     const menuItems = [
       { id: 'dashboard', label: 'Dashboard', icon: Icons.home },
+      { id: 'ventas', label: 'Ventas', icon: Icons.shoppingBag },
       { id: 'clientes', label: 'Clientes', icon: Icons.users },
       { id: 'pedidos', label: 'Pedidos', icon: Icons.shoppingCart },
       { id: 'productos', label: 'Productos / Servicios', icon: Icons.package },
-      { id: 'equipos', label: 'Equipos', icon: Icons.monitor },
       { id: 'recepciones', label: 'Recepción de Equipos', icon: Icons.inbox },
-      { id: 'contratos', label: 'Contratos', icon: Icons.fileText },
       { id: 'visitas', label: 'Visitas / Servicios', icon: Icons.wrench },
+      { id: 'equipos', label: 'Equipos', icon: Icons.monitor },
       { id: 'software', label: 'Software', icon: Icons.monitor },
-      { id: 'gestion-tecnicos', label: 'Gestión de Técnicos', icon: Icons.users },
-      { id: 'calendario', label: 'Calendario', icon: Icons.calendar },
+      { id: 'contratos', label: 'Contratos', icon: Icons.fileText },
+      { id: 'calendario', label: 'Calendarios de Trabajos', icon: Icons.calendar },
       { id: 'proformas', label: 'Proformas', icon: Icons.fileText },
+      { id: 'gestion-financiera', label: 'Gestión Financiera', icon: Icons.wallet },
       { id: 'prestaciones', label: 'Prestaciones', icon: Icons.dollarSign },
+      { id: 'gestion-tecnicos', label: 'Gestión de Técnicos', icon: Icons.users },
       { id: 'reportes', label: 'Reportes', icon: Icons.barChart },
       { id: 'configuracion', label: 'Configuración', icon: Icons.settings }
     ];
@@ -74,9 +76,9 @@ const App = (() => {
     const companyConfig = State.get('companyConfig') || { name: 'ALLTECH', logoUrl: 'assets/logo.png', sidebarColor: '#1a73e8' };
 
     return `
-      <aside class="sidebar" id="sidebar" style="background: ${companyConfig.sidebarColor || '#1a73e8'};">
+      <aside class="sidebar" id="sidebar" style="--sidebar-brand: ${companyConfig.sidebarColor || '#1a73e8'};">
         <div class="sidebar__header">
-          <img src="${companyConfig.logoUrl || 'assets/logo.png'}" alt="${companyConfig.name || 'ALLTECH'}" class="sidebar__logo-img" style="max-width: 120px; height: auto; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">
+          <img src="${companyConfig.logoUrl || 'assets/logo.png'}" alt="${companyConfig.name || 'ALLTECH'}" class="sidebar__logo-img">
         </div>
         
         <nav class="sidebar__nav">
@@ -90,16 +92,18 @@ const App = (() => {
         };
 
         visibleItems.forEach(item => {
-          if (['proformas', 'clientes', 'pedidos', 'productos'].includes(item.id)) {
+          if (['ventas', 'proformas', 'clientes', 'pedidos', 'productos'].includes(item.id)) {
             groups['VENTAS'].push(item);
-          } else if (['equipos', 'recepciones', 'contratos', 'visitas', 'software', 'gestion-tecnicos', 'calendario'].includes(item.id)) {
+          } else if (['recepciones', 'visitas', 'equipos', 'software', 'contratos', 'calendario'].includes(item.id)) {
             groups['Servicios Técnicos'].push(item);
-          } else if (['prestaciones', 'reportes', 'configuracion'].includes(item.id)) {
+          } else if (['gestion-financiera', 'prestaciones', 'gestion-tecnicos', 'reportes', 'configuracion'].includes(item.id)) {
             groups['Administración'].push(item);
           } else {
             groups['Principal'].push(item);
           }
         });
+
+        let itemDelay = 1;
 
         return Object.entries(groups)
           .filter(([_, items]) => items.length > 0)
@@ -108,34 +112,34 @@ const App = (() => {
             const groupId = 'sidebar-group-' + index;
             const isActiveGroup = items.some(item => item.id === currentModule) || isPrincipal;
             const displayStyle = isActiveGroup ? 'block' : 'none';
-            const chevronTransform = isActiveGroup ? 'rotate(180deg)' : 'rotate(0deg)';
+            const isActiveClass = isActiveGroup ? 'active' : '';
 
             const headerHtml = !isPrincipal
-              ? `<li class="sidebar__menu-header" 
-                     onclick="const el = document.getElementById('${groupId}'); const isHidden = el.style.display === 'none'; el.style.display = isHidden ? 'block' : 'none'; this.querySelector('svg').style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';"
-                     style="padding: 0.75rem 1rem; font-size: 0.75rem; font-weight: 600; color: rgba(255,255,255,0.8); text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-radius: var(--border-radius-sm); margin: 0.5rem 0 0.25rem 0; transition: background 0.2s;" 
-                     onmouseover="this.style.background='rgba(255,255,255,0.1)'" 
-                     onmouseout="this.style.background='transparent'">
+              ? `<li class="sidebar__menu-header ${isActiveClass}" 
+                     onclick="const el = document.getElementById('${groupId}'); const isHidden = el.style.display === 'none'; el.style.display = isHidden ? 'block' : 'none'; this.classList.toggle('active');">
                   ${groupName}
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transition: transform 0.3s ease; transform: ${chevronTransform};"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sidebar__chevron"><polyline points="6 9 12 15 18 9"></polyline></svg>
                  </li>`
               : '';
 
-            const itemsHtml = items.map(item => `
-                    <li class="sidebar__menu-item">
+            const itemsHtml = items.map(item => {
+              const delay = itemDelay++ * 0.05;
+              return `
+                    <li class="sidebar__menu-item" style="--animation-order: ${delay}s;">
                       <a href="#${item.id}" 
                          class="sidebar__menu-link ${currentModule === item.id ? 'active' : ''}"
                          data-module="${item.id}">
-                        <span class="sidebar__menu-icon">${item.icon}</span>
-                        ${item.label}
+                        <div class="sidebar__menu-icon-wrapper">${item.icon}</div>
+                        <span class="sidebar__menu-label">${item.label}</span>
                       </a>
                     </li>
-                  `).join('');
+                  `;
+            }).join('');
 
             if (isPrincipal) {
               return itemsHtml;
             } else {
-              return headerHtml + `<ul id="${groupId}" style="display: ${displayStyle}; padding-left: 0; list-style: none; margin: 0;">${itemsHtml}</ul>`;
+              return headerHtml + `<ul id="${groupId}" class="sidebar__submenu" style="display: ${displayStyle};">${itemsHtml}</ul>`;
             }
           }).join('');
       })()}
@@ -175,7 +179,9 @@ const App = (() => {
       recepciones: 'Recepción de Equipos',
       software: 'Software y Licencias',
       prestaciones: 'Prestaciones Laborales',
-      calendario: 'Calendario',
+      'gestion-financiera': 'Gestión Financiera',
+      ventas: 'Ventas',
+      calendario: 'Calendarios de Trabajos',
       reportes: 'Reportes',
       'gestion-tecnicos': 'Gestión de Técnicos',
       configuracion: 'Configuración'
@@ -428,15 +434,47 @@ const App = (() => {
 
         <div class="dashboard-grid">
           <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-            <!-- Chart / Gráfico Principal -->
+            <!-- Resumen de Actividad -->
             <div class="modern-card">
               <div class="modern-card__header">
-                <h3 class="modern-card__title">${Icons.barChart} Rendimiento de Servicios Semanal</h3>
-                <button class="btn btn--ghost btn--sm" onclick="ReportesModule.generateGeneralReport()">Ver Reporte</button>
+                <h3 class="modern-card__title">${Icons.activity} Resumen del Sistema</h3>
               </div>
-              <div class="modern-card__body">
-                <div style="height: 320px; width: 100%; position: relative;">
-                  <canvas id="statsChart"></canvas>
+              <div class="modern-card__body" style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.95rem;">
+                    <span style="font-weight: 600; color: var(--text-primary);">Clientes Activos</span>
+                    <span style="font-weight: 700; color: var(--color-primary-600);">${stats.clientesActivos ? stats.clientesActivos.value : 0}</span>
+                  </div>
+                  <div style="width: 100%; height: 8px; border-radius: 10px; background: var(--border-color); overflow: hidden;">
+                    <div style="width: 85%; height: 100%; background: var(--color-primary-500); border-radius: 10px;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.95rem;">
+                    <span style="font-weight: 600; color: var(--text-primary);">Servicios del Mes</span>
+                    <span style="font-weight: 700; color: var(--color-success);">${stats.serviciosMes ? stats.serviciosMes.value : 0}</span>
+                  </div>
+                  <div style="width: 100%; height: 8px; border-radius: 10px; background: var(--border-color); overflow: hidden;">
+                    <div style="width: 65%; height: 100%; background: var(--color-success); border-radius: 10px;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.95rem;">
+                    <span style="font-weight: 600; color: var(--text-primary);">Equipos en Sistema</span>
+                    <span style="font-weight: 700; color: var(--color-warning);">${stats.equiposActivos ? stats.equiposActivos.value : 0}</span>
+                  </div>
+                  <div style="width: 100%; height: 8px; border-radius: 10px; background: var(--border-color); overflow: hidden;">
+                    <div style="width: 50%; height: 100%; background: var(--color-warning); border-radius: 10px;"></div>
+                  </div>
+                </div>
+                <div>
+                  <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.95rem;">
+                    <span style="font-weight: 600; color: var(--text-primary);">Contratos Activos</span>
+                    <span style="font-weight: 700; color: var(--color-primary-700);">${stats.contratosActivos ? stats.contratosActivos.value : 0}</span>
+                  </div>
+                  <div style="width: 100%; height: 8px; border-radius: 10px; background: var(--border-color); overflow: hidden;">
+                    <div style="width: 40%; height: 100%; background: var(--color-primary-700); border-radius: 10px;"></div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -483,8 +521,8 @@ const App = (() => {
                       <div class="month">${d.toLocaleDateString('es-NI', { month: 'short' })}</div>
                     </div>
                     <div class="visit-info">
-                      <div class="visit-title">${visita.tipoVisita || 'Servicio Técnico'}</div>
-                      <div class="visit-subtitle text-muted">${Icons.mapPin} ${cliente?.nombreCliente || cliente?.empresa || 'Cliente de Contrato'}</div>
+                      <div class="visit-title">${(visita.tipoVisita && visita.tipoVisita !== 'undefined') ? visita.tipoVisita : (visita.titulo || 'Servicio Técnico')}</div>
+                      <div class="visit-subtitle text-muted">${Icons.mapPin} ${(cliente && cliente.empresa && cliente.empresa !== 'undefined') ? cliente.empresa : ((cliente && cliente.nombreCliente && cliente.nombreCliente !== 'undefined') ? cliente.nombreCliente : 'Cliente de Contrato')}</div>
                     </div>
                   </div>
                 `}).join('') : `
@@ -514,12 +552,12 @@ const App = (() => {
                       ${isAprobada ? Icons.check : Icons.fileText}
                     </div>
                     <div class="visit-info">
-                      <div class="visit-title">${p.codigo_proforma || p.proformaId}</div>
-                      <div class="visit-subtitle">${cliente?.empresa || cliente?.nombreCliente || 'N/A'}</div>
+                      <div class="visit-title">${(p.numero || p.numero_proforma || p.codigo_proforma || p.proformaId) && (p.numero || p.numero_proforma || p.codigo_proforma || p.proformaId) !== 'undefined' ? (p.numero || p.numero_proforma || p.codigo_proforma || p.proformaId) : 'Sin Nº'}</div>
+                      <div class="visit-subtitle">${(cliente && cliente.empresa && cliente.empresa !== 'undefined') ? cliente.empresa : ((cliente && cliente.nombreCliente && cliente.nombreCliente !== 'undefined') ? cliente.nombreCliente : 'Cliente N/A')}</div>
                     </div>
                     <div style="text-align: right; font-weight: 700; color: var(--text-primary); font-size: 1.05rem;">
                       ${p.moneda === 'USD' ? '$' : 'C$'}${(p.total || 0).toFixed(2)}
-                      <div style="font-size: 0.75rem; font-weight: 500; color: ${isAprobada ? 'var(--color-success)' : 'var(--text-muted)'}; margin-top: 0.2rem;">${p.estado}</div>
+                      <div style="font-size: 0.75rem; font-weight: 500; color: ${isAprobada ? 'var(--color-success)' : 'var(--text-muted)'}; margin-top: 0.2rem;">${(p.estado && p.estado !== 'undefined') ? p.estado : 'Borrador'}</div>
                     </div>
                   </div>
                 `}).join('') : `
@@ -757,6 +795,12 @@ const App = (() => {
       case 'prestaciones':
         moduleContent = PrestacionesModule.render();
         break;
+      case 'gestion-financiera':
+        moduleContent = GestionFinancieraModule.render();
+        break;
+      case 'ventas':
+        moduleContent = typeof VentasModule !== 'undefined' ? VentasModule.render() : renderModulePlaceholder(currentModule);
+        break;
       case 'gestion-tecnicos':
         moduleContent = GestionTecnicosModule.render();
         break;
@@ -782,6 +826,7 @@ const App = (() => {
       recepciones: 'Recepción de Equipos',
       software: 'Software y Licencias',
       prestaciones: 'Prestaciones Laborales',
+      ventas: 'Ventas',
       calendario: 'Calendario',
       reportes: 'Reportes',
       'gestion-tecnicos': 'Gestión de Técnicos',
@@ -877,6 +922,7 @@ const App = (() => {
       appContainer.innerHTML = `
         ${renderSidebar()}
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
+        <div id="sidebar-tooltip" class="sidebar-tooltip"></div>
         <main class="main">
           ${renderHeader()}
           <div class="content">
@@ -999,6 +1045,7 @@ const App = (() => {
     }
 
     // Navigation links (sidebar)
+    const sidebarTooltip = document.getElementById('sidebar-tooltip');
     document.querySelectorAll('.sidebar__menu-link').forEach(link => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1006,6 +1053,26 @@ const App = (() => {
         if (window.innerWidth <= 1024) closeSidebarForMobile();
         navigate(module);
       });
+
+      // Tooltip logic for contracted sidebar
+      if (sidebarTooltip) {
+        link.addEventListener('mouseenter', () => {
+          const sidebar = document.getElementById('sidebar');
+          if (sidebar && sidebar.classList.contains('collapsed') && window.innerWidth > 1024) {
+            const rect = link.getBoundingClientRect();
+            const labelEl = link.querySelector('.sidebar__menu-label');
+            if (labelEl) {
+              sidebarTooltip.innerText = labelEl.innerText || labelEl.textContent;
+              sidebarTooltip.style.top = `${rect.top + (rect.height / 2)}px`;
+              sidebarTooltip.style.left = `${rect.right + 10}px`;
+              sidebarTooltip.classList.add('show');
+            }
+          }
+        });
+        link.addEventListener('mouseleave', () => {
+          sidebarTooltip.classList.remove('show');
+        });
+      }
     });
 
     // Bottom navigation buttons
@@ -1355,12 +1422,13 @@ const App = (() => {
 
     if (companyConfig) {
       if (sidebar) {
-        sidebar.style.background = companyConfig.sidebarColor || '#1a73e8';
+        sidebar.style.setProperty('--sidebar-brand', companyConfig.sidebarColor || '#0a1628');
       }
 
       if (companyConfig.brandColor) {
         document.documentElement.style.setProperty('--color-primary-500', companyConfig.brandColor);
         document.documentElement.style.setProperty('--bg-sidebar-active', companyConfig.brandColor);
+        document.documentElement.style.setProperty('--color-primary-600', companyConfig.brandColor);
       }
 
       if (logo) {

@@ -148,16 +148,16 @@ const RecepcionesModule = (() => {
             </div>
             
             <div class="equipment-card__actions" style="margin-top: 15px; display: flex; gap: 12px; align-items: center; justify-content: flex-end; flex-wrap: wrap !important;">
-              <button class="btn btn--lg btn--outline" onclick="RecepcionesModule.viewDetail('${r.recepcionId || r.id}')" title="Ver Detalle" style="padding: 12px 20px !important; display: flex; align-items: center; gap: 10px; font-size: 16px !important; min-height: 48px !important; min-width: 130px !important;">
+              <button class="btn btn--lg btn--secondary" onclick="RecepcionesModule.viewDetail('${r.recepcionId || r.id}')" title="Ver Detalle" style="padding: 12px 20px !important; display: flex; align-items: center; gap: 10px; font-size: 16px !important; min-height: 48px !important; min-width: 130px !important;">
                  <span style="display: flex; transform: scale(1.4); width: 24px !important; height: 24px !important; align-items: center; justify-content: center;">${Icons.eye}</span> Ver
               </button>
               ${canUpdate ? `
-              <button class="btn btn--lg btn--warning" onclick="RecepcionesModule.openChangeStatusModal('${r.recepcionId || r.id}')" title="Cambiar Estado" style="padding: 12px 20px !important; display: flex; align-items: center; min-height: 48px !important; min-width: 60px !important;">
+              <button class="btn btn--lg btn--outline" onclick="RecepcionesModule.openChangeStatusModal('${r.recepcionId || r.id}')" title="Cambiar Estado" style="padding: 12px 20px !important; display: flex; align-items: center; min-height: 48px !important; min-width: 60px !important;">
                 <span style="display: flex; transform: scale(1.4); width: 24px !important; height: 24px !important; align-items: center; justify-content: center;">${Icons.refreshCw || '⟳'}</span>
               </button>
               ` : ''}
               <button class="btn btn--lg btn--primary" onclick="RecepcionesModule.exportRecepcionPDF('${r.recepcionId || r.id}')" title="Imprimir Recibo" style="padding: 12px 20px !important; display: flex; align-items: center; min-height: 48px !important; min-width: 60px !important;">
-                <span style="display: flex; transform: scale(1.4); width: 24px !important; height: 24px !important; align-items: center; justify-content: center;">${Icons.fileText || '📄'}</span>
+                <span style="display: flex; transform: scale(1.4); width: 24px !important; height: 24px !important; align-items: center; justify-content: center;">${Icons.printer || Icons.fileText || '📄'}</span>
               </button>
               ${canDelete ? `
               <button class="btn btn--lg btn--ghost text-danger" onclick="RecepcionesModule.deleteRecepcion('${r.recepcionId || r.id}')" title="Eliminar" style="padding: 12px 15px !important; display: flex; align-items: center; min-height: 48px !important; min-width: 50px !important;">
@@ -202,7 +202,7 @@ const RecepcionesModule = (() => {
     const equipos = DataService.getEquiposByCliente(clienteId);
     return equipos.map((e, index) => {
       const isSelected = (selectedId === (e.id || e.equipoId)) ? 'selected' : '';
-      return `<option value="${e.id || e.equipoId}" ${isSelected}>${index + 1}. ${e.nombreEquipo || e.nombre_equipo} (${e.marca || ''} ${e.modelo || ''}) - ${e.serie || e.numero_serie || ''}</option>`;
+      return `<option value="${e.id || e.equipoId}" ${isSelected}>${index + 1}. ${e.nombreEquipo || e.nombre_equipo} (${e.marca || ''} ${e.modelo || ''}) - ${e.serie || e.numeroSerie || e.numero_serie || ''}</option>`;
     }).join('');
   };
 
@@ -228,23 +228,32 @@ const RecepcionesModule = (() => {
                   <div class="form-group" style="position: relative;">
                     <label class="form-label form-label--required">Cliente</label>
                     <input type="text" id="clienteSearchInput" class="form-input" 
-                           placeholder="Buscar cliente por nombre o código..." 
+                           placeholder="Escriba para buscar o seleccione de la lista..." 
                            autocomplete="off"
-                           onclick="RecepcionesModule.showClientesList()"
-                           onkeyup="RecepcionesModule.filterClientesList(this.value)">
-                    <div id="clientesList" class="dropdown-list" style="display: none; position: absolute; z-index: 1000; width: 100%; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-                      <div class="dropdown-item" onclick="RecepcionesModule.selectClienteInline('NEW', '+ Crear Nuevo Cliente')" style="padding: 10px; cursor: pointer; border-bottom: 1px solid var(--border-color); font-weight: bold; color: var(--primary-color);">
-                        + Crear Nuevo Cliente
-                      </div>
+                           list="clientesListDatalist"
+                           onchange="RecepcionesModule.onClienteSearchChange(this)"
+                           value="${(() => {
+        if (!recepcion) return '';
+        const cid = recepcion.clienteId || recepcion.cliente_id;
+        if (!cid) return '';
+        const clientes = DataService.getClientesSync();
+        const c = clientes.find(x => (x.id || x.clienteId) == cid);
+        if (c) {
+          const idText = c.codigo_cliente || c.codigoCliente || c.id || c.clienteId || 'ID';
+          const nameText = c.nombreCliente || c.nombre_cliente || c.empresa || '';
+          return `${idText} - ${nameText}`;
+        }
+        return '';
+      })()}">
+                    <datalist id="clientesListDatalist">
+                      <option data-id="NEW" value="+ Crear Nuevo Cliente"></option>
                       ${DataService.getClientesSync().map(c => {
-      const idText = c.codigo_cliente || c.codigoCliente || c.id || c.clienteId || 'ID';
-      const nameText = c.nombreCliente || c.nombre_cliente || c.empresa || '';
-      const text = `${idText} - ${nameText}`;
-      return `<div class="dropdown-item cliente-item" data-name="${text.toLowerCase()}" onclick="RecepcionesModule.selectClienteInline('${c.id || c.clienteId}', '${text.replace(/'/g, "\\'")}')" style="padding: 10px; cursor: pointer; border-bottom: 1px solid var(--border-color);">
-                            ${text}
-                          </div>`;
-    }).join('')}
-                    </div>
+        const idText = c.codigo_cliente || c.codigoCliente || c.id || c.clienteId || 'ID';
+        const nameText = c.nombreCliente || c.nombre_cliente || c.empresa || '';
+        const text = `${idText} - ${nameText}`;
+        return `<option data-id="${c.id || c.clienteId}" value="${text.replace(/"/g, "&quot;")}"></option>`;
+      }).join('')}
+                    </datalist>
                     <input type="hidden" name="clienteId" id="clienteId" value="${recepcion?.clienteId || recepcion?.cliente_id || ''}" onchange="RecepcionesModule.onClienteChange()">
                   </div>
 
@@ -275,6 +284,10 @@ const RecepcionesModule = (() => {
 
                   <div id="newEquipoSection" style="display: none; background: var(--bg-secondary); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                       <h5 style="margin-bottom: 10px;">Nuevo Equipo</h5>
+                      <div class="form-group">
+                        <label class="form-label form-label--required">Nombre del Equipo</label>
+                        <input type="text" name="nuevoEquipoNombre" id="nuevoEquipoNombre" class="form-input" placeholder="Ej: Laptop de Maria" required>
+                      </div>
                       <div class="form-row">
                           <div class="form-group">
                               <label class="form-label form-label--required">Tipo (Ej: Laptop, Imprésora)</label>
@@ -378,6 +391,11 @@ const RecepcionesModule = (() => {
     const user = State.get('user');
     const canUpdate = DataService.canPerformAction(user?.role || 'Usuario', 'recepciones', 'update');
     const canDelete = DataService.canPerformAction(user?.role || 'Usuario', 'recepciones', 'delete');
+    const allUsers = typeof DataService.getUsersSync === 'function' ? DataService.getUsersSync() : [];
+    const creatorId = recepcion.creado_por || recepcion.recibido_por;
+    const techCreator = allUsers.find(u => u.id === creatorId);
+    const creatorName = techCreator ? (techCreator.name || techCreator.username) : (recepcion.creador?.full_name || recepcion.creador?.name || recepcion.recibido_por || '-');
+
     return `
       <div class="modal-overlay open" style="display: flex; align-items: center; justify-content: center;">
         <div class="modal modal--lg" onclick="event.stopPropagation()" style="margin: auto;">
@@ -396,15 +414,15 @@ const RecepcionesModule = (() => {
                         <h4 style="margin-bottom: 10px; color: var(--primary-color);">Datos del Equipo</h4>
                         <p><strong>Equipo:</strong> ${recepcion.equipo?.nombre_equipo || recepcion.equipo?.nombreEquipo || 'N/A'}</p>
                         <p><strong>Marca/Modelo:</strong> ${recepcion.equipo?.marca || ''} ${recepcion.equipo?.modelo || ''}</p>
-                        <p><strong>Serie:</strong> ${recepcion.equipo?.numero_serie || recepcion.equipo?.serie || 'N/A'}</p>
+                        <p><strong>Serie:</strong> ${recepcion.equipo?.serie || recepcion.equipo?.numeroSerie || recepcion.equipo?.numero_serie || 'N/A'}</p>
                         <p><strong>Color:</strong> ${recepcion.equipo?.color || 'N/A'}</p>
                     </div>
                 </div>
                 <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border-color);">
-                ${recepcion.total_reparacion > 0 ? `
-                <div style="background: #f0f7ff; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid var(--primary-color);">
+                ${recepcion.total_reparacion > 0 || (recepcion.productos_reparacion && recepcion.productos_reparacion.length > 0) ? `
+                <div style="background: var(--bg-secondary); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid var(--primary-color);">
                     <h4 style="margin-bottom: 10px; color: var(--primary-color);">Resumen de Reparación</h4>
-                    <p><strong>Mano de Obra:</strong> $${parseFloat(recepcion.mano_de_obra || 0).toFixed(2)}</p>
+                    ${recepcion.tecnico_asignado ? `<p style="margin-bottom: 5px;"><strong>Técnico Asignado:</strong> ${recepcion.tecnico_asignado}</p>` : ''}
                     ${recepcion.productos_reparacion && recepcion.productos_reparacion.length > 0 ? `
                         <p><strong>Repuestos/Materiales:</strong></p>
                         <ul style="padding-left: 20px; font-size: 13px; margin: 5px 0;">
@@ -420,7 +438,54 @@ const RecepcionesModule = (() => {
                     <br/>
                     <p><strong>Accesorios Incluidos:</strong> <br/> ${recepcion.accesorios || '-'}</p>
                     <br/>
-                    <p><strong>Historial de Notas:</strong> <br/> <div style="white-space: pre-wrap; font-family: monospace; font-size: 12px; color: #444; background: #f5f5f5; padding: 10px; border-radius: 4px; border: 1px solid #ddd; max-height: 200px; overflow-y: auto;">${recepcion.notas || '-'}</div></p>
+                    <p><strong>Historial de Notas y Estados:</strong> <br/> 
+                        <div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
+                            ${(() => {
+        const notas = recepcion.notas || '';
+        if (!notas) return '<span>-</span>';
+        if (!notas.includes('--- [')) {
+          return `<div style="white-space: pre-wrap; font-size: 13px; color: var(--text-color); background: var(--bg-secondary); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);">${notas}</div>`;
+        }
+        const partes = notas.split('--- [');
+        let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+        partes.forEach(par => {
+          if (!par.trim()) return;
+          const matchSplit = par.split('---');
+          const headerStr = matchSplit[0] || '';
+          const bodyStr = matchSplit.slice(1).join('---').trim();
+
+          let fecha = '';
+          let estado = 'NOTA';
+          if (headerStr.includes('] ESTADO:')) {
+            const pParts = headerStr.split('] ESTADO:');
+            fecha = pParts[0].trim();
+            estado = pParts[1].trim();
+          } else {
+            estado = headerStr;
+          }
+
+          let color = 'var(--text-muted)';
+          let estadoUpper = estado.toUpperCase();
+          if (estadoUpper.includes('ENTREGADO') || estadoUpper.includes('REPARADO')) color = 'var(--success-color)';
+          else if (estadoUpper.includes('ESPERANDO')) color = 'var(--danger-color)';
+          else if (estadoUpper.includes('REVIS') || estadoUpper.includes('RECIBIDO')) color = 'var(--info-color)';
+          else if (estadoUpper.includes('DIAGNOS')) color = 'var(--primary-color)';
+
+          html += `
+                                        <div style="background: var(--bg-primary); padding: 10px; border-left: 3px solid ${color}; border-radius: 4px; border: 1px solid var(--border-color); border-left-width: 3px;">
+                                            <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; color: var(--text-muted); font-weight: bold;">
+                                                <span style="color: ${color};">${estado}</span>
+                                                <span>${fecha}</span>
+                                            </div>
+                                            <div style="font-size: 13px; color: var(--text-color); white-space: pre-wrap;">${bodyStr}</div>
+                                        </div>
+                                    `;
+        });
+        html += '</div>';
+        return html;
+      })()}
+                        </div>
+                    </p>
                     <hr style="margin: 15px 0; border: none; border-top: 1px dashed var(--border-color);">
                     <div class="grid" style="grid-template-columns: 1fr 1fr; font-size: 13px;">
                         <div>
@@ -428,7 +493,7 @@ const RecepcionesModule = (() => {
                             <p><strong>Posible Revisión:</strong> ${recepcion.fecha_revision_posible ? new Date(recepcion.fecha_revision_posible).toLocaleDateString('es-NI') : '-'}</p>
                         </div>
                         <div style="text-align: right;">
-                             <p><strong>Atendido por:</strong> ${recepcion.creador?.full_name || recepcion.creador?.name || recepcion.recibido_por || '-'}</p>
+                             <p><strong>Atendido por:</strong> ${creatorName}</p>
                              <p><strong>Estado Actual:</strong> <span class="badge badge--primary">${recepcion.estado}</span></p>
                         </div>
                     </div>
@@ -489,16 +554,38 @@ const RecepcionesModule = (() => {
                 </div>
 
                 <!-- Diagnostic/Price Section -->
-                <div id="diagnosticSection" style="${recepcion.estado === 'Diagnosticado' || recepcion.estado === 'Reparado' || recepcion.estado === 'Entregado' ? 'display: block;' : 'display: none;'} margin-top: 20px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; background: #f9f9f9;">
+                <div id="diagnosticSection" style="${recepcion.estado === 'Diagnosticado' ? 'display: block;' : 'display: none;'} margin-top: 20px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; background: var(--bg-secondary);">
                     <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--primary-color);">Presupuesto y Repuestos</h4>
                     <div class="form-row" style="grid-template-columns: 1fr 1fr;">
                         <div class="form-group">
-                            <label class="form-label">Costo Mano de Obra ($)</label>
+                            <label class="form-label form-label--required">Técnico Asignado</label>
+                            <select name="tecnicoAsignado" class="form-select" required>
+                                <option value="">Seleccione técnico...</option>
+                                ${DataService.getUsersSync ? DataService.getUsersSync()
+        .filter(u => u.role && (u.role.toLowerCase().includes('técni') || u.role.toLowerCase().includes('tecni')))
+        .map(u => {
+          const valStr = `${u.id}|${u.name || u.full_name}`;
+          const selected = recepcion.tecnico_asignado === valStr || recepcion.tecnico_asignado === (u.name || u.full_name) ? 'selected' : '';
+          return `<option value="${valStr}" ${selected}>${u.name || u.full_name}</option>`;
+        }).join('') : ''}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Moneda</label>
+                            <select name="moneda" id="monedaSelect" class="form-select">
+                                <option value="NIO" ${recepcion.moneda === 'NIO' ? 'selected' : ''}>NIO (C$)</option>
+                                <option value="USD" ${recepcion.moneda === 'USD' || !recepcion.moneda ? 'selected' : ''}>USD ($)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row" style="grid-template-columns: 1fr 1fr; margin-top: 15px;">
+                        <div class="form-group">
+                            <label class="form-label">Precio Reparación Técnico</label>
                             <input type="number" name="manoDeObra" class="form-input" value="${recepcion.mano_de_obra || 0}" step="0.01" oninput="RecepcionesModule.calculateTotalReparacion()">
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Total Reparación ($)</label>
-                            <input type="number" id="totalReparacionInp" name="totalReparacion" class="form-input" value="${recepcion.total_reparacion || 0}" step="0.01" readonly style="background: #eee;">
+                            <label class="form-label">Total Presupuesto</label>
+                            <input type="number" id="totalReparacionInp" name="totalReparacion" class="form-input" value="${recepcion.total_reparacion || 0}" step="0.01" readonly style="background: var(--bg-tertiary, #eee); color: var(--text-color);">
                         </div>
                     </div>
                     
@@ -507,7 +594,7 @@ const RecepcionesModule = (() => {
                         <div style="display: flex; gap: 8px; margin-bottom: 10px;">
                             <div class="search-input" style="flex: 1;">
                                 <input type="text" id="prodSearch" class="form-input" placeholder="Buscar producto..." onkeyup="RecepcionesModule.searchProducts(this.value)">
-                                <div id="prodSearchResults" style="position: absolute; width: 100%; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ddd; z-index: 100; display: none; box-shadow: var(--shadow-md);"></div>
+                                <div id="prodSearchResults" style="position: absolute; width: 100%; max-height: 200px; overflow-y: auto; background: var(--bg-secondary); border: 1px solid var(--border-color); z-index: 100; display: none; box-shadow: var(--shadow-md); border-radius: 4px; color: var(--text-color);"></div>
                             </div>
                         </div>
                         <div id="selectedProductsList" style="display: flex; flex-direction: column; gap: 5px;">
@@ -533,7 +620,7 @@ const RecepcionesModule = (() => {
   const onStatusChangeInModal = (value, recepcionId) => {
     const section = document.getElementById('diagnosticSection');
     if (section) {
-      if (value === 'Diagnosticado' || value === 'Reparado' || value === 'Entregado') {
+      if (value === 'Diagnosticado') {
         section.style.display = 'block';
       } else {
         section.style.display = 'none';
@@ -557,14 +644,14 @@ const RecepcionesModule = (() => {
 
     if (filtered.length > 0) {
       results.innerHTML = filtered.map(p => `
-        <div class="prod-search-item" onclick="RecepcionesModule.addProductToReparacion('${p.id}', '${p.nombre.replace(/'/g, "\\'")}', ${p.precio_venta || p.precio || 0})" style="padding: 10px; cursor: pointer; border-bottom: 1px solid #eee;">
+        <div class="prod-search-item hover-bg-primary" onclick="RecepcionesModule.addProductToReparacion('${p.id}', '${p.nombre.replace(/'/g, "\\'")}', ${p.precio_venta || p.precio || 0})" style="padding: 10px; cursor: pointer; border-bottom: 1px solid var(--border-color); color: var(--text-color);">
           <div style="font-weight: bold;">${p.nombre}</div>
-          <div style="font-size: 12px; color: #666;">Precio: $${parseFloat(p.precio_venta || p.precio || 0).toFixed(2)}</div>
+          <div style="font-size: 12px; color: var(--text-muted);">Precio: $${parseFloat(p.precio_venta || p.precio || 0).toFixed(2)}</div>
         </div>
       `).join('');
       results.style.display = 'block';
     } else {
-      results.innerHTML = '<div style="padding: 10px; color: #999;">No hay coincidencias</div>';
+      results.innerHTML = '<div style="padding: 10px; color: var(--text-muted);">No hay coincidencias</div>';
       results.style.display = 'block';
     }
   };
@@ -600,10 +687,10 @@ const RecepcionesModule = (() => {
 
   const renderSelectedProductsList = () => {
     const products = window._tempSelectedProducts || [];
-    if (products.length === 0) return '<p style="color: #999; font-size: 12px; font-style: italic;">Sin productos/repuestos agregados</p>';
+    if (products.length === 0) return '<p style="color: var(--text-muted); font-size: 12px; font-style: italic;">Sin productos/repuestos agregados</p>';
 
     return products.map((p, index) => `
-      <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 5px 10px; border-radius: 4px; border: 1px solid #ddd; font-size: 13px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-primary); padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border-color); font-size: 13px; color: var(--text-color);">
         <div style="flex: 1;"><strong>${p.nombre}</strong> (x${p.cantidad || 1})</div>
         <div style="width: 80px; text-align: right; color: var(--primary-color); font-weight: bold;">$${parseFloat((p.precio || 0) * (p.cantidad || 1)).toFixed(2)}</div>
         <button type="button" class="btn btn--icon btn--ghost text-danger" onclick="RecepcionesModule.removeProductFromReparacion(${index})" style="min-width: 24px; height: 24px; padding: 0; margin-left: 10px;">&times;</button>
@@ -623,18 +710,10 @@ const RecepcionesModule = (() => {
 
 
 
-
-
   const handleStatusChange = async (event, recepcionId) => {
     event.preventDefault();
     const recepcion = DataService.getRecepcionById(recepcionId);
     if (!recepcion) return;
-
-    const formData = new FormData(event.target);
-    const nuevoEstado = formData.get('nuevoEstado');
-    const comentario = formData.get('comentarioCambio');
-    const manoDeObra = parseFloat(formData.get('manoDeObra') || 0);
-    const totalReparacion = parseFloat(formData.get('totalReparacion') || 0);
 
     const btn = event.target.querySelector('button[type="submit"]');
     if (btn) {
@@ -645,10 +724,29 @@ const RecepcionesModule = (() => {
     try {
       const user = State.get('user');
       const timeStr = new Date().toLocaleString('es-NI');
-      let logText = `\n--- [${timeStr}] ESTADO: ${nuevoEstado.toUpperCase()} ---\nAutor: ${user?.name || 'Sistema'}`;
 
-      if (nuevoEstado === 'Diagnosticado' || nuevoEstado === 'Reparado' || nuevoEstado === 'Entregado') {
-        logText += `\nPresupuesto: $${totalReparacion.toFixed(2)} (Mano de obra: $${manoDeObra.toFixed(2)})`;
+      const formData = new FormData(event.target);
+      const nuevoEstadoVal = formData.get('nuevoEstado');
+      const comentario = formData.get('comentarioCambio');
+      const totalReparacion = parseFloat(formData.get('totalReparacion') || 0);
+
+      const rawTecnico = formData.get('tecnicoAsignado') || '';
+      let tecnicoAsignadoId = '';
+      let tecnicoAsignadoNombre = rawTecnico;
+      if (rawTecnico.includes('|')) {
+        [tecnicoAsignadoId, tecnicoAsignadoNombre] = rawTecnico.split('|');
+      }
+
+      const manoDeObra = parseFloat(formData.get('manoDeObra') || 0);
+      const moneda = formData.get('moneda') || 'USD';
+
+      let logText = `\n--- [${timeStr}] ESTADO: ${nuevoEstadoVal.toUpperCase()} ---\nAutor: ${user?.name || 'Sistema'}`;
+
+      if (nuevoEstadoVal === 'Diagnosticado' || nuevoEstadoVal === 'Reparado' || nuevoEstadoVal === 'Entregado') {
+        logText += `\nPrecio Reparación: ${moneda} ${manoDeObra.toFixed(2)} | Total: ${moneda} ${totalReparacion.toFixed(2)}`;
+        if (tecnicoAsignadoNombre) {
+          logText += `\nTécnico Asignado: ${tecnicoAsignadoNombre}`;
+        }
         if (window._tempSelectedProducts && window._tempSelectedProducts.length > 0) {
           logText += `\nRepuestos: ${window._tempSelectedProducts.map(p => `${p.nombre} (x${p.cantidad})`).join(', ')}`;
         }
@@ -661,22 +759,56 @@ const RecepcionesModule = (() => {
       const newNotas = (recepcion.notas ? recepcion.notas.trim() + '\n' : '') + logText;
 
       const updateData = {
-        estado: nuevoEstado,
+        estado: nuevoEstadoVal,
         notas: newNotas,
+        tecnico_asignado: rawTecnico || recepcion.tecnico_asignado,
         mano_de_obra: manoDeObra,
+        moneda: moneda,
         total_reparacion: totalReparacion,
         productos_reparacion: window._tempSelectedProducts || []
       };
 
       await DataService.updateRecepcion(recepcion.id || recepcionId, updateData);
 
-      // Si se entrega, generar recibo de pago
-      if (nuevoEstado === 'Entregado') {
-        exportPagoPDF(recepcionId);
+      // Actualizar estado del equipo físico
+      const eqEstado = nuevoEstadoVal === 'Entregado' ? 'Operativo' : 'En Reparación';
+      if (recepcion.equipo_id || recepcion.equipoId) {
+        await DataService.updateEquipo(recepcion.equipo_id || recepcion.equipoId, { estado: eqEstado });
       }
 
-      NotificationService.show('Estado actualizado y cambio registrado.', 'success');
-      App.refreshCurrentModule();
+      // Si se entrega, generar recibo de pago
+      if (nuevoEstadoVal === 'Entregado') {
+        exportPagoPDF(recepcionId);
+
+        // Preguntar para historial técnico
+        if (tecnicoAsignadoId && confirm('¿Desea registrar esta reparación como trabajo realizado para el técnico y agregarlo a su historial de pagos?')) {
+          if (DataService.createVisita) {
+            try {
+              await DataService.createVisita({
+                clienteId: recepcion.cliente_id,
+                equipoId: recepcion.equipo_id,
+                tipoVisita: 'Reparación de Taller: ' + (recepcion.codigo_recepcion || recepcion.numero_recepcion),
+                usuarioSoporte: tecnicoAsignadoId,
+                fechaInicio: new Date().toISOString(),
+                costoServicio: manoDeObra,
+                moneda: moneda,
+                trabajoRealizado: true,
+                descripcionTrabajo: 'Reparación de equipo finalizada. ' + (comentario || '')
+              });
+            } catch (e) {
+              console.error('Error actualizando historial de tecnico:', e);
+            }
+          }
+        }
+      }
+
+      if (typeof NotificationService !== 'undefined') {
+        NotificationService.show('Estado actualizado y cambio registrado.', 'success');
+      } else {
+        alert('Estado actualizado y cambio registrado.');
+      }
+
+      if (typeof App !== 'undefined') App.refreshCurrentModule();
       closeModal();
     } catch (error) {
       if (btn) {
@@ -718,7 +850,7 @@ const RecepcionesModule = (() => {
 
       optionsHtml += clientEquipments.map((e, index) => {
         const isSelected = (document.getElementById('equipoId').getAttribute('data-selected-val') === (e.id || e.equipoId)) ? 'selected' : '';
-        return `<option value="${e.id || e.equipoId}" ${isSelected}>${index + 1}. ${e.nombreEquipo || e.nombre_equipo || 'Equipo'} (${e.marca || ''} ${e.modelo || ''}) - ${e.serie || ''}</option>`;
+        return `<option value="${e.id || e.equipoId}" ${isSelected}>${index + 1}. ${e.nombreEquipo || e.nombre_equipo || 'Equipo'} (${e.marca || ''} ${e.modelo || ''}) - ${e.serie || e.numeroSerie || e.numero_serie || ''}</option>`;
       }).join('');
 
       equipoIdSelect.innerHTML = optionsHtml;
@@ -1122,15 +1254,42 @@ const RecepcionesModule = (() => {
         if (!data.nuevoEquipoMarca || data.nuevoEquipoMarca.trim() === '') throw new Error('Por favor, ingrese la marca del equipo.');
         if (!data.nuevoEquipoModelo || data.nuevoEquipoModelo.trim() === '') throw new Error('Por favor, ingrese el modelo del equipo.');
 
+        const formatTipoEquipo = (tipo) => {
+          if (!tipo) return 'Otro';
+          const dict = {
+            'LAPTOP': 'Laptop',
+            'PC ESCRITORIO': 'Computadora',
+            'COMPUTADORA': 'Computadora',
+            'SERVIDOR': 'Servidor',
+            'IMPRESORA': 'Impresora',
+            'ROUTER / SWITCH': 'Router',
+            'ROUTER': 'Router',
+            'SWITCH': 'Switch',
+            'FIREWALL': 'Firewall',
+            'UPS': 'UPS',
+            'NAS': 'NAS',
+            'TABLET': 'Otro',
+            'TELÉFONO': 'Otro',
+            'TELEFONO': 'Otro',
+            'OTRO': 'Otro'
+          };
+          const upper = tipo.toUpperCase().trim();
+          if (dict[upper]) return dict[upper];
+          const camelCased = tipo.trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+          // Validar que exista en el Enum para evitar que truene Supabase, si no es conocido enviar a Otro.
+          if (Object.values(dict).includes(camelCased)) return camelCased;
+          return 'Otro';
+        };
+
         const nuevoEquipoData = {
           cliente_id: finalClienteId,
-          nombre_equipo: data.nuevoEquipoTipo,
-          tipo_equipo: data.nuevoEquipoTipo,
-          marca: data.nuevoEquipoMarca,
-          modelo: data.nuevoEquipoModelo,
-          numero_serie: data.nuevoEquipoSerie,
+          nombre_equipo: (data.nuevoEquipoNombre || data.nuevoEquipoTipo).trim(),
+          tipo_equipo: formatTipoEquipo(data.nuevoEquipoTipo),
+          marca: data.nuevoEquipoMarca.trim(),
+          modelo: data.nuevoEquipoModelo.trim(),
+          serie: data.nuevoEquipoSerie.trim(),
           color: data.nuevoEquipoColor,
-          contrasena_equipo: data.nuevoEquipoContrasena,
+          contrasena: data.nuevoEquipoContrasena,
           estado: 'En Reparación' // Por defecto como va a recepción
         };
         const eqRes = await DataService.createEquipo(nuevoEquipoData);
@@ -1141,6 +1300,9 @@ const RecepcionesModule = (() => {
           const justCreatedEq = syncEquipos.find(e => e.serie === data.nuevoEquipoSerie && e.modelo === data.nuevoEquipoModelo);
           finalEquipoId = justCreatedEq?.id;
         }
+      } else {
+        // Actualizar estado del equipo existente si no es un nuevo registro de equipo
+        await DataService.updateEquipo(finalEquipoId, { estado: 'En Reparación' });
       }
 
       const user = State.get('user');
@@ -1150,7 +1312,7 @@ const RecepcionesModule = (() => {
         fecha_recepcion: data.fechaRecepcion,
         fecha_posible_revision: data.fechaRevisionPosible,
         diagnostico_inicial: data.diagnosticoCliente,
-        contrasena_equipo: data.contrasenaEquipo || '',
+        contrasena_equipo: data.nuevoEquipoContrasena || '',
         accesorios: data.accesoriosIncluidos,
         notas: data.estadoFisico ? `Estado Físico: ${data.estadoFisico} ` : '',
         estado: data.estado || 'Recibido',
@@ -1288,9 +1450,9 @@ const RecepcionesModule = (() => {
     div.style.display = 'flex';
     div.style.gap = '8px';
     div.innerHTML = `
-  < input type = "text" class="form-input acc-inp" value = "${val}" placeholder = "Ej: Cargador original..." oninput = "RecepcionesModule.updateAccesoriosValue()" style = "flex: 1; padding: 6px 12px; font-size: 0.9rem;" >
-    <button type="button" class="btn btn--danger btn--icon" onclick="this.parentElement.remove(); RecepcionesModule.updateAccesoriosValue()" style="padding: 6px; min-width: 32px; height: 32px;" title="Remover">${Icons.trash2 || 'X'}</button>
-`;
+      <input type="text" class="form-input acc-inp" value="${val}" placeholder="Ej: Cargador original..." oninput="RecepcionesModule.updateAccesoriosValue()" style="flex: 1; padding: 6px 12px; font-size: 0.9rem;">
+      <button type="button" class="btn btn--danger btn--icon" onclick="this.parentElement.remove(); RecepcionesModule.updateAccesoriosValue()" style="padding: 6px; min-width: 32px; height: 32px;" title="Remover">${Icons.trash2 || 'X'}</button>
+    `;
     container.appendChild(div);
 
     // focus the new input
@@ -1329,56 +1491,29 @@ const RecepcionesModule = (() => {
   const _oldOpenEdit = openEditModal;
 
 
-  const showClientesList = () => {
-    const list = document.getElementById('clientesList');
-    if (list) {
-      list.style.display = 'block';
-      const input = document.getElementById('clienteSearchInput');
-      if (input) input.select();
-      const items = document.querySelectorAll('.cliente-item');
-      items.forEach(item => { item.style.display = 'block'; });
-    }
-  };
+  const onClienteSearchChange = (inputEle) => {
+    const val = inputEle.value;
+    const list = document.getElementById('clientesListDatalist');
+    const hiddenInp = document.getElementById('clienteId');
+    if (!list || !hiddenInp) return;
 
-  const filterClientesList = (val) => {
-    const list = document.getElementById('clientesList');
-    if (list) list.style.display = 'block';
-    const items = document.querySelectorAll('.cliente-item');
-    const lowerVal = val.toLowerCase();
-    items.forEach(item => {
-      if (item.getAttribute('data-name').includes(lowerVal)) {
-        item.style.display = 'block';
-      } else {
-        item.style.display = 'none';
+    const options = list.options;
+    let foundId = '';
+
+    if (val === '+ Crear Nuevo Cliente') {
+      foundId = 'NEW';
+    } else {
+      for (let i = 0; i < options.length; i++) {
+        if (options[i].value === val) {
+          foundId = options[i].getAttribute('data-id');
+          break;
+        }
       }
-    });
-  };
-
-  const selectClienteInline = (id, label) => {
-    const searchInput = document.getElementById('clienteSearchInput');
-    const hiddenInput = document.getElementById('clienteId');
-    const list = document.getElementById('clientesList');
-
-    if (searchInput && hiddenInput && list) {
-      searchInput.value = label;
-      hiddenInput.value = id;
-      list.style.display = 'none';
-
-      // Trigger change
-      onClienteChange();
     }
-  };
 
-  // Close dropdowns on outside click
-  if (typeof document !== 'undefined') {
-    document.addEventListener('click', (e) => {
-      const list = document.getElementById('clientesList');
-      const searchInput = document.getElementById('clienteSearchInput');
-      if (list && searchInput && e.target !== list && e.target !== searchInput && !list.contains(e.target)) {
-        list.style.display = 'none';
-      }
-    });
-  }
+    hiddenInp.value = foundId;
+    onClienteChange();
+  };
 
   const toggleViewMode = (mode) => {
     filterState.viewMode = mode;
@@ -1400,9 +1535,7 @@ const RecepcionesModule = (() => {
     exportRecepcionPDF,
     onClienteChange,
     onEquipoChange,
-    showClientesList,
-    filterClientesList,
-    selectClienteInline,
+    onClienteSearchChange,
     openChangeStatusModal,
     handleStatusChange,
     onStatusChangeInModal,
