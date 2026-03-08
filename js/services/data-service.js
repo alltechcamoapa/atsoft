@@ -1194,7 +1194,18 @@ const DataService = (() => {
     const createReparacion = () => { };
     const updateReparacion = () => { };
     const deleteReparacion = () => { };
-    const getProductosSync = () => [...cache.productos];
+    const getProductosSync = () => cache.productos.map(p => ({
+        ...p,
+        precioCompra: p.precioCompra || parseFloat(p.precio_costo) || 0,
+        precioVenta: p.precioVenta || parseFloat(p.precio_venta) || p.precio || 0,
+        stock: p.stock ?? p.stock_actual ?? 0,
+        inventarioMinimo: p.inventarioMinimo || p.stock_minimo || 0,
+        inventarioMaximo: p.inventarioMaximo || p.inventario_maximo || 0,
+        codigoAlt: p.codigoAlt || p.codigo_alternativo || '',
+        ventaGranel: p.ventaGranel || (p.venta_granel ? 'true' : 'false'),
+        usaSeriales: p.usaSeriales || (p.usa_seriales ? 'true' : 'false'),
+        tipoSeguimiento: p.tipoSeguimiento || p.tipo_seguimiento || ''
+    }));
     const getProductosFiltered = (filter = {}) => {
         return cache.productos.filter(p => {
             let matches = true;
@@ -1211,7 +1222,22 @@ const DataService = (() => {
             return matches;
         });
     };
-    const getProductoById = (id) => cache.productos.find(p => p.productoId === id || p.id === id);
+    const getProductoById = (id) => {
+        const p = cache.productos.find(x => x.productoId === id || x.id === id);
+        if (!p) return null;
+        return {
+            ...p,
+            precioCompra: p.precioCompra || parseFloat(p.precio_costo) || 0,
+            precioVenta: p.precioVenta || parseFloat(p.precio_venta) || p.precio || 0,
+            stock: p.stock ?? p.stock_actual ?? 0,
+            inventarioMinimo: p.inventarioMinimo || p.stock_minimo || 0,
+            inventarioMaximo: p.inventarioMaximo || p.inventario_maximo || 0,
+            codigoAlt: p.codigoAlt || p.codigo_alternativo || '',
+            ventaGranel: p.ventaGranel || (p.venta_granel ? 'true' : 'false'),
+            usaSeriales: p.usaSeriales || (p.usa_seriales ? 'true' : 'false'),
+            tipoSeguimiento: p.tipoSeguimiento || p.tipo_seguimiento || ''
+        };
+    };
 
     const createProducto = async (data) => {
         const res = await SupabaseDataService.createProducto(data);
@@ -1219,7 +1245,16 @@ const DataService = (() => {
             const item = {
                 ...res.data,
                 productoId: res.data.id,
-                precio: parseFloat(res.data.precio_venta) || 0
+                precio: parseFloat(res.data.precio_venta) || 0,
+                precioCompra: parseFloat(res.data.precio_costo) || 0,
+                precioVenta: parseFloat(res.data.precio_venta) || 0,
+                stock: parseInt(res.data.stock_actual) || 0,
+                inventarioMinimo: parseInt(res.data.stock_minimo) || 0,
+                inventarioMaximo: parseInt(res.data.inventario_maximo) || 0,
+                codigoAlt: res.data.codigo_alternativo || '',
+                ventaGranel: res.data.venta_granel ? 'true' : 'false',
+                usaSeriales: res.data.usa_seriales ? 'true' : 'false',
+                tipoSeguimiento: res.data.tipo_seguimiento || ''
             };
             cache.productos.unshift(item);
             LogService.log('productos', 'create', item.id, `Producto creado: ${item.nombre}`, { codigo: item.codigo });
@@ -1231,18 +1266,27 @@ const DataService = (() => {
     const updateProducto = async (id, data) => {
         const current = getProductoById(id);
         const uuid = current ? current.id : id;
-        const res = await SupabaseDataService.updateProducto(uuid, data);
+        const res = await SupabaseDataService.updateProducto(id, data);
         if (res.success) {
-            const idx = cache.productos.findIndex(p => p.id === uuid || p.productoId === id);
-            if (idx !== -1) {
+            const idx = cache.productos.findIndex(p => p.id === id || p.productoId === id);
+            if (idx >= 0) {
+                const udData = res.data ? res.data[0] || res.data : data;
                 cache.productos[idx] = {
                     ...cache.productos[idx],
-                    ...res.data,
-                    precio: parseFloat(res.data.precio_venta) || cache.productos[idx].precio || 0
+                    ...udData,
+                    precioCompra: parseFloat(udData.precio_costo || udData.precioCompra || cache.productos[idx].precioCompra) || 0,
+                    precioVenta: parseFloat(udData.precio_venta || udData.precioVenta || cache.productos[idx].precioVenta) || 0,
+                    stock: parseInt(udData.stock_actual || udData.stock || cache.productos[idx].stock) || 0,
+                    inventarioMinimo: parseInt(udData.stock_minimo || udData.inventarioMinimo || cache.productos[idx].inventarioMinimo) || 0,
+                    inventarioMaximo: parseInt(udData.inventario_maximo || udData.inventarioMaximo || cache.productos[idx].inventarioMaximo) || 0,
+                    codigoAlt: udData.codigo_alternativo || udData.codigoAlt || cache.productos[idx].codigoAlt || '',
+                    ventaGranel: udData.venta_granel ? 'true' : (udData.ventaGranel || cache.productos[idx].ventaGranel || 'false'),
+                    usaSeriales: udData.usa_seriales ? 'true' : (udData.usaSeriales || cache.productos[idx].usaSeriales || 'false'),
+                    tipoSeguimiento: udData.tipo_seguimiento || udData.tipoSeguimiento || cache.productos[idx].tipoSeguimiento || ''
                 };
+                LogService.log('productos', 'update', id, `Producto actualizado: ${cache.productos[idx].nombre}`);
             }
-            LogService.log('productos', 'update', uuid, `Producto actualizado: ${current?.nombre || data.nombre}`);
-            return true;
+            return res.success;
         }
         throw new Error(res.error || 'Error al actualizar producto');
     };
@@ -2053,6 +2097,14 @@ const DataService = (() => {
             const res = await SupabaseDataService.deleteAbonoPrestamo(id);
             if (res.success) { cache.abonosPrestamos = cache.abonosPrestamos.filter(x => x.id !== id); return true; }
             throw new Error(res.error);
+        },
+
+        // Storage
+        uploadImage: async (bucket, file) => {
+            if (typeof SupabaseDataService !== 'undefined' && SupabaseDataService.uploadImage) {
+                return await SupabaseDataService.uploadImage(bucket, file);
+            }
+            throw new Error('Supabase no disponible para subir imagenes');
         }
     };
 })();

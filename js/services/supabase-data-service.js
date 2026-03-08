@@ -71,6 +71,36 @@ const SupabaseDataService = (() => {
         }
     };
 
+    // ========== ALMACENAMIENTO (STORAGE) ==========
+    const uploadImage = async (bucket, file) => {
+        if (!client) return { error: 'Not initialized' };
+        try {
+            // Generar nombre de archivo único
+            const ext = file.name.split('.').pop();
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+            const filePath = `${fileName}`;
+
+            const { data, error } = await client.storage
+                .from(bucket)
+                .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: false
+                });
+
+            if (error) throw error;
+
+            // Obtener URL pública
+            const { data: { publicUrl } } = client.storage
+                .from(bucket)
+                .getPublicUrl(filePath);
+
+            return { url: publicUrl, success: true };
+        } catch (error) {
+            console.error('❌ Error uploadImage:', error);
+            return { error: error.message };
+        }
+    };
+
     // ========== CLIENTES ==========
     const getClientesSync = async () => {
         if (!client) return [];
@@ -819,11 +849,11 @@ const SupabaseDataService = (() => {
             marca: productoData.marca || null,
             modelo: productoData.modelo || null,
             unidad_medida: productoData.unidadMedida || productoData.unidad_medida || 'Unidad',
-            precio_costo: parseFloat(productoData.precioCosto || productoData.precio_costo) || 0,
+            precio_costo: parseFloat(productoData.precioCompra || productoData.precioCosto || productoData.precio_costo) || 0,
             precio_venta: parseFloat(productoData.precioVenta || productoData.precio_venta || productoData.precio) || 0,
             moneda: productoData.moneda || 'USD',
-            stock_actual: parseInt(productoData.stockActual || productoData.stock_actual) || 0,
-            stock_minimo: parseInt(productoData.stockMinimo || productoData.stock_minimo) || 0,
+            stock_actual: parseInt(productoData.stockActual || productoData.stock_actual || productoData.stock) || 0,
+            stock_minimo: parseInt(productoData.stockMinimo || productoData.stock_minimo || productoData.inventarioMinimo) || 0,
             proveedor: productoData.proveedor || null,
             tiempo_entrega_dias: productoData.tiempoEntregaDias || productoData.tiempo_entrega_dias || null,
             garantia_meses: productoData.garantiaMeses || productoData.garantia_meses || null,
@@ -832,7 +862,13 @@ const SupabaseDataService = (() => {
             es_inventariable: productoData.esInventariable ?? productoData.es_inventariable ?? true,
             impuesto_iva: parseFloat(productoData.impuestoIva || productoData.impuesto_iva) || 0,
             notas: productoData.notas || null,
-            created_by: productoData.created_by || null
+            created_by: productoData.created_by || null,
+            imagenes: productoData.imagenes || [],
+            codigo_alternativo: productoData.codigoAlt || productoData.codigo_alternativo || null,
+            venta_granel: productoData.ventaGranel === 'true' || productoData.ventaGranel === true,
+            usa_seriales: productoData.usaSeriales === 'true' || productoData.usaSeriales === true,
+            tipo_seguimiento: productoData.tipoSeguimiento || productoData.tipo_seguimiento || null,
+            inventario_maximo: parseInt(productoData.inventarioMaximo || productoData.inventario_maximo || 0)
         };
 
         const { data, error } = await client
@@ -868,11 +904,25 @@ const SupabaseDataService = (() => {
         if (updates.notas !== undefined) dataToUpdate.notas = updates.notas;
         if (updates.moneda !== undefined) dataToUpdate.moneda = updates.moneda;
         if (updates.proveedor !== undefined) dataToUpdate.proveedor = updates.proveedor;
+        if (updates.tiempoEntregaDias !== undefined) dataToUpdate.tiempo_entrega_dias = updates.tiempoEntregaDias;
+        if (updates.garantiaMeses !== undefined) dataToUpdate.garantia_meses = updates.garantiaMeses;
+        if (updates.imagenUrl !== undefined) dataToUpdate.imagen_url = updates.imagenUrl;
+        if (updates.esInventariable !== undefined) dataToUpdate.es_inventariable = updates.esInventariable;
+        if (updates.imagenes !== undefined) dataToUpdate.imagenes = updates.imagenes;
+
+        if (updates.codigoAlt !== undefined) dataToUpdate.codigo_alternativo = updates.codigoAlt;
+        if (updates.codigo_alternativo !== undefined) dataToUpdate.codigo_alternativo = updates.codigo_alternativo;
+
+        if (updates.ventaGranel !== undefined) dataToUpdate.venta_granel = updates.ventaGranel === 'true' || updates.ventaGranel === true;
+        if (updates.usaSeriales !== undefined) dataToUpdate.usa_seriales = updates.usaSeriales === 'true' || updates.usaSeriales === true;
+        if (updates.tipoSeguimiento !== undefined) dataToUpdate.tipo_seguimiento = updates.tipoSeguimiento;
+        if (updates.inventarioMaximo !== undefined) dataToUpdate.inventario_maximo = parseInt(updates.inventarioMaximo || 0);
 
         // Mapeo de precio: el UI envía "precio", la DB usa "precio_venta"
         if (updates.precio !== undefined) dataToUpdate.precio_venta = parseFloat(updates.precio) || 0;
         if (updates.precioVenta !== undefined) dataToUpdate.precio_venta = parseFloat(updates.precioVenta) || 0;
         if (updates.precio_venta !== undefined) dataToUpdate.precio_venta = parseFloat(updates.precio_venta) || 0;
+        if (updates.precioCompra !== undefined) dataToUpdate.precio_costo = parseFloat(updates.precioCompra) || 0;
         if (updates.precioCosto !== undefined) dataToUpdate.precio_costo = parseFloat(updates.precioCosto) || 0;
         if (updates.precio_costo !== undefined) dataToUpdate.precio_costo = parseFloat(updates.precio_costo) || 0;
 
@@ -2286,8 +2336,9 @@ const SupabaseDataService = (() => {
         updateRecepcion,
         deleteRecepcion,
 
-        // Helpers
-        generateCode
+        // Helpers & Storage
+        generateCode,
+        uploadImage
     };
 })();
 

@@ -67,6 +67,10 @@ const ConfigModule = (() => {
                       onclick="ConfigModule.switchTab('sistema')">
                 ${Icons.settings} Sistema
               </button>
+              <button class="settings-tab ${currentTab === 'punto-venta' ? 'active' : ''}" 
+                      onclick="ConfigModule.switchTab('punto-venta')">
+                ${Icons.shoppingCart || '🛒'} Punto de Venta
+              </button>
             </div>
           </div>
         </div>
@@ -80,6 +84,7 @@ const ConfigModule = (() => {
           ${currentTab === 'reportes-editor' && canManageRoles ? renderReportesEditorTab() : ''}
           ${currentTab === 'empresa' ? renderEmpresaTab() : ''}
           ${currentTab === 'sistema' ? renderSistemaTab(config) : ''}
+          ${currentTab === 'punto-venta' ? renderPuntoVentaTab() : ''}
         </div>
       </div>
 
@@ -707,7 +712,332 @@ const ConfigModule = (() => {
     `;
   };
 
+  // ========== PUNTO DE VENTA TAB ==========
+  const getPosData = (key) => {
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+  };
+  const setPosData = (key, data) => {
+    localStorage.setItem(key, JSON.stringify(data));
+  };
+
+  const renderPuntoVentaTab = () => {
+    const transferencias = getPosData('pos_transferencias');
+    const tarjetas = getPosData('pos_tarjetas');
+    const tarjetasAsumir = getPosData('pos_tarjetas_asumir');
+    const extras = getPosData('pos_extrafinanciamiento');
+    const listas = getPosData('pos_listas_precios');
+
+    return `
+      <!-- Transferencias -->
+      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 class="card__title">Tipos de Pago: Transferencia</h4>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('transferencia')">
+            ${Icons.plus || '➕'} Agregar
+          </button>
+        </div>
+        <div class="card__body" style="padding:0;">
+          ${transferencias.length > 0 ? `
+            <table class="data-table">
+              <thead class="data-table__head">
+                <tr><th>Banco</th><th>Divisa</th><th>Número de Cuenta</th><th>Acciones</th></tr>
+              </thead>
+              <tbody class="data-table__body">
+                ${transferencias.map((t, i) => `
+                  <tr>
+                    <td>${t.banco}</td>
+                    <td><span class="badge badge--primary">${t.divisa}</span></td>
+                    <td style="font-family:monospace;">${t.numeroCuenta}</td>
+                    <td>
+                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_transferencias', ${i})">${Icons.trash || '🗑️'}</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay cuentas registradas</p>'}
+        </div>
+      </div>
+
+      <!-- Tarjeta -->
+      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 class="card__title">Tipos de Pago: Tarjeta</h4>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('tarjeta')">
+            ${Icons.plus || '➕'} Agregar
+          </button>
+        </div>
+        <div class="card__body" style="padding:0;">
+          ${tarjetas.length > 0 ? `
+            <table class="data-table">
+              <thead class="data-table__head">
+                <tr><th>POS Banco</th><th>% Bancario</th><th>% IR</th><th>% Total Impuesto</th><th>Acciones</th></tr>
+              </thead>
+              <tbody class="data-table__body">
+                ${tarjetas.map((t, i) => `
+                  <tr>
+                    <td>${t.posBanco}</td>
+                    <td>${Number(t.porcentajeBancario).toFixed(2)}%</td>
+                    <td>${Number(t.porcentajeIR).toFixed(2)}%</td>
+                    <td><strong>${(Number(t.porcentajeBancario) + Number(t.porcentajeIR)).toFixed(2)}%</strong></td>
+                    <td>
+                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_tarjetas', ${i})">${Icons.trash || '🗑️'}</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay configuraciones de POS registradas</p>'}
+        </div>
+      </div>
+
+      <!-- Tarjeta (Asumir Comisión) -->
+      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 class="card__title">Tipos de Pago: Tarjeta (Asumir Comisión)</h4>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('tarjeta_asumir')">
+            ${Icons.plus || '➕'} Agregar
+          </button>
+        </div>
+        <div class="card__body" style="padding:0;">
+          ${tarjetasAsumir.length > 0 ? `
+            <table class="data-table">
+              <thead class="data-table__head">
+                <tr><th>POS Banco (Asumir)</th><th>% Comisión Bancaria</th><th>% IR</th><th>Acciones</th></tr>
+              </thead>
+              <tbody class="data-table__body">
+                ${tarjetasAsumir.map((t, i) => `
+                  <tr>
+                    <td>${t.posBanco}</td>
+                    <td>${Number(t.porcentajeBancario).toFixed(2)}%</td>
+                    <td>${Number(t.porcentajeIR).toFixed(2)}%</td>
+                    <td>
+                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_tarjetas_asumir', ${i})">${Icons.trash || '🗑️'}</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay opciones de Tarjeta (Asumir Comisión) registradas</p>'}
+        </div>
+      </div>
+
+      <!-- Extrafinanciamiento -->
+      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 class="card__title">Tipos de Pago: Extrafinanciamiento</h4>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('extra')">
+            ${Icons.plus || '➕'} Agregar
+          </button>
+        </div>
+        <div class="card__body" style="padding:0;">
+          ${extras.length > 0 ? `
+            <table class="data-table">
+              <thead class="data-table__head">
+                <tr><th>Banco</th><th>Plazo (Meses)</th><th>% Bancario</th><th>% IR</th><th>% Total Impuesto</th><th>Acciones</th></tr>
+              </thead>
+              <tbody class="data-table__body">
+                ${extras.map((t, i) => `
+                  <tr>
+                    <td>${t.banco}</td>
+                    <td><span class="badge badge--neutral">${t.plazoMeses} meses</span></td>
+                    <td>${Number(t.porcentajeBancario).toFixed(2)}%</td>
+                    <td>${Number(t.porcentajeIR).toFixed(2)}%</td>
+                    <td><strong>${(Number(t.porcentajeBancario) + Number(t.porcentajeIR)).toFixed(2)}%</strong></td>
+                    <td>
+                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_extrafinanciamiento', ${i})">${Icons.trash || '🗑️'}</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay extrafinanciamientos registrados</p>'}
+        </div>
+      </div>
+
+      <!-- Lista de Precios -->
+      <div class="card">
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 class="card__title">Catálogo: Lista de Precios</h4>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('precio')">
+            ${Icons.plus || '➕'} Agregar
+          </button>
+        </div>
+        <div class="card__body" style="padding:0;">
+          ${listas.length > 0 ? `
+            <table class="data-table">
+              <thead class="data-table__head">
+                <tr><th>Código Precio</th><th>Nombre de Precio</th><th>Acciones</th></tr>
+              </thead>
+              <tbody class="data-table__body">
+                ${listas.map((t, i) => `
+                  <tr>
+                    <td style="font-weight:600; color:var(--primary);">${t.codigoPrecio}</td>
+                    <td>${t.nombrePrecio}</td>
+                    <td>
+                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_listas_precios', ${i})">${Icons.trash || '🗑️'}</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay listas de precios registradas</p>'}
+        </div>
+      </div>
+    `;
+  };
+
+  const deletePosItem = (key, index) => {
+    if (!confirm('¿Eliminar este registro?')) return;
+    const data = getPosData(key);
+    data.splice(index, 1);
+    setPosData(key, data);
+    App.refreshCurrentModule();
+  };
+
+  const openPosModal = (type) => {
+    let title = '';
+    let formContent = '';
+
+    if (type === 'transferencia') {
+      title = 'Agregar Transferencia';
+      formContent = `
+        <input type="hidden" name="posType" value="pos_transferencias">
+        <div class="form-group">
+          <label class="form-label form-label--required">Banco</label>
+          <input type="text" name="banco" class="form-input" required placeholder="Ej: BAC">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Divisa</label>
+          <select name="divisa" class="form-select" required>
+            <option value="NIO">Córdobas (C$)</option>
+            <option value="USD">Dólares ($)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Número de Cuenta</label>
+          <input type="text" name="numeroCuenta" class="form-input" required placeholder="000000000">
+        </div>
+      `;
+    } else if (type === 'tarjeta') {
+      title = 'Agregar Perfil de Tarjeta (POS)';
+      formContent = `
+        <input type="hidden" name="posType" value="pos_tarjetas">
+        <div class="form-group">
+          <label class="form-label form-label--required">Pos Banco</label>
+          <input type="text" name="posBanco" class="form-input" required placeholder="Ej: POS Banpro">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Porcentaje Bancario (%)</label>
+          <input type="number" step="0.01" name="porcentajeBancario" class="form-input" required placeholder="4.5">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Porcentaje IR (%)</label>
+          <input type="number" step="0.01" name="porcentajeIR" class="form-input" required placeholder="2.0">
+        </div>
+        <p class="text-sm text-muted">La fórmula sumará de forma automática el Porcentaje Impuesto = Bancario + IR.</p>
+      `;
+    } else if (type === 'tarjeta_asumir') {
+      title = 'Agregar POS Bancario (Asumir Comisión)';
+      formContent = `
+        <input type="hidden" name="posType" value="pos_tarjetas_asumir">
+        <div class="form-group">
+          <label class="form-label form-label--required">POS Banco</label>
+          <input type="text" name="posBanco" class="form-input" required placeholder="Ej: POS Banpro">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Porcentaje de comisión bancaria (%)</label>
+          <input type="number" step="0.01" name="porcentajeBancario" class="form-input" required placeholder="4.5">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Porcentaje IR (%)</label>
+          <input type="number" step="0.01" name="porcentajeIR" class="form-input" required placeholder="2.0">
+        </div>
+        <p class="text-sm text-muted">A nivel de reportes deducirá el IR de la cantidad ya restada con lo bancario.</p>
+      `;
+    } else if (type === 'extra') {
+      title = 'Agregar Extrafinanciamiento';
+      formContent = `
+        <input type="hidden" name="posType" value="pos_extrafinanciamiento">
+        <div class="form-group">
+          <label class="form-label form-label--required">Banco</label>
+          <input type="text" name="banco" class="form-input" required placeholder="Ej: FICOHSA">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Plazo en Meses</label>
+          <select name="plazoMeses" class="form-select" required>
+            <option value="3">3 meses</option>
+            <option value="6">6 meses</option>
+            <option value="9">9 meses</option>
+            <option value="12">12 meses</option>
+            <option value="18">18 meses</option>
+            <option value="24">24 meses</option>
+            <option value="36">36 meses</option>
+            <option value="48">48 meses</option>
+            <option value="60">60 meses</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Porcentaje Bancario (%)</label>
+          <input type="number" step="0.01" name="porcentajeBancario" class="form-input" required placeholder="8.0">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Porcentaje IR (%)</label>
+          <input type="number" step="0.01" name="porcentajeIR" class="form-input" required placeholder="2.0">
+        </div>
+      `;
+    } else if (type === 'precio') {
+      title = 'Agregar Lista de Precios';
+      formContent = `
+        <input type="hidden" name="posType" value="pos_listas_precios">
+        <div class="form-group">
+          <label class="form-label form-label--required">Código Precio</label>
+          <input type="text" name="codigoPrecio" class="form-input" required placeholder="Ej: PRECIO-1">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Nombre de Precio</label>
+          <input type="text" name="nombrePrecio" class="form-input" required placeholder="Ej: General / Mayoreo">
+        </div>
+      `;
+    }
+
+    const html = `
+      <div class="modal-overlay open">
+        <div class="modal" onclick="event.stopPropagation()">
+          <div class="modal__header">
+            <h3 class="modal__title">${title}</h3>
+            <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
+          </div>
+          <form class="modal__body" onsubmit="ConfigModule.handleSavePosModal(event)">
+            ${formContent}
+            <div class="modal__footer" style="margin: calc(-1 * var(--spacing-lg)); margin-top: var(--spacing-lg); padding: var(--spacing-lg); border-top: 1px solid var(--border-color);">
+              <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
+              <button type="submit" class="btn btn--primary">Guardar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    document.getElementById('configModal').innerHTML = html;
+  };
+
+  const handleSavePosModal = (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    const storeKey = data.posType;
+    delete data.posType;
+
+    const list = getPosData(storeKey);
+    list.push(data);
+    setPosData(storeKey, list);
+
+    closeModal();
+    App.refreshCurrentModule();
+  };
+
   // ========== ACTIONS ==========
+
 
   const switchTab = (tab) => {
     // Permission check before switching
@@ -810,29 +1140,29 @@ const ConfigModule = (() => {
   const openEditProfile = () => {
     const user = State.get('user');
     document.getElementById('configModal').innerHTML = `
-      <div class="modal-overlay open">
-        <div class="modal" onclick="event.stopPropagation()">
-          <div class="modal__header">
-            <h3 class="modal__title">Editar Perfil</h3>
-            <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
+        <div class="modal-overlay open">
+          <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal__header">
+              <h3 class="modal__title">Editar Perfil</h3>
+              <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
+            </div>
+            <form class="modal__body" onsubmit="ConfigModule.saveProfile(event)">
+              <div class="form-group">
+                <label class="form-label">Nombre</label>
+                <input type="text" name="name" class="form-input" value="${user.name}" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Correo Electrónico</label>
+                <input type="email" name="email" class="form-input" value="${user.email}" required>
+              </div>
+              <div class="modal__footer" style="margin: calc(-1 * var(--spacing-lg)); margin-top: var(--spacing-lg); padding: var(--spacing-lg); border-top: 1px solid var(--border-color);">
+                <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
+                <button type="submit" class="btn btn--primary">Guardar</button>
+              </div>
+            </form>
           </div>
-          <form class="modal__body" onsubmit="ConfigModule.saveProfile(event)">
-            <div class="form-group">
-              <label class="form-label">Nombre</label>
-              <input type="text" name="name" class="form-input" value="${user.name}" required>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Correo Electrónico</label>
-              <input type="email" name="email" class="form-input" value="${user.email}" required>
-            </div>
-            <div class="modal__footer" style="margin: calc(-1 * var(--spacing-lg)); margin-top: var(--spacing-lg); padding: var(--spacing-lg); border-top: 1px solid var(--border-color);">
-              <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
-              <button type="submit" class="btn btn--primary">Guardar</button>
-            </div>
-          </form>
-        </div>
       </div>
-    `;
+  `;
   };
 
   const saveProfile = (event) => {
@@ -883,61 +1213,61 @@ const ConfigModule = (() => {
     ];
 
     document.getElementById('configModal').innerHTML = `
-      <div class="modal-overlay open">
-        <div class="modal" onclick="event.stopPropagation()">
-          <div class="modal__header">
-            <h3 class="modal__title">Crear Nuevo Usuario</h3>
-            <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
-          </div>
-          <form class="modal__body" onsubmit="ConfigModule.handleCreateUser(event)">
-            <div class="form-group">
-              <label class="form-label">Nombre Completo</label>
-              <input type="text" name="name" class="form-input" required>
-            </div>
-            
-            <div class="form-group">
-              <label class="form-label">Username</label>
-              <input type="text" name="username" class="form-input" required pattern="[a-zA-Z0-9_]+" title="Solo letras, números y guiones bajos">
-            </div>
+  <div class="modal-overlay open">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal__header">
+        <h3 class="modal__title">Crear Nuevo Usuario</h3>
+        <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
+      </div>
+      <form class="modal__body" onsubmit="ConfigModule.handleCreateUser(event)">
+        <div class="form-group">
+          <label class="form-label">Nombre Completo</label>
+          <input type="text" name="name" class="form-input" required>
+        </div>
 
-            <div class="form-group">
-              <label class="form-label">Correo Electrónico (Para Login)</label>
-              <input type="email" name="email" class="form-input" required>
-            </div>
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" name="username" class="form-input" required pattern="[a-zA-Z0-9_]+" title="Solo letras, números y guiones bajos">
+        </div>
 
-            <div class="form-group">
-              <label class="form-label">Contraseña</label>
-              <input type="password" name="password" class="form-input" required minlength="6">
-            </div>
+        <div class="form-group">
+          <label class="form-label">Correo Electrónico (Para Login)</label>
+          <input type="email" name="email" class="form-input" required>
+        </div>
 
-            <div class="form-group">
-              <label class="form-label">Rol</label>
-              <select name="role" class="form-select" required onchange="ConfigModule.toggleModulesSelector(this.value)">
-                ${['Administrador', 'Tecnico', 'Ejecutivo de Ventas'].map(r => `<option value="${r}">${r}</option>`).join('')}
-              </select>
-            </div>
+        <div class="form-group">
+          <label class="form-label">Contraseña</label>
+          <input type="password" name="password" class="form-input" required minlength="6">
+        </div>
 
-            <div id="modulesSelector" style="display: none; margin-top: var(--spacing-md); padding: var(--spacing-sm); background: var(--bg-secondary); border-radius: var(--border-radius-sm);">
-                <label class="form-label" style="margin-bottom: var(--spacing-xs);">Módulos Permitidos (Solo para Vendedor/Tecnico)</label>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-xs);">
-                    ${availableModules.map(m => `
+        <div class="form-group">
+          <label class="form-label">Rol</label>
+          <select name="role" class="form-select" required onchange="ConfigModule.toggleModulesSelector(this.value)">
+            ${['Administrador', 'Tecnico', 'Ejecutivo de Ventas'].map(r => `<option value="${r}">${r}</option>`).join('')}
+          </select>
+        </div>
+
+        <div id="modulesSelector" style="display: none; margin-top: var(--spacing-md); padding: var(--spacing-sm); background: var(--bg-secondary); border-radius: var(--border-radius-sm);">
+          <label class="form-label" style="margin-bottom: var(--spacing-xs);">Módulos Permitidos (Solo para Vendedor/Tecnico)</label>
+          <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--spacing-xs);">
+            ${availableModules.map(m => `
                         <label style="display: flex; align-items: center; gap: 8px; font-size: var(--font-size-sm); cursor: pointer;">
                             <input type="checkbox" name="allowedModules" value="${m.id}" checked>
                             <span>${m.name}</span>
                         </label>
                     `).join('')}
-                </div>
-                <p class="text-xs text-muted" style="margin-top: 5px;">Desmarca los módulos que no debe ver este usuario.</p>
-            </div>
-
-            <div class="modal__footer" style="margin: calc(-1 * var(--spacing-lg)); margin-top: var(--spacing-lg); padding: var(--spacing-lg); border-top: 1px solid var(--border-color);">
-              <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
-              <button type="submit" class="btn btn--primary">Crear Usuario</button>
-            </div>
-          </form>
+          </div>
+          <p class="text-xs text-muted" style="margin-top: 5px;">Desmarca los módulos que no debe ver este usuario.</p>
         </div>
-      </div>
-    `;
+
+        <div class="modal__footer" style="margin: calc(-1 * var(--spacing-lg)); margin-top: var(--spacing-lg); padding: var(--spacing-lg); border-top: 1px solid var(--border-color);">
+          <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
+          <button type="submit" class="btn btn--primary">Crear Usuario</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  `;
 
     // Initial check for modules selector visibility
     setTimeout(() => ConfigModule.toggleModulesSelector('Admin'), 0);
@@ -1044,56 +1374,56 @@ const ConfigModule = (() => {
     const userModules = user.allowedModules || [];
 
     document.getElementById('configModal').innerHTML = `
-        <div class="modal-overlay open">
-          <div class="modal" onclick="event.stopPropagation()" style="max-width: 700px;">
-            <div class="modal__header">
-              <h3 class="modal__title">Editar Usuario</h3>
-              <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
-            </div>
-            <form class="modal__body" onsubmit="ConfigModule.saveEditUser(event, '${username}')">
-              <div class="form-group">
-                <label class="form-label">Nombre de Usuario</label>
-                <input type="text" class="form-input" value="${user.username}" disabled style="background: var(--bg-tertiary); cursor: not-allowed;">
-                <p class="text-xs text-muted" style="margin-top: var(--spacing-xs);">El nombre de usuario no puede modificarse</p>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Nombre Completo</label>
-                <input type="text" name="name" class="form-input" value="${user.name}" required>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Correo Electrónico</label>
-                <input type="email" name="email" class="form-input" value="${user.email}" required>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Contraseña</label>
-                <input type="password" name="password" class="form-input" placeholder="Dejar en blanco para no cambiar" minlength="6">
-                <p class="text-xs text-muted" style="margin-top: var(--spacing-xs);">Solo completa si deseas cambiar la contraseña</p>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Rol del Usuario</label>
-                <select name="role" class="form-select" required>
-                  <option value="Admin" ${user.role === 'Admin' ? 'selected' : ''}>Admin</option>
-                  <option value="Vendedor" ${user.role === 'Vendedor' ? 'selected' : ''}>Vendedor</option>
-                  <option value="Tecnico" ${user.role === 'Tecnico' ? 'selected' : ''}>Tecnico</option>
-                </select>
-              </div>
-              
-              <div class="form-group">
-                <label class="form-label">Rol del Usuario</label>
-                <select name="role" class="form-select" required>
-                  <option value="Admin" ${user.role === 'Admin' ? 'selected' : ''}>Admin</option>
-                  <option value="Vendedor" ${user.role === 'Vendedor' ? 'selected' : ''}>Vendedor</option>
-                  <option value="Tecnico" ${user.role === 'Tecnico' ? 'selected' : ''}>Tecnico</option>
-                </select>
-              </div>
-              <div class="modal__footer" style="margin: calc(-1 * var(--spacing-lg)); margin-top: var(--spacing-lg); padding: var(--spacing-lg); border-top: 1px solid var(--border-color);">
-                <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
-                <button type="submit" class="btn btn--primary">${Icons.save} Guardar Cambios</button>
-              </div>
-            </form>
-          </div>
+  <div class="modal-overlay open">
+    <div class="modal" onclick="event.stopPropagation()" style="max-width: 700px;">
+      <div class="modal__header">
+        <h3 class="modal__title">Editar Usuario</h3>
+        <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
+      </div>
+      <form class="modal__body" onsubmit="ConfigModule.saveEditUser(event, '${username}')">
+        <div class="form-group">
+          <label class="form-label">Nombre de Usuario</label>
+          <input type="text" class="form-input" value="${user.username}" disabled style="background: var(--bg-tertiary); cursor: not-allowed;">
+            <p class="text-xs text-muted" style="margin-top: var(--spacing-xs);">El nombre de usuario no puede modificarse</p>
         </div>
-      `;
+        <div class="form-group">
+          <label class="form-label">Nombre Completo</label>
+          <input type="text" name="name" class="form-input" value="${user.name}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Correo Electrónico</label>
+          <input type="email" name="email" class="form-input" value="${user.email}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contraseña</label>
+          <input type="password" name="password" class="form-input" placeholder="Dejar en blanco para no cambiar" minlength="6">
+            <p class="text-xs text-muted" style="margin-top: var(--spacing-xs);">Solo completa si deseas cambiar la contraseña</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Rol del Usuario</label>
+          <select name="role" class="form-select" required>
+            <option value="Admin" ${user.role === 'Admin' ? 'selected' : ''}>Admin</option>
+            <option value="Vendedor" ${user.role === 'Vendedor' ? 'selected' : ''}>Vendedor</option>
+            <option value="Tecnico" ${user.role === 'Tecnico' ? 'selected' : ''}>Tecnico</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Rol del Usuario</label>
+          <select name="role" class="form-select" required>
+            <option value="Admin" ${user.role === 'Admin' ? 'selected' : ''}>Admin</option>
+            <option value="Vendedor" ${user.role === 'Vendedor' ? 'selected' : ''}>Vendedor</option>
+            <option value="Tecnico" ${user.role === 'Tecnico' ? 'selected' : ''}>Tecnico</option>
+          </select>
+        </div>
+        <div class="modal__footer" style="margin: calc(-1 * var(--spacing-lg)); margin-top: var(--spacing-lg); padding: var(--spacing-lg); border-top: 1px solid var(--border-color);">
+          <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
+          <button type="submit" class="btn btn--primary">${Icons.save} Guardar Cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  `;
   };
 
   const saveEditUser = async (event, username) => {
@@ -1175,6 +1505,9 @@ const ConfigModule = (() => {
     openCreateUser,
     handleCreateUser,
     toggleModulesSelector,
-    saveCompanyConfig
+    saveCompanyConfig,
+    openPosModal,
+    handleSavePosModal,
+    deletePosItem
   };
 })();
