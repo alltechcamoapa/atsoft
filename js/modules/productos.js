@@ -1016,16 +1016,31 @@ const ProductosModule = (() => {
     const numFact = compraNumFactura || ((prov ? prov.razonSocial.substring(0, 3).toUpperCase() : 'CMP') + '-' + String(getData('compras').length + 1).padStart(4, '0'));
     const rec = { numFactura: numFact, proveedorId: compraProveedor, proveedorNombre: prov ? prov.razonSocial : 'N/A', fecha: compraFecha, metodo: compraMetodo, comentarios: compraComentarios, items: compraCart.map(i => ({ ...i })), subtotal, descuentoGlobal: compraDescGlobal, total, saldoPendiente: compraMetodo === 'credito' ? total : 0, fechaVencimiento: compraMetodo === 'credito' ? compraFechaVenc : null, transferenciaBanco: compraTransfBanco, transferenciaRef: compraTransfRef, usuario: user()?.name || 'N/A' };
     addRec('compras', rec);
-    // Update product cost prices and stock
+    // Update product cost prices and stock in Supabase and Sync Local Cache
     for (const item of compraCart) {
       if (item.productId && typeof DataService !== 'undefined' && DataService.updateProducto) {
         try {
-          const prod = DataService.getProductoById(item.productId);
+          const prod = await DataService.getProductoById(item.productId);
           if (prod) {
-            const newStock = (prod.stock || prod.cantidad || 0) + item.cantidad;
+            const currentStock = parseInt(prod.stock_actual || prod.stock || prod.cantidad || 0);
+            const newStock = currentStock + item.cantidad;
             await DataService.updateProducto(item.productId, { precioCompra: item.precioCompra, stock: newStock });
+
+            // Sync Local Storage
+            const localProds = getData('productos');
+            const idx = localProds.findIndex(p => p.id === item.productId);
+            if (idx >= 0) {
+              localProds[idx].stock_actual = newStock;
+              localProds[idx].stock = newStock;
+              localProds[idx].precio_costo = item.precioCompra;
+              localProds[idx].precio_venta = item.precioVenta || localProds[idx].precio_venta;
+              setData('productos', localProds);
+            }
           }
-        } catch (e) { console.warn('Error actualizando producto:', e); }
+        } catch (e) {
+          console.warn('Error actualizando producto:', e);
+          alert('Error actualizando stock para: ' + item.nombre);
+        }
       }
     }
     alert('✅ Compra ' + numFact + ' guardada!');

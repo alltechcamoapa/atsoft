@@ -45,8 +45,9 @@ const DataService = (() => {
         if (!data) return null;
         const normalized = {};
         for (const key in data) {
-            normalized[toCamelCase(key)] = data[key];
-            normalized[key] = data[key]; // Preserve original snake_case key for compatibility
+            const camelKey = toCamelCase(key.toLowerCase());
+            normalized[camelKey] = data[key];
+            normalized[key] = data[key]; // Preserve original key for compatibility
         }
 
         // Mapeos crticos de compatibilidad
@@ -55,6 +56,8 @@ const DataService = (() => {
         if (table === 'equipos') normalized.equipoId = data.codigo_equipo || data.id;
         if (table === 'productos') {
             normalized.productoId = data.id;
+            normalized.nombre = data.nombre;
+            normalized.codigo = data.codigo;
             normalized.precio = parseFloat(data.precio_venta || data.precio) || 0;
         }
         if (table === 'proformas') {
@@ -138,11 +141,7 @@ const DataService = (() => {
                 ...normalizeSupabaseData('software', s),
                 cliente: s.cliente ? normalizeSupabaseData('clientes', s.cliente) : null
             }));
-            cache.productos = (productos || []).map(p => ({
-                ...p,
-                productoId: p.id,
-                precio: parseFloat(p.precio_venta) || 0
-            }));
+            cache.productos = (productos || []).map(p => normalizeSupabaseData('productos', p));
             cache.proformas = (proformas || []).map(p => ({
                 ...p,
                 proformaId: p.codigo_proforma,
@@ -1196,9 +1195,14 @@ const DataService = (() => {
     const deleteReparacion = () => { };
     const getProductosSync = () => cache.productos.map(p => ({
         ...p,
+        nombre: p.nombre || '',
+        codigo: p.codigo || '',
+        sku: p.sku || p.codigo || '',
+        inventario: p.stock ?? p.stockActual ?? p.stock_actual ?? 0,
         precioCompra: p.precioCompra || parseFloat(p.precio_costo) || 0,
         precioVenta: p.precioVenta || parseFloat(p.precio_venta) || p.precio || 0,
-        stock: p.stock ?? p.stock_actual ?? 0,
+        precioVentaA: p.precioVentaA || p.precioVenta || parseFloat(p.precio_venta) || 0,
+        stock: p.stock ?? p.stockActual ?? p.stock_actual ?? 0,
         inventarioMinimo: p.inventarioMinimo || p.stock_minimo || 0,
         inventarioMaximo: p.inventarioMaximo || p.inventario_maximo || 0,
         codigoAlt: p.codigoAlt || p.codigo_alternativo || '',

@@ -5,6 +5,7 @@
 
 const ConfigModule = (() => {
   let currentTab = 'perfil'; // Track current tab
+  let currentPosConfigTab = 'transferencia';
 
   const render = () => {
     // Reset to default tab if not explicitly set
@@ -720,169 +721,160 @@ const ConfigModule = (() => {
     localStorage.setItem(key, JSON.stringify(data));
   };
 
+  const setPosConfigTab = (tab) => {
+    currentPosConfigTab = tab;
+    App.refreshCurrentModule();
+  };
+
   const renderPuntoVentaTab = () => {
+    let divisas = getPosData('pos_divisas');
+    if (divisas.length === 0) {
+      divisas = [
+        { tipo: 'Billete', divisa: 'USD', nombre: '100 Dólares', valor: 100 },
+        { tipo: 'Billete', divisa: 'USD', nombre: '50 Dólares', valor: 50 },
+        { tipo: 'Billete', divisa: 'USD', nombre: '20 Dólares', valor: 20 },
+        { tipo: 'Billete', divisa: 'USD', nombre: '10 Dólares', valor: 10 },
+        { tipo: 'Billete', divisa: 'USD', nombre: '5 Dólares', valor: 5 },
+        { tipo: 'Billete', divisa: 'USD', nombre: '2 Dólares', valor: 2 },
+        { tipo: 'Billete', divisa: 'USD', nombre: '1 Dólar', valor: 1 },
+        { tipo: 'Moneda', divisa: 'USD', nombre: '1 Dólar (Moneda)', valor: 1 },
+        { tipo: 'Moneda', divisa: 'USD', nombre: '50 Centavos', valor: 0.50 },
+        { tipo: 'Moneda', divisa: 'USD', nombre: '25 Centavos', valor: 0.25 },
+        { tipo: 'Moneda', divisa: 'USD', nombre: '10 Centavos', valor: 0.10 },
+        { tipo: 'Moneda', divisa: 'USD', nombre: '5 Centavos', valor: 0.05 },
+        { tipo: 'Moneda', divisa: 'USD', nombre: '1 Centavo', valor: 0.01 }
+      ];
+      setPosData('pos_divisas', divisas);
+    }
+
     const transferencias = getPosData('pos_transferencias');
     const tarjetas = getPosData('pos_tarjetas');
     const tarjetasAsumir = getPosData('pos_tarjetas_asumir');
     const extras = getPosData('pos_extrafinanciamiento');
     const listas = getPosData('pos_listas_precios');
 
-    return `
-      <!-- Transferencias -->
-      <div class="card" style="margin-bottom: var(--spacing-lg);">
+    const tabs = [
+      { id: 'transferencia', name: 'Transferencias' },
+      { id: 'tarjeta', name: 'Tarjetas' },
+      { id: 'tarjeta_asumir', name: 'Tarjetas (Asumir)' },
+      { id: 'extra', name: 'Extrafinanciamiento' },
+      { id: 'precio', name: 'Listas de Precio' },
+      { id: 'divisas', name: 'Contador de Divisas' }
+    ];
+
+    let content = '';
+    if (currentPosConfigTab === 'transferencia') {
+      content = `
         <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
           <h4 class="card__title">Tipos de Pago: Transferencia</h4>
-          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('transferencia')">
-            ${Icons.plus || '➕'} Agregar
-          </button>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('transferencia')">${Icons.plus || '➕'} Agregar</button>
         </div>
         <div class="card__body" style="padding:0;">
           ${transferencias.length > 0 ? `
             <table class="data-table">
-              <thead class="data-table__head">
-                <tr><th>Banco</th><th>Divisa</th><th>Número de Cuenta</th><th>Acciones</th></tr>
-              </thead>
+              <thead class="data-table__head"><tr><th>Banco</th><th>Divisa</th><th>Número de Cuenta</th><th>Acciones</th></tr></thead>
               <tbody class="data-table__body">
-                ${transferencias.map((t, i) => `
-                  <tr>
-                    <td>${t.banco}</td>
-                    <td><span class="badge badge--primary">${t.divisa}</span></td>
-                    <td style="font-family:monospace;">${t.numeroCuenta}</td>
-                    <td>
-                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_transferencias', ${i})">${Icons.trash || '🗑️'}</button>
-                    </td>
-                  </tr>
-                `).join('')}
+                ${transferencias.map((t, i) => `<tr><td>${t.banco}</td><td><span class="badge badge--primary">${t.divisa}</span></td><td style="font-family:monospace;">${t.numeroCuenta}</td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_transferencias', ${i})">${Icons.trash || '🗑️'}</button></td></tr>`).join('')}
               </tbody>
             </table>
           ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay cuentas registradas</p>'}
-        </div>
-      </div>
-
-      <!-- Tarjeta -->
-      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        </div>`;
+    } else if (currentPosConfigTab === 'tarjeta') {
+      content = `
         <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
           <h4 class="card__title">Tipos de Pago: Tarjeta</h4>
-          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('tarjeta')">
-            ${Icons.plus || '➕'} Agregar
-          </button>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('tarjeta')">${Icons.plus || '➕'} Agregar</button>
         </div>
         <div class="card__body" style="padding:0;">
           ${tarjetas.length > 0 ? `
             <table class="data-table">
-              <thead class="data-table__head">
-                <tr><th>POS Banco</th><th>% Bancario</th><th>% IR</th><th>% Total Impuesto</th><th>Acciones</th></tr>
-              </thead>
+              <thead class="data-table__head"><tr><th>POS Banco</th><th>% Bancario</th><th>% IR</th><th>% Total Impuesto</th><th>Acciones</th></tr></thead>
               <tbody class="data-table__body">
-                ${tarjetas.map((t, i) => `
-                  <tr>
-                    <td>${t.posBanco}</td>
-                    <td>${Number(t.porcentajeBancario).toFixed(2)}%</td>
-                    <td>${Number(t.porcentajeIR).toFixed(2)}%</td>
-                    <td><strong>${(Number(t.porcentajeBancario) + Number(t.porcentajeIR)).toFixed(2)}%</strong></td>
-                    <td>
-                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_tarjetas', ${i})">${Icons.trash || '🗑️'}</button>
-                    </td>
-                  </tr>
-                `).join('')}
+                ${tarjetas.map((t, i) => `<tr><td>${t.posBanco}</td><td>${Number(t.porcentajeBancario).toFixed(2)}%</td><td>${Number(t.porcentajeIR).toFixed(2)}%</td><td><strong>${(Number(t.porcentajeBancario) + Number(t.porcentajeIR)).toFixed(2)}%</strong></td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_tarjetas', ${i})">${Icons.trash || '🗑️'}</button></td></tr>`).join('')}
               </tbody>
             </table>
           ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay configuraciones de POS registradas</p>'}
-        </div>
-      </div>
-
-      <!-- Tarjeta (Asumir Comisión) -->
-      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        </div>`;
+    } else if (currentPosConfigTab === 'tarjeta_asumir') {
+      content = `
         <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
           <h4 class="card__title">Tipos de Pago: Tarjeta (Asumir Comisión)</h4>
-          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('tarjeta_asumir')">
-            ${Icons.plus || '➕'} Agregar
-          </button>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('tarjeta_asumir')">${Icons.plus || '➕'} Agregar</button>
         </div>
         <div class="card__body" style="padding:0;">
           ${tarjetasAsumir.length > 0 ? `
             <table class="data-table">
-              <thead class="data-table__head">
-                <tr><th>POS Banco (Asumir)</th><th>% Comisión Bancaria</th><th>% IR</th><th>Acciones</th></tr>
-              </thead>
+              <thead class="data-table__head"><tr><th>POS Banco (Asumir)</th><th>% Comisión Bancaria</th><th>% IR</th><th>Acciones</th></tr></thead>
               <tbody class="data-table__body">
-                ${tarjetasAsumir.map((t, i) => `
-                  <tr>
-                    <td>${t.posBanco}</td>
-                    <td>${Number(t.porcentajeBancario).toFixed(2)}%</td>
-                    <td>${Number(t.porcentajeIR).toFixed(2)}%</td>
-                    <td>
-                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_tarjetas_asumir', ${i})">${Icons.trash || '🗑️'}</button>
-                    </td>
-                  </tr>
-                `).join('')}
+                ${tarjetasAsumir.map((t, i) => `<tr><td>${t.posBanco}</td><td>${Number(t.porcentajeBancario).toFixed(2)}%</td><td>${Number(t.porcentajeIR).toFixed(2)}%</td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_tarjetas_asumir', ${i})">${Icons.trash || '🗑️'}</button></td></tr>`).join('')}
               </tbody>
             </table>
           ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay opciones de Tarjeta (Asumir Comisión) registradas</p>'}
-        </div>
-      </div>
-
-      <!-- Extrafinanciamiento -->
-      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        </div>`;
+    } else if (currentPosConfigTab === 'extra') {
+      content = `
         <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
           <h4 class="card__title">Tipos de Pago: Extrafinanciamiento</h4>
-          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('extra')">
-            ${Icons.plus || '➕'} Agregar
-          </button>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('extra')">${Icons.plus || '➕'} Agregar</button>
         </div>
         <div class="card__body" style="padding:0;">
           ${extras.length > 0 ? `
             <table class="data-table">
-              <thead class="data-table__head">
-                <tr><th>Banco</th><th>Plazo (Meses)</th><th>% Bancario</th><th>% IR</th><th>% Total Impuesto</th><th>Acciones</th></tr>
-              </thead>
+              <thead class="data-table__head"><tr><th>Banco</th><th>Plazo (Meses)</th><th>% Bancario</th><th>% IR</th><th>% Total Impuesto</th><th>Acciones</th></tr></thead>
               <tbody class="data-table__body">
-                ${extras.map((t, i) => `
-                  <tr>
-                    <td>${t.banco}</td>
-                    <td><span class="badge badge--neutral">${t.plazoMeses} meses</span></td>
-                    <td>${Number(t.porcentajeBancario).toFixed(2)}%</td>
-                    <td>${Number(t.porcentajeIR).toFixed(2)}%</td>
-                    <td><strong>${(Number(t.porcentajeBancario) + Number(t.porcentajeIR)).toFixed(2)}%</strong></td>
-                    <td>
-                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_extrafinanciamiento', ${i})">${Icons.trash || '🗑️'}</button>
-                    </td>
-                  </tr>
-                `).join('')}
+                ${extras.map((t, i) => `<tr><td>${t.banco}</td><td><span class="badge badge--neutral">${t.plazoMeses} meses</span></td><td>${Number(t.porcentajeBancario).toFixed(2)}%</td><td>${Number(t.porcentajeIR).toFixed(2)}%</td><td><strong>${(Number(t.porcentajeBancario) + Number(t.porcentajeIR)).toFixed(2)}%</strong></td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_extrafinanciamiento', ${i})">${Icons.trash || '🗑️'}</button></td></tr>`).join('')}
               </tbody>
             </table>
           ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay extrafinanciamientos registrados</p>'}
-        </div>
-      </div>
-
-      <!-- Lista de Precios -->
-      <div class="card">
+        </div>`;
+    } else if (currentPosConfigTab === 'precio') {
+      content = `
         <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
           <h4 class="card__title">Catálogo: Lista de Precios</h4>
-          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('precio')">
-            ${Icons.plus || '➕'} Agregar
-          </button>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('precio')">${Icons.plus || '➕'} Agregar</button>
         </div>
         <div class="card__body" style="padding:0;">
           ${listas.length > 0 ? `
             <table class="data-table">
-              <thead class="data-table__head">
-                <tr><th>Código Precio</th><th>Nombre de Precio</th><th>Acciones</th></tr>
-              </thead>
+              <thead class="data-table__head"><tr><th>Código Precio</th><th>Nombre de Precio</th><th>Acciones</th></tr></thead>
               <tbody class="data-table__body">
-                ${listas.map((t, i) => `
-                  <tr>
-                    <td style="font-weight:600; color:var(--primary);">${t.codigoPrecio}</td>
-                    <td>${t.nombrePrecio}</td>
-                    <td>
-                      <button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_listas_precios', ${i})">${Icons.trash || '🗑️'}</button>
-                    </td>
-                  </tr>
-                `).join('')}
+                ${listas.map((t, i) => `<tr><td style="font-weight:600; color:var(--primary);">${t.codigoPrecio}</td><td>${t.nombrePrecio}</td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_listas_precios', ${i})">${Icons.trash || '🗑️'}</button></td></tr>`).join('')}
               </tbody>
             </table>
           ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay listas de precios registradas</p>'}
+        </div>`;
+    } else if (currentPosConfigTab === 'divisas') {
+      content = `
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h4 class="card__title">Contador de Divisas</h4>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openPosModal('divisas')">${Icons.plus || '➕'} Agregar</button>
         </div>
+        <div class="card__body" style="padding:0;">
+          ${divisas.length > 0 ? `
+            <table class="data-table">
+              <thead class="data-table__head"><tr><th>Tipo</th><th>Divisa</th><th>Nombre</th><th>Valor</th><th>Acciones</th></tr></thead>
+              <tbody class="data-table__body">
+                ${divisas.map((t, i) => `<tr>
+                  <td><span class="badge ${t.tipo === 'Billete' ? 'badge--primary' : 'badge--neutral'}">${t.tipo}</span></td>
+                  <td>${t.divisa}</td>
+                  <td>${t.nombre}</td>
+                  <td style="font-weight:bold;">${Number(t.valor).toFixed(2)}</td>
+                  <td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_divisas', ${i})">${Icons.trash || '🗑️'}</button></td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay divisas registradas</p>'}
+        </div>`;
+    }
+
+    return `
+      <!-- Tabs Navigation -->
+      <div style="display:flex; gap:12px; margin-bottom:var(--spacing-md); flex-wrap:wrap; background:var(--bg-secondary); padding:10px; border-radius:12px; border:1px solid var(--border-color);">
+        ${tabs.map(t => `<button class="btn btn--sm ${currentPosConfigTab === t.id ? 'btn--primary' : 'btn--ghost'}" onclick="ConfigModule.setPosConfigTab('${t.id}')">${t.name}</button>`).join('')}
+      </div>
+      <!-- Tab Content -->
+      <div class="card" style="margin-bottom: var(--spacing-lg);">
+        ${content}
       </div>
     `;
   };
@@ -997,6 +989,33 @@ const ConfigModule = (() => {
         <div class="form-group">
           <label class="form-label form-label--required">Nombre de Precio</label>
           <input type="text" name="nombrePrecio" class="form-input" required placeholder="Ej: General / Mayoreo">
+        </div>
+      `;
+    } else if (type === 'divisas') {
+      title = 'Agregar Divisa (Billete/Moneda)';
+      formContent = `
+        <input type="hidden" name="posType" value="pos_divisas">
+        <div class="form-group">
+          <label class="form-label form-label--required">Divisa (NIO/USD)</label>
+          <select name="divisa" class="form-select" required>
+            <option value="NIO">Córdobas (C$)</option>
+            <option value="USD">Dólares ($)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Tipo</label>
+          <select name="tipo" class="form-select" required>
+            <option value="Billete">Billete</option>
+            <option value="Moneda">Moneda</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Nombre</label>
+          <input type="text" name="nombre" class="form-input" required placeholder="Ej: 500 Córdobas">
+        </div>
+        <div class="form-group">
+          <label class="form-label form-label--required">Valor (Número)</label>
+          <input type="number" step="0.01" name="valor" class="form-input" required placeholder="500">
         </div>
       `;
     }
@@ -1508,6 +1527,7 @@ const ConfigModule = (() => {
     saveCompanyConfig,
     openPosModal,
     handleSavePosModal,
-    deletePosItem
+    deletePosItem,
+    setPosConfigTab
   };
 })();

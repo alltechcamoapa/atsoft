@@ -1,5 +1,5 @@
 /**
- * ALLTECH - Módulo de Ventas (POS)
+ * ALLTECH - Módulo de Gestión de Ventas (POS)
  */
 const VentasModule = (() => {
   const IVA_RATE = 0.15;
@@ -14,6 +14,8 @@ const VentasModule = (() => {
   let selectedCurrency = 'NIO';
   let posOverlayOpen = false;
   let posMinimized = false;
+  let consultorQuery = '';
+  let consultorResult = null;
   let posSubView = 'pos';
   let selectedCartRow = -1;
   let posComment = '';
@@ -24,6 +26,11 @@ const VentasModule = (() => {
   let posSelectedConfigIdx = 0;
   let posSelectedPriceList = '';
   let posTarjetaModo = 'cobrar'; // 'cobrar' o 'asumir'
+  let posPayInUSD = false;
+  let posDocReference = '';
+  let posMultiplePayments = [{ metodo: 'efectivo', monto: 0, referencia: '', configIdx: 0 }];
+  let cierreConteoNio = '';
+  let cierreConteoUsd = '';
 
   const getPosDataUncached = (k) => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
 
@@ -58,11 +65,47 @@ const VentasModule = (() => {
     return { totalDia, totalMes, facturasHoy, totalCaja, costoTotal, gananciaB: totalMes - costoTotal, ventasDia, ventasMes };
   };
 
-  const getProducts = () => (typeof DataService !== 'undefined' && DataService.getProductosSync) ? DataService.getProductosSync() : [];
+  const syncProductStock = async (id, newStock) => {
+    try {
+      if (typeof DataService !== 'undefined' && DataService.updateProducto) {
+        await DataService.updateProducto(id, { stock: newStock });
+      }
+      const localProds = getPosDataUncached('productos');
+      const idx = localProds.findIndex(p => p.id === id);
+      if (idx >= 0) {
+        localProds[idx].stock_actual = newStock;
+        localProds[idx].stock = newStock;
+        localStorage.setItem('productos', JSON.stringify(localProds));
+      }
+    } catch (e) {
+      console.warn('Error syncing stock for ' + id + ':', e);
+    }
+  };
+
+  const getProducts = () => {
+    try {
+      if (typeof DataService !== 'undefined' && DataService.getProductosSync) {
+        const dsProds = DataService.getProductosSync();
+        if (dsProds && dsProds.length > 0) return dsProds;
+      }
+      if (typeof ProductosModule !== 'undefined' && ProductosModule.getProducts) {
+        const pmProds = ProductosModule.getProducts();
+        if (pmProds && pmProds.length > 0) return pmProds;
+      }
+      // Último recurso: intentar leer del caché directo de localStorage o devolver []
+      return JSON.parse(localStorage.getItem('productos') || '[]');
+    } catch (e) {
+      console.error('Error fetching products in VentasModule:', e);
+      return [];
+    }
+  };
   const getClients = () => (typeof DataService !== 'undefined' && DataService.getClientesSync) ? DataService.getClientesSync() : [];
 
 
   const navigateSidebar = (v) => {
+    if (v !== 'consultor-precios') { consultorQuery = ''; consultorResult = null; }
+    if (v !== 'cotizaciones') { cotizacionQuery = ''; cotizacionSelected = null; }
+    if (v !== 'pos-devoluciones') { devolucionQuery = ''; devolucionSelectedId = null; devolucionProdQuery = ''; devolucionSelectedItems = {}; }
     if (v === 'entrada-caja') { posActionModal = 'entrada'; posActionData = null; App.render(); return; }
     if (v === 'salida-caja') { posActionModal = 'salida'; posActionData = null; App.render(); return; }
     if (v === 'pos-clientes') { posOpenModal = 'clientes'; App.render(); return; }
@@ -70,12 +113,13 @@ const VentasModule = (() => {
     if (v === 'catalogo') { posOpenModal = 'catalogo'; App.render(); return; }
     if (v === 'pos-devoluciones') { posOpenModal = 'devoluciones'; App.render(); return; }
     if (v === 'consultor-precios') { posOpenModal = 'consultor-precios'; App.render(); return; }
+    if (v === 'cotizaciones') { posOpenModal = 'cotizaciones'; App.render(); return; }
     if (v === 'pos') { posOpenModal = null; posSubView = 'pos'; App.render(); return; }
     navigateTo(v);
   };
 
   const navigateTo = (v) => {
-    if (['pos', 'consultor-precios', 'pos-devoluciones', 'apartados', 'cotizaciones', 'cerrar-turno'].includes(v)) {
+    if (['pos', 'pos-devoluciones', 'apartados', 'cerrar-turno'].includes(v)) {
       posSubView = v;
       if (!posOverlayOpen) { posOverlayOpen = true; posMinimized = false; }
       renderPOSOverlay();
@@ -85,10 +129,14 @@ const VentasModule = (() => {
     App.render();
   };
 
-  const openPOSOverlay = () => { posOverlayOpen = true; posMinimized = false; posSubView = 'pos'; renderPOSOverlay(); };
+  const openPOSOverlay = () => {
+    posOverlayOpen = true; posMinimized = false; posSubView = 'pos'; renderPOSOverlay();
+    try { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); } catch (e) { }
+  };
   const closePOSOverlay = () => {
     if (cart.length > 0 && !confirm('¿Cerrar el Punto de Venta? Los productos en el carrito se mantendrán.')) return;
     posOverlayOpen = false; posMinimized = false; removePOSOverlay();
+    try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) { }
   };
   const restorePOS = () => { posMinimized = false; const overlay = document.getElementById('posOverlay'); if (overlay) overlay.classList.remove('pos-overlay--minimized'); removeTaskbarIndicator(); renderPOSOverlay(); };
   const removePOSOverlay = () => { const overlay = document.getElementById('posOverlay'); if (overlay) overlay.remove(); removeTaskbarIndicator(); };
@@ -111,7 +159,7 @@ const VentasModule = (() => {
       focusData = { id: activeEl.id, className: activeEl.className, s: activeEl.selectionStart, e: activeEl.selectionEnd };
     }
 
-    const posViews = { pos: renderPOS, 'consultor-precios': renderConsultorPrecios, 'pos-devoluciones': renderPOSDevoluciones, apartados: renderApartados, cotizaciones: renderCotizaciones, 'cerrar-turno': renderCerrarTurno };
+    const posViews = { pos: renderPOS, 'pos-devoluciones': renderPOSDevoluciones, apartados: renderApartados, 'cerrar-turno': renderCerrarTurno };
     const content = (posViews[posSubView] || renderPOS)();
     overlay.innerHTML = `<div class="pos-overlay__titlebar"><div class="pos-overlay__titlebar-left"><span class="pos-overlay__titlebar-icon">🛒</span><span class="pos-overlay__titlebar-title">ALLTECH - Punto de Venta</span></div><div class="pos-overlay__titlebar-right"><button class="pos-overlay__titlebar-btn" onclick="VentasModule.showShortcutsHelp()" title="Atajos (F1)">❓</button><button class="pos-overlay__titlebar-btn pos-overlay__titlebar-btn--close" onclick="VentasModule.closePOSOverlay()">✕</button></div></div><div class="pos-overlay__body">${content}</div>`;
     removeTaskbarIndicator();
@@ -133,7 +181,32 @@ const VentasModule = (() => {
       }
     }
 
-    if (!posOpenModal) setTimeout(() => document.getElementById('posSearch')?.focus(), 100);
+    // Auto-focus: prioritize action modal input, then client search modal, then product search
+    setTimeout(() => {
+      const actionInput = document.getElementById('posActionInput');
+      if (actionInput) {
+        if (actionInput.type !== 'hidden') { actionInput.focus(); actionInput.select(); }
+        else {
+          // For delete modal (hidden input), focus the submit button instead
+          const submitBtn = actionInput.closest('form')?.querySelector('button[type="submit"]');
+          if (submitBtn) submitBtn.focus();
+        }
+        return;
+      }
+
+      if (posActionModal === 'contador-divisas') {
+        const firstDivisaInput = overlay.querySelector('.pos-action-modal__body input[tabindex="1"]');
+        if (firstDivisaInput) {
+          firstDivisaInput.focus();
+          firstDivisaInput.select();
+          return;
+        }
+      }
+
+      const clientModalInput = document.getElementById('posClientModalSearch');
+      if (clientModalInput) { clientModalInput.focus(); return; }
+      if (!posOpenModal) document.getElementById('posSearch')?.focus();
+    }, 100);
   };
 
   const openTurno = () => {
@@ -147,23 +220,93 @@ const VentasModule = (() => {
     posSubView = 'pos'; openPOSOverlay();
   };
   const closeTurno = () => { posSubView = 'cerrar-turno'; renderPOSOverlay(); };
+  const cancelCloseTurno = () => { posSubView = 'pos'; renderPOSOverlay(); };
+  const updateConteoNio = (v) => { cierreConteoNio = v; };
+  const updateConteoUsd = (v) => { cierreConteoUsd = v; };
+  const promptContadorDivisas = () => { posActionModal = 'contador-divisas'; renderPOSOverlay(); };
+
+  const liveCalcDivisas = () => {
+    const form = document.getElementById('formContadorDivisas');
+    if (!form) return;
+    const formData = new FormData(form);
+    let totalNio = 0;
+    let totalUsd = 0;
+    for (let [key, val] of formData.entries()) {
+      if (key.startsWith('nio_')) {
+        totalNio += (parseInt(val) || 0) * parseFloat(key.replace('nio_', ''));
+      } else if (key.startsWith('usd_')) {
+        totalUsd += (parseInt(val) || 0) * parseFloat(key.replace('usd_', ''));
+      }
+    }
+    const nioTxt = document.getElementById('lblTotalDivisasNio');
+    const usdTxt = document.getElementById('lblTotalDivisasUsd');
+    if (nioTxt) nioTxt.innerText = `Total: C$ ${totalNio.toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (usdTxt) usdTxt.innerText = `Total: $ ${totalUsd.toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const submitContadorDivisas = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    let totalNio = 0;
+    let totalUsd = 0;
+    for (let [key, val] of formData.entries()) {
+      if (key.startsWith('nio_')) {
+        const qty = parseInt(val) || 0;
+        const valObj = parseFloat(key.replace('nio_', ''));
+        totalNio += qty * valObj;
+      } else if (key.startsWith('usd_')) {
+        const qty = parseInt(val) || 0;
+        const valObj = parseFloat(key.replace('usd_', ''));
+        totalUsd += qty * valObj;
+      }
+    }
+    cierreConteoNio = totalNio.toFixed(2);
+    cierreConteoUsd = totalUsd.toFixed(2);
+    posActionModal = null;
+    renderPOSOverlay();
+  };
+
   const confirmCloseTurno = () => {
     if (!turnoActivo) return;
     const m = getMetrics();
     const movs = getData('cajaMovs').filter(x => (x.fecha || '').startsWith(today()));
     const entradas = movs.filter(x => x.tipo === 'ingreso').reduce((s, x) => s + parseFloat(x.monto || 0), 0);
     const salidas = movs.filter(x => x.tipo === 'retiro').reduce((s, x) => s + parseFloat(x.monto || 0), 0);
-    addRec('cortes', { fecha: new Date().toISOString(), fondo_inicial: turnoActivo.fondoInicial, total_ventas: m.totalDia, entradas, salidas, total_caja: turnoActivo.fondoInicial + m.totalDia + entradas - salidas, num_ventas: m.facturasHoy, usuario: turnoActivo.usuario });
+    addRec('cortes', {
+      fecha: new Date().toISOString(),
+      numero: turnoActivo.numero,
+      usuario: turnoActivo.usuario,
+      dispositivo: /Mobi|Android/i.test(navigator.userAgent) ? 'Dispositivo Móvil' : 'PC Escritorio',
+      fondo_inicial: turnoActivo.fondoInicial,
+      total_ventas: m.totalDia,
+      entradas,
+      salidas,
+      total_caja: turnoActivo.fondoInicial + m.totalDia + entradas - salidas,
+      num_ventas: m.facturasHoy
+    });
     turnoActivo = null; localStorage.removeItem('vnt_turno'); cart = []; cashReceived = 0;
+    cierreConteoNio = ''; cierreConteoUsd = '';
     alert('✅ Turno cerrado exitosamente');
     closePOSOverlay(); currentView = 'dashboard'; App.render();
   };
 
   const render = () => {
-    const views = { dashboard: renderDashboard, catalogo: renderCatalogo, 'productos-vendidos': renderProductosVendidos, clientes: renderClientes, abonos: renderAbonos, reimpresion: renderReimpresion, cortes: renderCortes, devoluciones: renderDevoluciones, reportes: renderReportes, ganancias: renderGanancias };
+    const views = { dashboard: renderDashboard, catalogo: renderCatalogo, 'productos-vendidos': renderProductosVendidos, clientes: renderClientes, abonos: renderAbonos, reimpresion: renderReimpresion, cortes: renderCortes, devoluciones: renderDevoluciones, reportes: renderReportes, ganancias: renderGanancias, 'turnos-abiertos': renderTurnosAbiertos };
     const html = (views[currentView] || renderDashboard)();
     if (posOverlayOpen && !posMinimized) setTimeout(() => renderPOSOverlay(), 50); else if (posOverlayOpen && posMinimized) setTimeout(() => renderTaskbarIndicator(), 50);
     return html;
+  };
+
+  const renderTurnosAbiertos = () => {
+    return `
+      <div class="ventas-header">
+        <div class="ventas-header__title">${Icons.users} Turnos Abiertos</div>
+        ${backBtn()}
+      </div>
+      <div style="background:var(--bg-primary);border-radius:12px;padding:24px;box-shadow:0 4px 6px rgba(0,0,0,0.05);min-height:500px;">
+        ${renderActiveUsersPanel()}
+      </div>
+    `;
   };
 
   const tile = (id, icon, name, desc, color, bg, badge) => `<div class="ventas-tile" onclick="${(id === 'abrir-entrada' || id === 'abrir-salida') ? `VentasModule.navigateSidebar('${id.replace('abrir-', '') + '-caja'}')` : `VentasModule.navigateTo('${id}')`}">
@@ -171,11 +314,220 @@ const VentasModule = (() => {
   const backBtn = () => `<button class="btn btn--ghost btn--sm" onclick="VentasModule.navigateTo('dashboard')" style="margin-bottom:var(--spacing-md);">⬅ Volver al Panel</button>`;
 
 
+  const getActiveShiftUsers = () => {
+    // Recopilar turnos activos de todos los usuarios conectados
+    const activeUsers = [];
+    const currentUser = user();
+    const allVentasHoy = getData('ventas').filter(v => (v.fecha || '').startsWith(today()));
+
+    // Revisar turno activo del usuario actual
+    if (turnoActivo) {
+      const userVentas = allVentasHoy.filter(v => v.vendedor === turnoActivo.usuario);
+      const ventasPorMetodo = {
+        efectivo: userVentas.filter(v => v.metodo === 'efectivo').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+        tarjeta: userVentas.filter(v => v.metodo === 'tarjeta').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+        transferencia: userVentas.filter(v => v.metodo === 'transferencia').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+        credito: userVentas.filter(v => v.metodo === 'credito').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+        extrafinanciamiento: userVentas.filter(v => v.metodo === 'extrafinanciamiento').reduce((s, v) => s + parseFloat(v.total || 0), 0)
+      };
+      const totalVentas = userVentas.reduce((s, v) => s + parseFloat(v.total || 0), 0);
+      const deviceName = detectDeviceName();
+      activeUsers.push({
+        nombre: turnoActivo.usuario || currentUser?.name || 'N/A',
+        turnoNumero: turnoActivo.numero,
+        horaApertura: turnoActivo.apertura,
+        fondoInicial: turnoActivo.fondoInicial,
+        dispositivo: deviceName,
+        cantidadVentas: userVentas.length,
+        totalVentas,
+        ventasPorMetodo,
+        isCurrentUser: true,
+        estado: 'activo'
+      });
+    }
+
+    // Intentar leer turnos de otros usuario almacenados (multi-sesión)
+    try {
+      const otherShifts = JSON.parse(localStorage.getItem('vnt_active_shifts') || '[]');
+      otherShifts.forEach(shift => {
+        if (turnoActivo && shift.usuario === turnoActivo.usuario) return; // ignorar duplicado
+        const shiftVentas = allVentasHoy.filter(v => v.vendedor === shift.usuario);
+        const ventasPorMetodo = {
+          efectivo: shiftVentas.filter(v => v.metodo === 'efectivo').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+          tarjeta: shiftVentas.filter(v => v.metodo === 'tarjeta').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+          transferencia: shiftVentas.filter(v => v.metodo === 'transferencia').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+          credito: shiftVentas.filter(v => v.metodo === 'credito').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+          extrafinanciamiento: shiftVentas.filter(v => v.metodo === 'extrafinanciamiento').reduce((s, v) => s + parseFloat(v.total || 0), 0)
+        };
+        activeUsers.push({
+          nombre: shift.usuario,
+          turnoNumero: shift.numero,
+          horaApertura: shift.apertura,
+          fondoInicial: shift.fondoInicial,
+          dispositivo: shift.dispositivo || 'Desconocido',
+          cantidadVentas: shiftVentas.length,
+          totalVentas: shiftVentas.reduce((s, v) => s + parseFloat(v.total || 0), 0),
+          ventasPorMetodo,
+          isCurrentUser: false,
+          estado: 'activo'
+        });
+      });
+    } catch (ignored) { /* no hay turnos de otros usuarios */ }
+
+    return activeUsers;
+  };
+
+  const detectDeviceName = () => {
+    const ua = navigator.userAgent;
+    let deviceType = 'PC Escritorio';
+    let browser = 'Navegador';
+    let osName = 'Sistema';
+
+    // Detectar SO
+    if (/Windows NT/i.test(ua)) osName = 'Windows';
+    else if (/Mac OS X/i.test(ua)) osName = 'macOS';
+    else if (/Linux/i.test(ua)) osName = 'Linux';
+    else if (/Android/i.test(ua)) osName = 'Android';
+    else if (/iPhone|iPad/i.test(ua)) osName = 'iOS';
+
+    // Detectar tipo de dispositivo
+    if (/Mobi|Android|iPhone/i.test(ua)) deviceType = '📱 Móvil';
+    else if (/iPad|Tablet/i.test(ua)) deviceType = '📲 Tablet';
+    else deviceType = '🖥️ PC';
+
+    // Detectar navegador
+    if (/Edg/i.test(ua)) browser = 'Edge';
+    else if (/Chrome/i.test(ua)) browser = 'Chrome';
+    else if (/Firefox/i.test(ua)) browser = 'Firefox';
+    else if (/Safari/i.test(ua)) browser = 'Safari';
+
+    return `${deviceType} · ${osName} · ${browser}`;
+  };
+
+  const syncActiveShift = () => {
+    // Sincronizar turno activo en lista compartida para multi-sesión
+    if (!turnoActivo) return;
+    try {
+      const shifts = JSON.parse(localStorage.getItem('vnt_active_shifts') || '[]');
+      const existingIdx = shifts.findIndex(s => s.usuario === turnoActivo.usuario);
+      const shiftData = {
+        usuario: turnoActivo.usuario,
+        numero: turnoActivo.numero,
+        apertura: turnoActivo.apertura,
+        fondoInicial: turnoActivo.fondoInicial,
+        dispositivo: detectDeviceName(),
+        lastSeen: new Date().toISOString()
+      };
+      if (existingIdx >= 0) shifts[existingIdx] = shiftData;
+      else shifts.push(shiftData);
+      localStorage.setItem('vnt_active_shifts', JSON.stringify(shifts));
+    } catch (ignored) { /* error de sincronización ignorado */ }
+  };
+
+  // Sincronizar turno activo periódicamente
+  if (turnoActivo) syncActiveShift();
+
+  const renderActiveUsersPanel = () => {
+    const activeUsers = getActiveShiftUsers();
+    if (activeUsers.length === 0) {
+      return `
+        <div class="ventas-active-users-panel">
+          <div class="ventas-active-users-panel__header">
+            <span style="display:flex;align-items:center;gap:8px;font-size:1.1rem;font-weight:800;">
+              <span style="width:10px;height:10px;background:#94a3b8;border-radius:50%;display:inline-block;"></span>
+              Usuarios en Línea — Turnos Abiertos
+            </span>
+          </div>
+          <div style="padding:2rem;text-align:center;color:var(--text-muted);">
+            <div style="font-size:3rem;margin-bottom:0.75rem;opacity:0.4;">👤</div>
+            <p style="font-weight:600;margin:0;">No hay turnos abiertos actualmente</p>
+            <p style="font-size:0.85rem;margin:0.25rem 0 0;">Abra un turno en Punto de Venta para comenzar.</p>
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="ventas-active-users-panel">
+        <div class="ventas-active-users-panel__header">
+          <span style="display:flex;align-items:center;gap:8px;font-size:1.1rem;font-weight:800;">
+            <span class="ventas-pulse-dot"></span>
+            Usuarios en Línea — ${activeUsers.length} Turno${activeUsers.length > 1 ? 's' : ''} Abierto${activeUsers.length > 1 ? 's' : ''}
+          </span>
+          <span style="font-size:0.8rem;color:var(--text-muted);font-weight:600;">${new Date().toLocaleTimeString('es-NI', { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <div class="ventas-active-users-grid">
+          ${activeUsers.map(usr => {
+      const tiempoActivo = usr.horaApertura ? getTimeDifference(usr.horaApertura) : 'N/A';
+      return `
+            <div class="ventas-user-card ${usr.isCurrentUser ? 'ventas-user-card--current' : ''}">
+              <div class="ventas-user-card__header">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div class="ventas-user-card__avatar" style="background:${usr.isCurrentUser ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #1d4ed8)'};">
+                    ${usr.nombre.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style="font-weight:800;font-size:0.95rem;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+                      ${usr.nombre}
+                      ${usr.isCurrentUser ? '<span style="background:#10b981;color:white;font-size:9px;padding:2px 6px;border-radius:10px;font-weight:700;">TÚ</span>' : ''}
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Turno #${usr.turnoNumero}</div>
+                  </div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Tiempo activo</div>
+                  <div style="font-size:0.9rem;font-weight:700;color:var(--color-primary-600);">${tiempoActivo}</div>
+                </div>
+              </div>
+              
+              <div class="ventas-user-card__device">
+                <span style="opacity:0.7;">📍</span> ${usr.dispositivo}
+              </div>
+
+              <div class="ventas-user-card__stats">
+                <div class="ventas-user-card__stat-item">
+                  <div class="ventas-user-card__stat-value" style="color:#10b981;">${usr.cantidadVentas}</div>
+                  <div class="ventas-user-card__stat-label">Ventas</div>
+                </div>
+                <div class="ventas-user-card__stat-item">
+                  <div class="ventas-user-card__stat-value" style="color:#3b82f6;">C$${fmt(usr.totalVentas)}</div>
+                  <div class="ventas-user-card__stat-label">Total Vendido</div>
+                </div>
+                <div class="ventas-user-card__stat-item">
+                  <div class="ventas-user-card__stat-value" style="color:#f59e0b;">C$${fmt(usr.fondoInicial)}</div>
+                  <div class="ventas-user-card__stat-label">Fondo Inicial</div>
+                </div>
+              </div>
+
+              <div class="ventas-user-card__payments">
+                <div style="font-size:0.7rem;text-transform:uppercase;font-weight:800;color:var(--text-muted);letter-spacing:0.5px;margin-bottom:6px;">Formas de Pago</div>
+                <div class="ventas-user-card__payment-grid">
+                  ${usr.ventasPorMetodo.efectivo > 0 ? `<div class="ventas-payment-chip ventas-payment-chip--efectivo"><span>💵</span><span>C$${fmt(usr.ventasPorMetodo.efectivo)}</span></div>` : ''}
+                  ${usr.ventasPorMetodo.tarjeta > 0 ? `<div class="ventas-payment-chip ventas-payment-chip--tarjeta"><span>💳</span><span>C$${fmt(usr.ventasPorMetodo.tarjeta)}</span></div>` : ''}
+                  ${usr.ventasPorMetodo.transferencia > 0 ? `<div class="ventas-payment-chip ventas-payment-chip--transferencia"><span>🏦</span><span>C$${fmt(usr.ventasPorMetodo.transferencia)}</span></div>` : ''}
+                  ${usr.ventasPorMetodo.credito > 0 ? `<div class="ventas-payment-chip ventas-payment-chip--credito"><span>📋</span><span>C$${fmt(usr.ventasPorMetodo.credito)}</span></div>` : ''}
+                  ${usr.ventasPorMetodo.extrafinanciamiento > 0 ? `<div class="ventas-payment-chip ventas-payment-chip--extra"><span>📈</span><span>C$${fmt(usr.ventasPorMetodo.extrafinanciamiento)}</span></div>` : ''}
+                  ${Object.values(usr.ventasPorMetodo).every(v => v === 0) ? '<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic;">Sin ventas registradas</div>' : ''}
+                </div>
+              </div>
+            </div>`;
+    }).join('')}
+        </div>
+      </div>`;
+  };
+
+  const getTimeDifference = (isoDate) => {
+    const diff = Date.now() - new Date(isoDate).getTime();
+    const hours = Math.floor(diff / 3600000);
+    const minutes = Math.floor((diff % 3600000) / 60000);
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
   const renderDashboard = () => {
     const m = getMetrics();
     const devs = getData('devoluciones').filter(d => (d.fecha || '').startsWith(today())).length;
     return `
-      <div class="ventas-header"><div class="ventas-header__title">${Icons.shoppingCart} Módulo de Ventas</div>
+      <div class="ventas-header"><div class="ventas-header__title">${Icons.shoppingCart} Gestión de Ventas</div>
         <div class="ventas-kpis">
           <div class="ventas-kpi" onclick="VentasModule.navigateTo('pos')"><div class="ventas-kpi__label">Ventas del Día</div><div class="ventas-kpi__value" style="color:#34d399;">C$${fmt(m.totalDia)}</div><div class="ventas-kpi__sub">${m.facturasHoy} facturas</div></div>
           <div class="ventas-kpi" onclick="VentasModule.navigateTo('catalogo')"><div class="ventas-kpi__label">Ventas del Mes</div><div class="ventas-kpi__value" style="color:#60a5fa;">C$${fmt(m.totalMes)}</div><div class="ventas-kpi__sub">Acumulado</div></div>
@@ -185,8 +537,10 @@ const VentasModule = (() => {
           <div class="ventas-kpi" onclick="VentasModule.navigateTo('devoluciones')"><div class="ventas-kpi__label">Devoluciones</div><div class="ventas-kpi__value" style="color:#f472b6;">${devs}</div><div class="ventas-kpi__sub">Hoy</div></div>
         </div>
       </div>
+
       <div class="ventas-grid">
         <div class="ventas-tile ventas-tile--pos" onclick="VentasModule.openPOSOverlay()"><div class="ventas-tile__icon" style="background:#ecfdf5;color:#059669;">${Icons.shoppingCart}</div><div class="ventas-tile__name">Punto de Venta</div><div class="ventas-tile__desc">POS rápido con atajos</div><div class="ventas-tile__badge" style="background:#ecfdf5;color:#059669;">F12 - Abrir</div></div>
+        <div class="ventas-tile" onclick="VentasModule.navigateTo('turnos-abiertos')"><div class="ventas-tile__icon" style="background:#f0f9ff;color:#0ea5e9;">${Icons.users}</div><div class="ventas-tile__name">Turnos Abiertos</div><div class="ventas-tile__desc">Usuarios en línea</div><div class="ventas-tile__badge" style="background:#f0f9ff;color:#0ea5e9;">Operando</div></div>
         ${tile('catalogo', Icons.list, 'Catálogo de Ventas', 'Historial completo', '#3b82f6', '#eff6ff', m.ventasMes.length + ' ventas')}
         ${tile('productos-vendidos', Icons.package, 'Productos Vendidos', 'Análisis de rotación', '#8b5cf6', '#f5f3ff', 'Analítica')}
         ${tile('clientes', Icons.users, 'Clientes', 'Créditos y saldos', '#0ea5e9', '#f0f9ff', getClients().length + ' clientes')}
@@ -206,16 +560,23 @@ const VentasModule = (() => {
   const renderPOS = () => {
     if (!turnoActivo) return renderOpenTurno();
     const clients = getClients();
-    const subtotal = cart.reduce((s, i) => s + (i.precio * i.cantidad), 0);
-    const descuento = cart.reduce((s, i) => s + (i.descuento || 0), 0);
-    const iva = (subtotal - descuento - globalDiscount) * IVA_RATE;
-    const total = subtotal - descuento - globalDiscount + iva;
+    const tipoCambio = (() => { try { const cfg = DataService.getConfig(); return parseFloat(cfg.tipoCambio) || 36.62; } catch (e) { return 36.62; } })();
+    const convertPrice = (precio) => selectedCurrency === 'USD' ? precio / tipoCambio : precio;
+    const subtotalBase = cart.reduce((s, i) => s + (i.precio * i.cantidad), 0);
+    const descuentoBase = cart.reduce((s, i) => s + (i.descuento || 0), 0);
+    const subtotal = convertPrice(subtotalBase);
+    const descuento = convertPrice(descuentoBase);
+    const globalDiscountConverted = convertPrice(globalDiscount);
+    const iva = (subtotal - descuento - globalDiscountConverted) * IVA_RATE;
+    const retencion = (() => { const cl = selectedClient ? clients.find(c => c.id === selectedClient) : null; return (cl && (cl.retencion === true || cl.aplicaRetencion === true)) ? (subtotal - descuento - globalDiscountConverted) * 0.02 : 0; })();
+    const total = subtotal - descuento - globalDiscountConverted + iva - retencion;
     const currSymbol = selectedCurrency === 'USD' ? '$' : 'C$';
+    const tcLabel = selectedCurrency === 'USD' ? ` (TC: ${tipoCambio.toFixed(2)})` : '';
 
     const displayedClientName = selectedClient ? (clients.find(c => c.id === selectedClient)?.empresa || clients.find(c => c.id === selectedClient)?.nombreCliente) : 'Público General';
 
     return `
-      <div style="display:grid;grid-template-columns:64px 1fr 340px;grid-template-rows: auto 1fr;height:calc(100vh - var(--header-height) - 20px);border-radius:var(--border-radius-lg);overflow:hidden;border:1px solid var(--border-color);box-shadow:var(--shadow-lg);background:var(--bg-secondary);">
+      <div style="display:grid;grid-template-columns:64px 1fr 340px;grid-template-rows: auto 1fr;height:100%;background:var(--bg-secondary);">
         
         <!-- Sidebar -->
         <div style="grid-column: 1; grid-row: 1 / 3; background:#0f172a;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:4px;overflow-y:auto;z-index:2;border-right:1px solid rgba(255,255,255,0.05);">
@@ -242,17 +603,53 @@ const VentasModule = (() => {
         
         <!-- Client Bar (Spans Middle) -->
         <div class="pos-client-bar" style="grid-column: 2; grid-row: 1; display:flex;align-items:center;gap:12px;padding:8px 16px;height:48px;box-sizing:border-box;background:#0f172a;color:white;border-bottom:1px solid rgba(255,255,255,0.05);z-index:1;">
-          <span class="pos-client-bar__label" style="color:#e2e8f0;font-weight:800;">${Icons.user} Cliente:</span>
-          <div style="position:relative;flex:1;">
-             <input type="text" id="posClientSearch" class="form-input" placeholder="Buscar cliente..." value="${selectedClient ? displayedClientName : ''}" oninput="VentasModule.searchClientsCombo(this.value)" autocomplete="off" onfocus="this.select()" style="padding:4px 8px;font-size:12px;height:24px;background:rgba(255,255,255,0.1);color:white;border:1px solid rgba(255,255,255,0.2);">
-             <div id="posClientResults" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;color:#333;border:1px solid var(--border-color);border-radius:4px;max-height:150px;overflow-y:auto;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
-          </div>
-            <button class="btn btn--ghost btn--sm" onclick="VentasModule.openPosNewClientModal()" style="padding:4px;height:24px;font-size:11px;background:rgba(255,255,255,0.1);color:white;border:none;" title="Alt+N">+ Nuevo <kbd style="background:transparent;border:1px solid rgba(255,255,255,0.2);color:#cbd5e1;">Alt+N</kbd></button>
+          ${selectedClient ? (() => {
+        const cl = clients.find(c => c.id === selectedClient);
+        if (!cl) return '';
+        const nombre = cl.empresa || cl.nombreCliente || 'N/A';
+        const cedula = cl.identificacion || cl.cedulaRuc || cl.cedula_ruc || '';
+        const dir = cl.direccion || '';
+        const tel = cl.telefono || cl.celular || '';
+        const limCredito = parseFloat(cl.limiteCredito || cl.limite_credito || 0);
+        const saldoPend = getData('ventas').filter(v => v.clienteId === selectedClient && v.metodo === 'credito' && parseFloat(v.saldo_pendiente || 0) > 0).reduce((s, v) => s + parseFloat(v.saldo_pendiente || 0), 0);
+        const creditoDisp = limCredito - saldoPend;
+        const tieneCredito = limCredito > 0;
+        return `
+              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+                <div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:800;color:white;font-size:14px;flex-shrink:0;">${nombre.charAt(0).toUpperCase()}</div>
+                <div style="flex:1;min-width:0;line-height:1.2;">
+                  <div style="font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;">
+                    ${nombre} ${cedula ? `<span style="font-size:10px;font-weight:600;color:#94a3b8;background:rgba(255,255,255,0.1);padding:2px 4px;border-radius:4px;">🪪 ${cedula}</span>` : ''}
+                  </div>
+                  <div style="font-size:10px;color:#94a3b8;display:flex;gap:8px;flex-wrap:nowrap;">
+                    ${tel ? `<span>📞 ${tel}</span>` : ''}
+                    ${dir ? `<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px;">📍 ${dir}</span>` : ''}
+                  </div>
+                </div>
+                ${tieneCredito ? `
+                  <div style="text-align:right;flex-shrink:0;padding:4px 8px;border-radius:6px;background:${creditoDisp > 0 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'};">
+                    <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:${creditoDisp > 0 ? '#34d399' : '#f87171'};">Crédito ${creditoDisp > 0 ? 'Disponible' : 'Agotado'}</div>
+                    <div style="font-size:12px;font-weight:800;color:${creditoDisp > 0 ? '#10b981' : '#ef4444'};">C$${fmt(creditoDisp)} <span style="font-size:9px;color:#94a3b8;">/ C$${fmt(limCredito)}</span></div>
+                  </div>
+                ` : '<div style="padding:4px 8px;border-radius:6px;background:rgba(148,163,184,0.15);"><div style="font-size:9px;font-weight:700;color:#94a3b8;">SIN CRÉDITO</div></div>'}
+                <button onclick="VentasModule.clearSelectedClient()" style="background:rgba(239,68,68,0.2);border:none;color:#f87171;width:24px;height:24px;border-radius:6px;cursor:pointer;font-size:12px;flex-shrink:0;" title="Quitar cliente">✕</button>
+              </div>`;
+      })() : `
+            <span class="pos-client-bar__label" onclick="VentasModule.openClientSearchModal()" style="color:#e2e8f0;font-weight:800;cursor:pointer;transition:all 0.15s;" onmouseover="this.style.color='#38bdf8'" onmouseout="this.style.color='#e2e8f0'">${Icons.user} Cliente:</span>
+            <span onclick="VentasModule.openClientSearchModal()" style="color:#94a3b8;font-size:12px;cursor:pointer;flex:1;" onmouseover="this.style.color='#38bdf8'" onmouseout="this.style.color='#94a3b8'">Público General — Clic para buscar cliente</span>
+          `}
             <span style="margin-left:auto;font-size:12px;font-weight:700;color:#e2e8f0;">Precio:</span>
-            <select onchange="VentasModule.setPriceList(this.value)" style="width:100px;padding:2px 4px;border:1px solid rgba(255,255,255,0.2);border-radius:4px;font-size:12px;background:#1e293b;color:white;">
-              <option value="">Público</option>
-              ${getPosDataUncached('pos_listas_precios').map(p => `<option value="${p.codigoPrecio}" ${posSelectedPriceList === p.codigoPrecio ? 'selected' : ''}>${p.nombrePrecio}</option>`).join('')}
-            </select>
+            ${(() => {
+        const listas = getPosDataUncached('pos_listas_precios');
+        const sorted = [...listas].sort((a, b) => {
+          const cmp = (a.codigoPrecio || '').localeCompare(b.codigoPrecio || '');
+          return cmp !== 0 ? cmp : (a.nombrePrecio || '').localeCompare(b.nombrePrecio || '');
+        });
+        if (sorted.length > 0 && !posSelectedPriceList) posSelectedPriceList = sorted[0].codigoPrecio;
+        return `<select onchange="VentasModule.setPriceList(this.value)" style="width:140px;padding:2px 4px;border:1px solid rgba(255,255,255,0.2);border-radius:4px;font-size:12px;background:#1e293b;color:white;">
+                ${sorted.length > 0 ? sorted.map(p => `<option value="${p.codigoPrecio}" ${posSelectedPriceList === p.codigoPrecio ? 'selected' : ''}>${p.codigoPrecio} - ${p.nombrePrecio}</option>`).join('') : '<option value="">Sin listas</option>'}
+              </select>`;
+      })()}
             <span style="margin-left:8px;font-size:12px;font-weight:700;color:#e2e8f0;">Moneda:</span>
             <select onchange="VentasModule.setCurrency(this.value)" style="width:75px;padding:2px 4px;border:1px solid rgba(255,255,255,0.2);border-radius:4px;font-size:12px;background:#1e293b;color:white;">
               <option value="NIO" ${selectedCurrency === 'NIO' ? 'selected' : ''}>C$ NIO</option>
@@ -289,9 +686,9 @@ const VentasModule = (() => {
                   <td><strong style="font-size:14px;">${item.cantidad}</strong></td>
                   <td style="line-height:1.2;"><strong>${item.nombre}</strong><div style="display:flex;gap:4px;margin-top:2px;">${item.saleGranel ? `<span style="background:#d1fae5;color:#059669;font-size:8px;padding:2px 4px;border-radius:4px;font-weight:600;">⚖ Granel</span>` : ''}${item.serial ? `<span style="background:#e0f2fe;color:#0284c7;font-size:8px;padding:2px 4px;border-radius:4px;font-weight:600;">S/N: ${item.serial}</span>` : ''}</div></td>
                   <td>${posSelectedPriceList || 'Público'}</td>
-                  <td>${currSymbol}${fmt(item.precio)}</td>
-                  <td style="${(item.descuento > 0) ? 'color:var(--color-danger);font-weight:700;' : ''}">${item.descuento > 0 ? '-' + currSymbol + fmt(item.descuento) : '-'}</td>
-                  <td style="text-align:right;font-weight:700;">${currSymbol}${fmt(item.precio * item.cantidad - (item.descuento || 0))}</td>
+                  <td>${currSymbol}${fmt(convertPrice(item.precio))}</td>
+                  <td style="${(item.descuento > 0) ? 'color:var(--color-danger);font-weight:700;' : ''}">${item.descuento > 0 ? '-' + currSymbol + fmt(convertPrice(item.descuento)) : '-'}</td>
+                  <td style="text-align:right;font-weight:700;">${currSymbol}${fmt(convertPrice(item.precio * item.cantidad - (item.descuento || 0)))}</td>
                 </tr>
               `).join('')}</tbody>
             </table>`}
@@ -308,18 +705,21 @@ const VentasModule = (() => {
           </div>
           ` : ''}
 
-          <div style="display:flex;gap:8px;padding:12px;background:var(--bg-primary);${suspendedSales.length === 0 ? 'border-top:1px solid var(--border-color);' : 'border-top:1px solid transparent; box-shadow:0 -1px 0 var(--border-color);'}align-items:center;">
-            <button onclick="VentasModule.modifySelectedAction('qty')" ${selectedCartRow < 0 ? 'disabled' : ''} style="flex:1; border:none; background:${selectedCartRow < 0 ? '#f1f5f9' : '#e0f2fe'}; color:${selectedCartRow < 0 ? '#94a3b8' : '#0369a1'}; padding:10px 4px; border-radius:10px; font-weight:800; font-size:11px; cursor:${selectedCartRow < 0 ? 'not-allowed' : 'pointer'}; display:flex; flex-direction:column; align-items:center; gap:4px; transition:all 0.2s;" onmouseover="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(-2px)\\\'; this.style.boxShadow=\\\'0 4px 6px -1px rgba(14, 165, 233, 0.2)\\\'' : ''}" onmouseout="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(0)\\\'; this.style.boxShadow=\\\'none\\\'' : ''}">
-              <span>📏 CANTIDAD</span><kbd style="background:rgba(0,0,0,0.06); padding:2px 6px; border-radius:4px; font-size:9px;">F4</kbd>
+          <div style="display:flex;gap:4px;padding:12px;background:var(--bg-primary);${suspendedSales.length === 0 ? 'border-top:1px solid var(--border-color);' : 'border-top:1px solid transparent; box-shadow:0 -1px 0 var(--border-color);'}align-items:center;">
+            <button onclick="VentasModule.modifySelectedAction('qty')" ${selectedCartRow < 0 ? 'disabled' : ''} class="pos-action-btn ${selectedCartRow >= 0 ? 'pos-action-btn--active' : ''}" style="flex:1;padding:0.5rem 0.25rem;">
+              <span>📏 CANTIDAD</span><kbd style="display:none;">F4</kbd>
             </button>
-            <button onclick="VentasModule.modifySelectedAction('del')" ${selectedCartRow < 0 ? 'disabled' : ''} style="flex:1; border:none; background:${selectedCartRow < 0 ? '#f1f5f9' : '#fee2e2'}; color:${selectedCartRow < 0 ? '#94a3b8' : '#b91c1c'}; padding:10px 4px; border-radius:10px; font-weight:800; font-size:11px; cursor:${selectedCartRow < 0 ? 'not-allowed' : 'pointer'}; display:flex; flex-direction:column; align-items:center; gap:4px; transition:all 0.2s;" onmouseover="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(-2px)\\\'; this.style.boxShadow=\\\'0 4px 6px -1px rgba(220, 38, 38, 0.2)\\\'' : ''}" onmouseout="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(0)\\\'; this.style.boxShadow=\\\'none\\\'' : ''}">
-              <span>🗑️ ELIMINAR</span><kbd style="background:rgba(0,0,0,0.06); padding:2px 6px; border-radius:4px; font-size:9px;">Del</kbd>
+            <button onclick="VentasModule.modifySelectedAction('del')" ${selectedCartRow < 0 ? 'disabled' : ''} class="pos-action-btn ${selectedCartRow >= 0 ? 'pos-action-btn--active' : ''}" style="flex:1;padding:0.5rem 0.25rem;">
+              <span>🗑️ ELIMINAR</span><kbd style="display:none;">Del</kbd>
             </button>
-            <button onclick="VentasModule.modifySelectedAction('disc')" ${selectedCartRow < 0 ? 'disabled' : ''} style="flex:1; border:none; background:${selectedCartRow < 0 ? '#f1f5f9' : '#fae8ff'}; color:${selectedCartRow < 0 ? '#94a3b8' : '#86198f'}; padding:10px 4px; border-radius:10px; font-weight:800; font-size:11px; cursor:${selectedCartRow < 0 ? 'not-allowed' : 'pointer'}; display:flex; flex-direction:column; align-items:center; gap:4px; transition:all 0.2s;" onmouseover="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(-2px)\\\'; this.style.boxShadow=\\\'0 4px 6px -1px rgba(168, 85, 247, 0.2)\\\'' : ''}" onmouseout="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(0)\\\'; this.style.boxShadow=\\\'none\\\'' : ''}">
-              <span>🏷️ DESC.</span><kbd style="background:rgba(0,0,0,0.06); padding:2px 6px; border-radius:4px; font-size:9px;">F6</kbd>
+            <button onclick="VentasModule.modifySelectedAction('disc')" ${selectedCartRow < 0 ? 'disabled' : ''} class="pos-action-btn ${selectedCartRow >= 0 ? 'pos-action-btn--active' : ''}" style="flex:1;padding:0.5rem 0.25rem;">
+              <span>🏷️ DESC.</span><kbd style="display:none;">F6</kbd>
             </button>
-            <button onclick="VentasModule.modifySelectedAction('price')" ${selectedCartRow < 0 ? 'disabled' : ''} style="flex:1; border:none; background:${selectedCartRow < 0 ? '#f1f5f9' : '#ffedd5'}; color:${selectedCartRow < 0 ? '#94a3b8' : '#c2410c'}; padding:10px 4px; border-radius:10px; font-weight:800; font-size:11px; cursor:${selectedCartRow < 0 ? 'not-allowed' : 'pointer'}; display:flex; flex-direction:column; align-items:center; gap:4px; transition:all 0.2s;" onmouseover="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(-2px)\\\'; this.style.boxShadow=\\\'0 4px 6px -1px rgba(234, 88, 12, 0.2)\\\'' : ''}" onmouseout="${selectedCartRow >= 0 ? 'this.style.transform=\\\'translateY(0)\\\'; this.style.boxShadow=\\\'none\\\'' : ''}">
-              <span>💵 PRECIO</span><kbd style="background:rgba(0,0,0,0.06); padding:2px 6px; border-radius:4px; font-size:9px;">F7</kbd>
+            <button onclick="VentasModule.modifySelectedAction('price')" ${selectedCartRow < 0 ? 'disabled' : ''} class="pos-action-btn ${selectedCartRow >= 0 ? 'pos-action-btn--active' : ''}" style="flex:1;padding:0.5rem 0.25rem;">
+              <span>💵 PRECIO</span><kbd style="display:none;">F7</kbd>
+            </button>
+            <button onclick="VentasModule.showProductDescription()" ${selectedCartRow < 0 ? 'disabled' : ''} class="pos-action-btn ${selectedCartRow >= 0 ? 'pos-action-btn--active' : ''}" style="flex:1;padding:0.5rem 0.25rem;">
+              <span>ℹ️ DETALLES</span><kbd style="display:none;"></kbd>
             </button>
           </div>
         </div>
@@ -356,30 +756,34 @@ const VentasModule = (() => {
 
             <!-- Totales -->
             <div class="pos-totals" style="padding:8px 16px; background:var(--bg-primary);">
+              ${tcLabel ? `<div class="pos-totals__row" style="font-size:11px;margin-bottom:6px;color:#3b82f6;font-weight:700;"><span>Moneda: USD${tcLabel}</span><span></span></div>` : ''}
               <div class="pos-totals__row" style="font-size:12px;margin-bottom:4px;"><span>Subtotal</span><span>${currSymbol}${fmt(subtotal)}</span></div>
               <div class="pos-totals__row" style="font-size:12px;margin-bottom:4px;"><span>Descuento Promocional</span><span style="color:var(--color-danger);font-weight:600;">-${currSymbol}${fmt(descuento)}</span></div>
-              <div class="pos-totals__row" style="font-size:12px;margin-bottom:8px;"><span>IVA 15%</span><span>${currSymbol}${fmt(iva)}</span></div>
+              <div class="pos-totals__row" style="font-size:12px;margin-bottom:4px;"><span>IVA 15%</span><span>${currSymbol}${fmt(iva)}</span></div>
+              <div class="pos-totals__row" style="font-size:12px;margin-bottom:8px;${retencion > 0 ? 'color:#f59e0b;font-weight:600;' : 'color:var(--text-muted);'}"><span>Retención IR 2%</span><span>${retencion > 0 ? '-' + currSymbol + fmt(retencion) : currSymbol + '0.00'}</span></div>
               
               <div class="pos-totals__row" style="padding:8px 0;border-top:1px dashed var(--border-color);margin-bottom:12px;">
                 <button class="btn btn--secondary btn--sm" onclick="VentasModule.promptGlobalDiscountModal()" style="font-size:11px;padding:4px 8px;border-radius:4px;" title="Alt+D">🏷️ Desc. Global <kbd style="background:transparent;border:1px solid var(--border-color);margin-left:4px;">Alt+D</kbd></button>
-                <span style="color:var(--color-danger);font-weight:700;">-${currSymbol}${fmt(globalDiscount)}</span>
+                <span style="color:var(--color-danger);font-weight:700;">-${currSymbol}${fmt(globalDiscountConverted)}</span>
               </div>
               <div class="pos-totals__row pos-totals__row--total" style="font-size:28px;color:var(--color-primary-600);"><span>TOTAL</span><span id="posTotalDisplay" style="font-weight:900;">${currSymbol}${fmt(total)}</span></div>
             </div>
 
             <!-- Botón Cobrar - FIJO AL FONDO -->
-            <div class="pos-cobrar" style="padding:12px 16px 16px;background:var(--bg-primary);">
+            <div class="pos-cobrar" style="padding:12px 16px 16px;background:var(--bg-primary);display:flex;flex-direction:column;gap:8px;">
               <button class="pos-cobrar__btn" onclick="VentasModule.openPaymentModal()" ${cart.length === 0 ? 'disabled' : ''} style="width:100%;height:75px;font-size:24px;letter-spacing:2px;box-shadow:0 15px 25px -5px rgba(16, 185, 129, 0.4), 0 10px 10px -5px rgba(16, 185, 129, 0.2); border-radius:16px; display:flex; align-items:center; justify-content:center; gap:16px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; transition:all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); ${cart.length === 0 ? 'opacity:0.6; filter:grayscale(0.8); cursor:not-allowed;' : 'cursor:pointer;'}" onmouseover="${cart.length > 0 ? 'this.style.transform=\\\'scale(1.02) translateY(-2px)\\\'' : ''}" onmouseout="${cart.length > 0 ? 'this.style.transform=\\\'scale(1) translateY(0)\\\'' : ''}">
                 <span style="font-size:32px; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2));">${Icons.check}</span> <span style="font-weight:900; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.2));">COBRAR</span> <kbd style="background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.4);color:white;padding:4px 10px;border-radius:6px;font-size:14px;font-weight:800;box-shadow:0 2px 4px rgba(0,0,0,0.1);">ESC</kbd>
               </button>
+              <button onclick="VentasModule.crearCotizacionPrompt()" class="btn btn--secondary" ${cart.length === 0 ? 'disabled style="opacity:0.6;cursor:not-allowed;"' : 'style="cursor:pointer;"'} style="width:100%;font-weight:700;padding:12px;border-radius:12px;">📝 Nueva Cotización</button>
             </div>
           </div>
         </div>
       </div>
 
       ${posOpenModal === 'payment' ? renderPaymentModal(total, currSymbol) : ''}
-      ${['clientes', 'devoluciones', 'catalogo', 'consultor-precios'].includes(posOpenModal) ? renderPosExternalModal(posOpenModal) : ''}
+      ${['clientes', 'devoluciones', 'catalogo', 'consultor-precios', 'cotizaciones'].includes(posOpenModal) ? renderPosExternalModal(posOpenModal) : ''}
       ${posActionModal ? renderPosActionModal() : ''}
+      ${renderClientSearchModalOverlay()}
     `;
   };
 
@@ -438,6 +842,68 @@ const VentasModule = (() => {
       if (!motivo) { alert('Debe indicar el motivo.'); return; }
       addRec('cajaMovs', { fecha: new Date().toISOString(), tipo: posActionModal === 'entrada' ? 'ingreso' : 'retiro', monto: parseFloat(val), motivo, usuario: user()?.name || 'Sistema', turno: turnoActivo?.numero });
       alert(`✅ ${posActionModal === 'entrada' ? 'Ingreso' : 'Retiro'} de C$${fmt(val)} registrado exitosamente.`);
+    }
+    else if (posActionModal === 'credito-setup') {
+      const moraAplicar = fd.get('moraAplicar') === 'on';
+      const moraPorcentaje = parseFloat(fd.get('moraPorcentaje')) || 0;
+      const modalidadPago = fd.get('modalidadPago'); // 'unico' o 'cuotas'
+      const numCuotas = parseInt(fd.get('numCuotas')) || 1;
+      const periodicidad = fd.get('periodicidad') || 'Mensual';
+
+      const paymentDetails = {
+        tipo: 'credito',
+        moraAplicar,
+        moraPorcentaje,
+        modalidadPago,
+        numCuotas,
+        periodicidad,
+        fechaLimite: fd.get('fechaLimite') || null,
+        fechaInicio: new Date().toISOString()
+      };
+      if (posActionData.actuallyPayInUSD) { paymentDetails.pagoEnUSD = true; paymentDetails.tipoCambioApicado = posActionData.tipoCambio; }
+
+      const numFactura = 'VNT-' + String(getData('ventas').length + 1).padStart(6, '0');
+      addRec('ventas', { numero: numFactura, fecha: new Date().toISOString(), clienteId: selectedClient, cliente: posActionData.cl ? (posActionData.cl.empresa || posActionData.cl.nombreCliente || 'Cliente') : 'Público General', items: cart.map(i => ({ ...i })), subtotal: posActionData.subtotal, descuento: posActionData.descuento, descuento_global: posActionData.globalDiscount, iva: posActionData.iva, total: posActionData.finalTotal, base_total: posActionData.total, costo_total: posActionData.costoTotal, metodo: 'credito', detalles_pago: paymentDetails, lista_precio: posSelectedPriceList, efectivo_recibido: 0, cambio: 0, saldo_pendiente: posActionData.finalTotal, vendedor: user()?.name || 'N/A', estado: 'completada', comentario: posComment });
+
+      if (typeof ProductosModule !== 'undefined' && ProductosModule.marcarTrackingVendido) {
+        cart.forEach(i => { if (i.trackingId && i.tipoSeguimiento) ProductosModule.marcarTrackingVendido(i.productId, i.tipoSeguimiento, i.trackingId, numFactura, i.cantidad); });
+      }
+
+      alert(`✅ Venta ${numFactura} registrada a Crédito!\nTotal: C$${fmt(posActionData.finalTotal)}`);
+      cart = []; selectedClient = null; cashReceived = 0; globalDiscount = 0; posComment = ''; posOpenModal = null;
+      posSubView = 'pos'; App.render();
+      posActionModal = null; posActionData = null;
+      return;
+    }
+    else if (posActionModal === 'cotizacion-setup') {
+      const v = fd.get('fechaVencimiento');
+      if (!v) { alert('Seleccione una fecha de vencimiento.'); return; }
+
+      const subtotal = cart.reduce((s, i) => s + (i.precio * i.cantidad), 0);
+      const descuento = cart.reduce((s, i) => s + (i.descuento || 0), 0);
+      const iva = (subtotal - descuento - globalDiscount) * IVA_RATE;
+      const total = subtotal - descuento - globalDiscount + iva;
+      const clientFound = getClients().find(c => c.id === selectedClient);
+
+      const numCots = getData('cotizaciones').length + 1;
+      const numero = 'COT-' + String(numCots).padStart(6, '0');
+
+      const cotData = {
+        numero,
+        fecha: new Date().toISOString(),
+        vencimiento: new Date(v).toISOString(),
+        clienteId: selectedClient,
+        cliente: clientFound ? (clientFound.empresa || clientFound.nombreCliente) : 'Público General',
+        items: cart.map(i => ({ ...i })),
+        subtotal, descuento, descuento_global: globalDiscount, iva, total,
+        estado: 'vigente', divisa: selectedCurrency
+      };
+
+      addRec('cotizaciones', cotData);
+      alert(`✅ Cotización ${numero} generada con éxito.\nTotal: ${selectedCurrency === 'USD' ? '$' : 'C$'}${fmt(total)}`);
+      cart = []; selectedClient = null; globalDiscount = 0; posComment = ''; posOpenModal = null; posActionModal = null; posSubView = 'dashboard';
+      clearCart();
+      return;
     }
 
     posActionModal = null; posActionData = null; App.render();
@@ -499,6 +965,257 @@ const VentasModule = (() => {
       mTitle = posActionModal === 'entrada' ? '📥 Entrada de Caja' : '📤 Salida de Caja';
       mBody = `<div style="margin-bottom:1rem;"><label style="display:block;margin-bottom:4px;font-weight:600;">Motivo:</label><input type="text" name="actionMotivo" id="posActionInput" class="form-input" placeholder="Razón del movimiento" autocomplete="off" required style="height:44px;"></div><div><label style="display:block;margin-bottom:4px;font-weight:600;">Monto (C$):</label><input type="number" name="actionVal" class="form-input" placeholder="0.00" step="0.01" min="0.01" required style="font-size:1.5rem;font-weight:bold;height:50px;"></div>`;
     }
+    else if (posActionModal === 'cotizacion-setup') {
+      mTitle = '📝 Nueva Cotización';
+      const dNow = Date.now();
+      const getD = (days) => new Date(dNow + days * 86400000).toISOString().substring(0, 10);
+      mBody = `<p style="margin-bottom:1rem;color:var(--text-muted);font-size:0.9rem;">Se generará una cotización con los productos actuales. Seleccione el vencimiento:</p>
+               <label style="display:block;margin-bottom:8px;font-weight:600;">Opciones Rápidas:</label>
+               <div style="display:flex;gap:8px;margin-bottom:12px;">
+                 <button type="button" class="btn btn--secondary btn--sm" style="flex:1;" onclick="document.getElementById('posCotiDate').value='${getD(7)}'">7 Días</button>
+                 <button type="button" class="btn btn--secondary btn--sm" style="flex:1;" onclick="document.getElementById('posCotiDate').value='${getD(15)}'">15 Días</button>
+                 <button type="button" class="btn btn--secondary btn--sm" style="flex:1;" onclick="document.getElementById('posCotiDate').value='${getD(30)}'">30 Días</button>
+               </div>
+               <label style="display:block;margin-bottom:4px;font-weight:600;">Fecha de Vencimiento:</label>
+               <input type="date" name="fechaVencimiento" id="posCotiDate" class="form-input" required style="height:44px;font-size:1rem;width:100%;" value="${getD(15)}">`;
+    }
+    else if (posActionModal === 'credito-setup') {
+      mTitle = '🤝 Configuración de Crédito';
+      const d = posActionData;
+      mBody = `
+        <div style="font-size:12px;margin-bottom:16px;background:var(--bg-primary);padding:12px;border-radius:8px;border:1px solid var(--border-color);">
+          <div style="display:flex;justify-content:space-between;border-bottom:1px solid var(--border-color);padding-bottom:6px;margin-bottom:6px;"><span>Crédito Disponible:</span><strong style="color:${d.creditoDisp >= d.finalTotal ? '#10b981' : '#ef4444'};font-size:14px;">C$${fmt(d.creditoDisp)}</strong></div>
+          <div style="display:flex;justify-content:space-between;color:var(--text-primary);font-size:14px;margin-top:6px;align-items:center;"><span>Total a Facturar:</span><strong style="font-size:18px;">C$${fmt(d.finalTotal)}</strong></div>
+        </div>
+        <div style="margin-bottom:12px;">
+           <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;margin-bottom:8px;cursor:pointer;">
+             <input type="checkbox" name="moraAplicar" onchange="document.getElementById('pos_mora_pct').disabled = !this.checked;">
+             Aplicar Cargos por Mora
+           </label>
+           <div style="display:flex;align-items:center;gap:8px;margin-left:24px;">
+             <span style="font-size:12px;color:var(--text-muted);">% de Mora (mensual):</span>
+             <input type="number" name="moraPorcentaje" id="pos_mora_pct" class="form-input" min="0" step="0.01" value="0" disabled style="width:100px;font-size:14px;">
+           </div>
+        </div>
+        <div style="margin-bottom:12px;">
+           <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Fecha Límite de Crédito (Vencimiento):</label>
+           <input type="date" name="fechaLimite" class="form-input" style="width:100%;font-size:14px;padding:8px;" required>
+        </div>
+        <div style="margin-bottom:12px;">
+           <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Modalidad de Pago:</label>
+           <select name="modalidadPago" class="form-select" onchange="const c = document.getElementById('pos_credito_cuotas_box'); if(this.value==='cuotas'){c.style.display='block';VentasModule.calcAmortizacionCredito();}else{c.style.display='none';document.getElementById('pos_credito_amortizacion').innerHTML='';}" style="font-size:14px;">
+             <option value="unico">Un solo pago</option>
+             <option value="cuotas">En cuotas</option>
+           </select>
+        </div>
+        <div id="pos_credito_cuotas_box" style="display:none;background:rgba(0,0,0,0.03);padding:12px;border-radius:8px;border:1px solid var(--border-color);">
+           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+             <div>
+               <label style="font-size:11px;font-weight:700;display:block;margin-bottom:2px;">Número de cuotas</label>
+               <input type="number" name="numCuotas" min="2" max="120" value="2" class="form-input" style="font-size:14px;" oninput="VentasModule.calcAmortizacionCredito()">
+             </div>
+             <div>
+               <label style="font-size:11px;font-weight:700;display:block;margin-bottom:2px;">Periodicidad</label>
+               <select name="periodicidad" class="form-select" style="font-size:14px;" onchange="VentasModule.calcAmortizacionCredito()">
+                 <option value="Semanal">Semanal</option>
+                 <option value="Quincenal">Quincenal</option>
+                 <option value="Mensual" selected>Mensual</option>
+               </select>
+             </div>
+           </div>
+           <div id="pos_credito_amortizacion" style="max-height:180px;overflow-y:auto;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);"></div>
+        </div>
+        <input type="hidden" name="actionVal" value="1">
+      `;
+    }
+
+    if (posActionModal === 'newClientFull') {
+      return `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;">
+        <div class="pos-action-modal" style="width: 800px; max-width: 95vw; background:var(--bg-secondary); border-radius:12px; box-shadow:var(--shadow-xl); overflow:hidden;">
+          <div class="pos-action-modal__header" style="background:linear-gradient(135deg,#0ea5e9, #0284c7);color:white;border-bottom:none;padding:16px;display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;color:white;display:flex;align-items:center;gap:8px;">${Icons.plus} Nuevo Cliente</h3>
+            <button onclick="VentasModule.closeActionModal()" style="color:white;background:rgba(255,255,255,0.2);padding:6px;border-radius:6px;border:none;">${Icons.x}</button>
+          </div>
+          <form class="pos-action-modal__body" onsubmit="VentasModule.onClientCreatedFromPOS(event)" style="padding:20px;max-height:70vh;overflow-y:auto;background:var(--bg-primary);">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label form-label--required">Tipo de Cliente</label>
+                <select name="tipoRegistro" class="form-select" onchange="
+                  const isEmpresa = this.value === 'Empresa';
+                  document.getElementById('pos-lbl-ident').innerText = isEmpresa ? 'RUC:' : 'Cédula ID:';
+                  document.getElementById('pos-input-ident').placeholder = 'xxx-xxxxxx-xxxxx';
+                ">
+                  <option value="Persona Natural" selected>Persona Natural</option>
+                  <option value="Empresa">Empresa</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label form-label--required" id="pos-lbl-ident">Cédula ID:</label>
+                <input type="text" id="pos-input-ident" name="identificacion" class="form-input" placeholder="xxx-xxxxxx-xxxxx" required 
+                  oninput="if(ClientesModule && ClientesModule.formatIdentificacion) { ClientesModule.formatIdentificacion(this); }" maxlength="16">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label form-label--required">Nombre de cliente:</label>
+                <input type="text" name="nombreCliente" class="form-input" placeholder="Ej: Juan Pérez" required id="posNewClientNameInput">
+              </div>
+              <div class="form-group">
+                <label class="form-label form-label--required">Teléfono</label>
+                <input type="tel" name="telefono" class="form-input" placeholder="Ej: +505 8888-8888" required>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Dirección</label>
+              <textarea name="direccion" class="form-textarea" rows="2" placeholder="Ej: Managua, Nicaragua"></textarea>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Límite de Crédito</label>
+                <input type="number" name="limiteCredito" class="form-input" value="0" step="0.01">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Porcentaje de descuento</label>
+                <div style="position:relative;">
+                  <input type="number" name="porcentajeDescuento" class="form-input" value="0" step="0.01">
+                  <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);">%</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Lista de Precios</label>
+                <select name="listaPrecios" class="form-select">
+                  <option value="General" selected>General</option>
+                  <option value="Mayorista">Mayorista</option>
+                  <option value="VIP">VIP</option>
+                  <option value="Credito">Crédito</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Correo Electrónico</label>
+                <input type="email" name="correo" class="form-input" placeholder="Ej: correo@ejemplo.com">
+              </div>
+            </div>
+
+            <div style="background:var(--bg-secondary);padding:1rem;border-radius:8px;margin-bottom:1rem;border:1px solid var(--border-color);">
+              <h4 style="margin:0 0 1rem 0;font-size:0.95rem;color:var(--text-primary);">Impuestos</h4>
+              <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:1rem;">
+                <div style="display:flex;flex-direction:column;gap:0.5rem;">
+                  <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                    <input type="checkbox" name="impSumarRetencion" onchange="document.getElementById('pos-val-sumar-ret').disabled = !this.checked">
+                    Sumar Retención
+                  </label>
+                  <div style="position:relative;">
+                    <input type="number" id="pos-val-sumar-ret" name="valSumarRetencion" class="form-input" step="0.01" disabled placeholder="0.00">
+                    <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:0.8rem;">%</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:0.5rem;">
+                  <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                    <input type="checkbox" name="impRetencion" onchange="document.getElementById('pos-val-ret').disabled = !this.checked">
+                    Retención
+                  </label>
+                  <div style="position:relative;">
+                    <input type="number" id="pos-val-ret" name="valRetencion" class="form-input" step="0.01" disabled placeholder="0.00">
+                    <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:0.8rem;">%</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:0.5rem;">
+                  <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;font-weight:600;cursor:pointer;">
+                    <input type="checkbox" name="impIva" onchange="document.getElementById('pos-val-iva').disabled = !this.checked">
+                    IVA
+                  </label>
+                  <div style="position:relative;">
+                    <input type="number" id="pos-val-iva" name="valIva" class="form-input" step="0.01" disabled placeholder="0.00">
+                    <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:0.8rem;">%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="pos-action-modal__footer" style="margin:0 -20px -20px;padding:16px 20px;background:var(--bg-secondary);border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:12px;">
+              <button type="button" class="btn btn--secondary" onclick="VentasModule.closeActionModal()">Cancelar</button>
+              <button type="submit" class="btn btn--primary">${Icons.check} Crear Cliente y Seleccionar</button>
+            </div>
+          </form>
+        </div>
+      </div>`;
+    }
+
+    if (posActionModal === 'contador-divisas') {
+      const divisas = (() => { try { return JSON.parse(localStorage.getItem('pos_divisas') || '[]'); } catch { return []; } })();
+
+      const sortDivisas = (a, b) => {
+        if (a.tipo === 'Billete' && b.tipo === 'Moneda') return -1;
+        if (a.tipo === 'Moneda' && b.tipo === 'Billete') return 1;
+        return parseFloat(b.valor) - parseFloat(a.valor);
+      };
+
+      const divisasNio = divisas.filter(d => d.divisa === 'NIO').sort(sortDivisas);
+      const divisasUsd = divisas.filter(d => d.divisa === 'USD').sort(sortDivisas);
+
+      // Create an array to manage tabindex properly so we can jump from NIO input to USD input nicely, or sequentially 
+      let tabindexCount = 1;
+
+      return `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:99999;">
+        <div class="pos-action-modal" style="width: 700px; max-width: 95vw; background:var(--bg-secondary); border-radius:12px; box-shadow:var(--shadow-xl); overflow:hidden;">
+          <div class="pos-action-modal__header" style="background:var(--bg-primary);border-bottom:1px solid var(--border-color);padding:16px;display:flex;justify-content:space-between;align-items:center;">
+            <h3 style="margin:0;display:flex;align-items:center;gap:8px;">${Icons.wallet} Contador de Divisas</h3>
+            <button onclick="VentasModule.closeActionModal()" type="button" class="btn btn--ghost btn--icon" tabindex="-1">${Icons.x}</button>
+          </div>
+          <form id="formContadorDivisas" class="pos-action-modal__body" onsubmit="VentasModule.submitContadorDivisas(event)" style="padding:24px;max-height:70vh;overflow-y:auto;background:var(--bg-primary);">
+            
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;">
+               <!-- Córdobas -->
+               <div>
+                  <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:1rem;border-bottom:2px solid var(--color-primary-200);padding-bottom:0.5rem;">
+                     <h4 style="margin:0;color:var(--text-primary);">C$ - Córdobas</h4>
+                     <strong id="lblTotalDivisasNio" style="color:var(--color-primary-600);font-size:1.1rem;">Total: C$ 0.00</strong>
+                  </div>
+                  ${divisasNio.length > 0 ? divisasNio.map(d => `
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+                       <span style="font-size:0.9rem;">${d.nombre}</span>
+                       <div style="display:flex;align-items:center;gap:0.5rem;">
+                         <span style="color:var(--text-muted);font-size:0.8rem;">x</span>
+                         <input type="number" name="nio_${d.valor}" class="form-input" min="0" step="1" placeholder="0" style="width:70px;text-align:right;" tabindex="${tabindexCount++}" oninput="VentasModule.liveCalcDivisas()" onkeydown="if(event.key==='Enter'){event.preventDefault(); const next = document.querySelector('[tabindex=&quot;${tabindexCount}&quot;]'); if(next) next.focus(); else document.getElementById('btnSubmitDivisas').focus();}">
+                       </div>
+                    </div>
+                  `).join('') : '<p style="color:var(--text-muted);font-size:0.85rem;">No hay divisas C$ configuradas.</p>'}
+               </div>
+
+               <!-- Dólares -->
+               <div>
+                  <div style="display:flex;justify-content:space-between;align-items:end;margin-bottom:1rem;border-bottom:2px solid #10b981;padding-bottom:0.5rem;">
+                     <h4 style="margin:0;color:var(--text-primary);">$ - Dólares</h4>
+                     <strong id="lblTotalDivisasUsd" style="color:#10b981;font-size:1.1rem;">Total: $ 0.00</strong>
+                  </div>
+                  ${divisasUsd.length > 0 ? divisasUsd.map(d => `
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;">
+                       <span style="font-size:0.9rem;">${d.nombre}</span>
+                       <div style="display:flex;align-items:center;gap:0.5rem;">
+                         <span style="color:var(--text-muted);font-size:0.8rem;">x</span>
+                         <input type="number" name="usd_${d.valor}" class="form-input" min="0" step="1" placeholder="0" style="width:70px;text-align:right;" tabindex="${tabindexCount++}" oninput="VentasModule.liveCalcDivisas()" onkeydown="if(event.key==='Enter'){event.preventDefault(); const next = document.querySelector('[tabindex=&quot;${tabindexCount}&quot;]'); if(next) next.focus(); else document.getElementById('btnSubmitDivisas').focus();}">
+                       </div>
+                    </div>
+                  `).join('') : '<p style="color:var(--text-muted);font-size:0.85rem;">No hay divisas USD configuradas.</p>'}
+               </div>
+            </div>
+
+            <div class="pos-action-modal__footer" style="margin:24px -24px -24px;padding:16px 24px;background:var(--bg-secondary);border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:12px;">
+              <button type="button" class="btn btn--ghost" tabindex="-1" onclick="VentasModule.closeActionModal()">Cancelar</button>
+              <button type="submit" id="btnSubmitDivisas" tabindex="${tabindexCount++}" class="btn btn--primary">${Icons.check} Calcular y Aplicar</button>
+            </div>
+          </form>
+        </div>
+      </div>`;
+    }
 
     const noButtons = posActionModal === 'selectTracking' || posActionModal === 'shortcuts';
 
@@ -535,6 +1252,9 @@ const VentasModule = (() => {
     } else if (type === 'consultor-precios') {
       title = '🔍 Consultor de Precios';
       content = renderConsultorPrecios();
+    } else if (type === 'cotizaciones') {
+      title = '📝 Historial Cotizaciones';
+      content = renderCotizaciones();
     }
 
     return `
@@ -564,8 +1284,15 @@ const VentasModule = (() => {
         </div>
       </div>`;
 
-  const renderPaymentModal = (subTotalBase, currSymbol) => {
-    let finalTotal = subTotalBase;
+  const renderPaymentModal = (subTotalBase, originalSymbol) => {
+    let tipoCambio = 36.62;
+    try { const cfg = typeof DataService !== 'undefined' ? DataService.getConfig() : {}; tipoCambio = parseFloat(cfg.tipoCambio) || 36.62; } catch (e) { }
+
+    const actuallyPayInUSD = posPayInUSD && selectedCurrency === 'NIO';
+    const uiSubtotal = actuallyPayInUSD ? subTotalBase / tipoCambio : subTotalBase;
+    const currSymbol = actuallyPayInUSD ? '$' : originalSymbol;
+
+    let finalTotal = uiSubtotal;
     let paymentConfigHtml = '';
 
     if (selectedPayment === 'transferencia') {
@@ -574,10 +1301,76 @@ const VentasModule = (() => {
       paymentConfigHtml = `
         <div style="margin-top:16px;">
           <label style="font-size:12px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:8px;">Seleccionar Cuenta Banco:</label>
-          <select id="posPaymentConfig" class="form-select" onchange="VentasModule.setPaymentConfig(this.value)" style="border:2px solid var(--border-color);font-size:14px;height:40px;">
+          <select id="posPaymentConfig" class="form-select" onchange="VentasModule.setPaymentConfig(this.value)" style="border:2px solid var(--border-color);font-size:14px;height:40px;margin-bottom:12px;">
             <option value="" disabled ${listas.length === 0 ? 'selected' : ''}>${listas.length === 0 ? 'No hay cuentas configuradas' : 'Seleccione...'}</option>
             ${listas.map((x, i) => `<option value="${i}" ${posSelectedConfigIdx == i ? 'selected' : ''}>${x.banco} - ${x.divisa} (${x.numeroCuenta})</option>`).join('')}
           </select>
+          <label style="font-size:12px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:8px;">Referencia / N° Transacción:</label>
+          <input type="text" id="posDocReference" oninput="VentasModule.setDocReference(this.value)" value="${posDocReference}" class="form-input" placeholder="Opcional..." style="font-size:14px;border:2px solid var(--border-color);height:40px;width:100%;" autocomplete="off">
+        </div>
+      `;
+    } else if (selectedPayment === 'multiple') {
+      const getOpts = (list, isTj) => list.map(x => `<option value="${x}">${isTj ? (x.posBanco || x.banco) : x.banco}</option>`).join('');
+      const sum = posMultiplePayments.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+      const eqNIO = actuallyPayInUSD ? sum * tipoCambio : sum;
+      const remBase = Math.max(0, subTotalBase - eqNIO);
+      const remShow = actuallyPayInUSD ? remBase / tipoCambio : remBase;
+
+      paymentConfigHtml = `
+        <div style="margin-top:16px;max-height:220px;overflow-y:auto;padding-right:8px;">
+          <h4 style="font-size:12px;margin:0 0 8px;">Métodos de Pago:</h4>
+          ${posMultiplePayments.map((p, i) => {
+        let extraHtml = '';
+        if (p.metodo === 'tarjeta') {
+          const stAsumir = getPosDataUncached('pos_tarjetas_asumir');
+          const stCobrar = getPosDataUncached('pos_tarjetas');
+          extraHtml = `
+                 <select class="form-select" style="width:90px;font-size:11px;padding:4px;" onchange="VentasModule.updatePosMultiple(${i}, 'tjmodo', this.value)">
+                   <option value="cobrar" ${p.tjmodo === 'cobrar' ? 'selected' : ''}>Cobrar</option>
+                   <option value="asumir" ${p.tjmodo === 'asumir' ? 'selected' : ''}>Asumir</option>
+                 </select>
+                 <select class="form-select" style="width:110px;font-size:11px;padding:4px;" onchange="VentasModule.updatePosMultiple(${i}, 'configIdx', this.value)">
+                   <option value="" disabled selected>POS Banco...</option>
+                   ${(p.tjmodo === 'asumir' ? stAsumir : stCobrar).map((x, j) => `<option value="${j}" ${p.configIdx == j ? 'selected' : ''}>${x.posBanco}</option>`).join('')}
+                 </select>
+               `;
+        } else if (p.metodo === 'transferencia') {
+          const st = getPosDataUncached('pos_transferencias');
+          extraHtml = `
+                 <select class="form-select" style="flex:1;min-width:110px;font-size:11px;padding:4px;" onchange="VentasModule.updatePosMultiple(${i}, 'configIdx', this.value)">
+                   <option value="" disabled selected>Cuenta Banco...</option>
+                   ${st.map((x, j) => `<option value="${j}" ${p.configIdx == j ? 'selected' : ''}>${x.banco} (${x.divisa || 'NIO'})</option>`).join('')}
+                 </select>
+               `;
+        } else if (p.metodo === 'extrafinanciamiento') {
+          const st = getPosDataUncached('pos_extrafinanciamiento');
+          extraHtml = `
+                 <select class="form-select" style="flex:1;min-width:110px;font-size:11px;padding:4px;" onchange="VentasModule.updatePosMultiple(${i}, 'configIdx', this.value)">
+                   <option value="" disabled selected>Plan Banco...</option>
+                   ${st.map((x, j) => `<option value="${j}" ${p.configIdx == j ? 'selected' : ''}>${x.banco} (${x.plazoMeses}m)</option>`).join('')}
+                 </select>
+               `;
+        }
+        return `
+            <div style="background:var(--bg-primary);border:1px solid var(--border-color);padding:8px;border-radius:6px;margin-bottom:8px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+              <select class="form-select" style="width:100px;font-size:11px;padding:4px;" onchange="VentasModule.updatePosMultiple(${i}, 'metodo', this.value)">
+                <option value="efectivo" ${p.metodo === 'efectivo' ? 'selected' : ''}>Efectivo</option>
+                <option value="tarjeta" ${p.metodo === 'tarjeta' ? 'selected' : ''}>Tarjeta</option>
+                <option value="transferencia" ${p.metodo === 'transferencia' ? 'selected' : ''}>Transferencia</option>
+                <option value="extrafinanciamiento" ${p.metodo === 'extrafinanciamiento' ? 'selected' : ''}>Extra.</option>
+                <option value="credito" ${p.metodo === 'credito' ? 'selected' : ''}>Crédito</option>
+              </select>
+              ${extraHtml}
+              <input type="number" class="form-input" style="width:80px;font-size:11px;padding:4px;" placeholder="C$ Monto" value="${p.monto || ''}" onchange="VentasModule.updatePosMultiple(${i}, 'monto', parseFloat(this.value)||0)">
+              <input type="text" class="form-input" style="flex:1;min-width:80px;font-size:11px;padding:4px;" placeholder="Ref..." value="${p.referencia || ''}" onchange="VentasModule.updatePosMultiple(${i}, 'referencia', this.value)">
+              <button class="btn btn--danger btn--icon" style="flex-shrink:0;width:24px;height:24px;min-height:24px;padding:0;" onclick="VentasModule.removePosMultiple(${i})">✕</button>
+            </div>
+            `}).join('')}
+          <button class="btn btn--ghost" style="width:100%;padding:4px;font-size:11px;margin-bottom:8px;" onclick="VentasModule.addPosMultiple()">+ Agregar Otro Pago</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-primary);border-radius:6px;padding:8px 12px;border:1px solid var(--border-color);">
+            <span style="font-size:13px;font-weight:700;color:var(--text-muted);">Restante:</span>
+            <span style="font-size:15px;font-weight:800;color:${remShow <= 0 ? 'var(--color-success)' : 'var(--color-danger)'};">${currSymbol}${fmt(remShow)}</span>
+          </div>
         </div>
       `;
     } else if (selectedPayment === 'tarjeta' || selectedPayment === 'extrafinanciamiento') {
@@ -654,14 +1447,22 @@ const VentasModule = (() => {
             </div>
             <div style="padding:24px;">
                <div style="text-align:center;margin-bottom:24px;">
-                 <div style="font-size:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Monto a Cobrar</div>
+                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                   <div style="font-size:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;text-align:left;">Monto a Cobrar</div>
+                   ${selectedCurrency === 'NIO' ? `
+                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;background:rgba(16,185,129,0.1);color:#10b981;padding:6px 12px;border-radius:20px;">
+                       <input type="checkbox" ${posPayInUSD ? 'checked' : ''} onchange="VentasModule.togglePayInUSD()">
+                       Pagar en USD
+                     </label>
+                   ` : ''}
+                 </div>
                  <div style="font-size:42px;font-weight:800;color:var(--color-primary-500);">${currSymbol}${fmt(finalTotal)}</div>
                </div>
                <div style="font-size:13px;font-weight:700;margin-bottom:8px;">Tipo de Pago:</div>
-               <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:24px;">
-                  ${['efectivo', 'tarjeta', 'transferencia', 'extrafinanciamiento', 'credito'].map(m => `
-                    <button style="padding:12px;border:2px solid ${selectedPayment === m ? 'var(--color-primary-500)' : 'var(--border-color)'};background:${selectedPayment === m ? 'rgba(56,189,248,0.1)' : 'transparent'};border-radius:8px;font-weight:700;color:${selectedPayment === m ? 'var(--color-primary-500)' : 'var(--text-primary)'};cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:4px;justify-content:center;font-size:11px;" onclick="VentasModule.setPaymentOnly('${m}')">
-                      <span style="font-size:18px;">${m === 'efectivo' ? '💵' : m === 'tarjeta' ? '💳' : m === 'transferencia' ? '🏦' : m === 'extrafinanciamiento' ? '📈' : '📋'}</span>
+               <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-bottom:24px;">
+                  ${['efectivo', 'tarjeta', 'transferencia', 'extrafinanciamiento', 'credito', 'multiple'].map(m => `
+                    <button style="padding:10px 4px;border:2px solid ${selectedPayment === m ? 'var(--color-primary-500)' : 'var(--border-color)'};background:${selectedPayment === m ? 'rgba(56,189,248,0.1)' : 'transparent'};border-radius:8px;font-weight:700;color:${selectedPayment === m ? 'var(--color-primary-500)' : 'var(--text-primary)'};cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:4px;justify-content:center;font-size:10px;" onclick="VentasModule.setPaymentOnly('${m}')">
+                      <span style="font-size:16px;">${m === 'efectivo' ? '💵' : m === 'tarjeta' ? '💳' : m === 'transferencia' ? '🏦' : m === 'extrafinanciamiento' ? '📈' : m === 'credito' ? '📋' : '🔀'}</span>
                       <span>${m.toUpperCase()}</span>
                     </button>
                   `).join('')}
@@ -687,7 +1488,7 @@ const VentasModule = (() => {
       </div>`;
   };
 
-  const processPaymentOverride = () => {
+  const processPaymentOverride = async () => {
     if (cart.length === 0) return;
     const subtotal = cart.reduce((s, i) => s + (i.precio * i.cantidad), 0);
     const descuento = cart.reduce((s, i) => s + (i.descuento || 0), 0);
@@ -695,6 +1496,29 @@ const VentasModule = (() => {
     const total = subtotal - descuento - globalDiscount + iva;
     let finalTotal = total;
     let paymentDetails = null;
+    const costoTotal = cart.reduce((s, i) => s + ((parseFloat(i.costo) || 0) * (parseFloat(i.cantidad) || 0)), 0);
+
+    let tipoCambio = 36.62;
+    try { const cfg = typeof DataService !== 'undefined' ? DataService.getConfig() : {}; tipoCambio = parseFloat(cfg.tipoCambio) || 36.62; } catch (e) { }
+    const actuallyPayInUSD = posPayInUSD && selectedCurrency === 'NIO';
+
+    if (selectedPayment === 'credito') {
+      if (!selectedClient) {
+        setTimeout(() => VentasModule.openClientSearchModal(), 100);
+        return;
+      }
+      const cl = getClients().find(c => c.id === selectedClient);
+      const limCredito = parseFloat(cl?.limiteCredito || cl?.limite_credito || 0);
+      const saldoPend = getData('ventas').filter(v => v.clienteId === selectedClient && v.metodo === 'credito' && parseFloat(v.saldo_pendiente || 0) > 0).reduce((s, v) => s + parseFloat(v.saldo_pendiente || 0), 0);
+      const creditoDisp = limCredito - saldoPend;
+
+      if (posActionModal !== 'credito-setup') {
+        posActionData = { finalTotal, total, subtotal, descuento, globalDiscount, iva, costoTotal, cl, limCredito, creditoDisp, actuallyPayInUSD, tipoCambio };
+        posActionModal = 'credito-setup';
+        App.render();
+        return;
+      }
+    }
 
     if (selectedPayment === 'tarjeta' || selectedPayment === 'extrafinanciamiento') {
       let key = 'pos_extrafinanciamiento';
@@ -742,18 +1566,67 @@ const VentasModule = (() => {
       if (listas.length === 0) { alert('No hay cuentas de transferencia configuradas.'); return; }
       const item = listas[posSelectedConfigIdx];
       if (!item) { alert('Seleccione una cuenta.'); return; }
-      paymentDetails = { banco: item.banco, numeroCuenta: item.numeroCuenta, divisa: item.divisa };
+      paymentDetails = { banco: item.banco, numeroCuenta: item.numeroCuenta, divisa: item.divisa, referencia: posDocReference };
+    } else if (selectedPayment === 'multiple') {
+      const sum = posMultiplePayments.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+      const userCashNIO = actuallyPayInUSD ? sum * tipoCambio : sum;
+      if (userCashNIO < finalTotal) { alert('La suma de los pagos múltiples es menor al total: C$' + fmt(finalTotal)); return; }
+      paymentDetails = { pagos: posMultiplePayments };
+
+      const hasCredito = posMultiplePayments.some(p => p.metodo === 'credito');
+      if (hasCredito && posActionModal !== 'credito-setup') {
+        if (!selectedClient) {
+          setTimeout(() => VentasModule.openClientSearchModal(), 100);
+          return;
+        }
+        const cl = getClients().find(c => c.id === selectedClient);
+        const lim = parseFloat(cl?.limiteCredito || cl?.limite_credito || 0);
+        const pend = getData('ventas').filter(v => v.clienteId === selectedClient && v.metodo === 'credito' && parseFloat(v.saldo_pendiente || 0) > 0).reduce((s, v) => s + parseFloat(v.saldo_pendiente || 0), 0);
+        posActionData = { finalTotal, total, subtotal, descuento, globalDiscount, iva, costoTotal, cl, limCredito: lim, creditoDisp: lim - pend, actuallyPayInUSD, tipoCambio, isMultiple: true };
+        posActionModal = 'credito-setup';
+        App.render();
+        return;
+      }
     }
 
-    if (selectedPayment === 'efectivo' && cashReceived < finalTotal) { alert('El efectivo recibido es menor al total.'); return; }
+    const simpleCashNIO = actuallyPayInUSD ? cashReceived * tipoCambio : cashReceived;
+    if (selectedPayment === 'efectivo' && simpleCashNIO < finalTotal) { alert('El efectivo recibido es menor al total.'); return; }
 
-    const costoTotal = cart.reduce((s, i) => s + (i.costo * i.cantidad), 0);
     const numFactura = 'VNT-' + String(getData('ventas').length + 1).padStart(6, '0');
     const clientFound = selectedClient ? getClients().find(c => c.id === selectedClient) : null;
 
-    addRec('ventas', { numero: numFactura, fecha: new Date().toISOString(), clienteId: selectedClient, cliente: clientFound ? (clientFound.empresa || clientFound.nombreCliente || 'Cliente') : 'Público General', items: cart.map(i => ({ ...i })), subtotal, descuento, descuento_global: globalDiscount, iva, total: finalTotal, base_total: total, costo_total: costoTotal, metodo: selectedPayment, detalles_pago: paymentDetails, lista_precio: posSelectedPriceList, efectivo_recibido: selectedPayment === 'efectivo' ? cashReceived : 0, cambio: selectedPayment === 'efectivo' ? Math.max(0, cashReceived - finalTotal) : 0, saldo_pendiente: selectedPayment === 'credito' ? finalTotal : 0, vendedor: user()?.name || 'N/A', estado: 'completada', comentario: posComment });
+    if (actuallyPayInUSD) {
+      paymentDetails = paymentDetails || {};
+      paymentDetails.pagoEnUSD = true;
+      paymentDetails.montoRecibidoUSD = cashReceived;
+      paymentDetails.tipoCambioApicado = tipoCambio;
+    }
 
-    // Actualizar Tracking Lotes/Series/IMEI
+    // Actualizar stock de productos y Sincronizar Cache Local
+    for (const item of cart) {
+      if (item.productId && typeof DataService !== 'undefined' && DataService.updateProducto) {
+        try {
+          const prod = await DataService.getProductoById(item.productId);
+          if (prod) {
+            const currentStock = parseInt(prod.stock_actual || prod.stock || prod.cantidad || 0);
+            await syncProductStock(item.productId, currentStock - item.cantidad);
+          }
+        } catch (e) {
+          console.warn('Error actualizando stock:', e);
+        }
+      }
+    }
+
+    addRec('ventas', { numero: numFactura, fecha: new Date().toISOString(), clienteId: selectedClient, cliente: clientFound ? (clientFound.empresa || clientFound.nombreCliente || 'Cliente') : 'Público General', items: cart.map(i => ({ ...i })), subtotal, descuento, descuento_global: globalDiscount, iva, total: finalTotal, base_total: total, costo_total: costoTotal, metodo: selectedPayment, detalles_pago: paymentDetails, lista_precio: posSelectedPriceList, efectivo_recibido: selectedPayment === 'efectivo' ? simpleCashNIO : 0, cambio: selectedPayment === 'efectivo' ? Math.max(0, simpleCashNIO - finalTotal) : 0, saldo_pendiente: (selectedPayment === 'credito' || selectedPayment === 'multiple') ? finalTotal : 0, vendedor: user()?.name || 'N/A', estado: 'completada', comentario: posComment });
+
+    if (posDocReference && posDocReference.startsWith('COT-')) {
+      const db = JSON.parse(localStorage.getItem('vnt_cotizaciones') || '[]');
+      const dbIdx = db.findIndex(c => c.numero === posDocReference);
+      if (dbIdx >= 0) {
+        db[dbIdx].estado = 'facturada';
+        localStorage.setItem('vnt_cotizaciones', JSON.stringify(db));
+      }
+    }
     if (typeof ProductosModule !== 'undefined' && ProductosModule.marcarTrackingVendido) {
       cart.forEach(i => {
         if (i.trackingId && i.tipoSeguimiento) {
@@ -772,24 +1645,223 @@ const VentasModule = (() => {
   let currentProductSearchIdx = -1;
   let currentClientSearchRes = [];
   let currentClientSearchIdx = -1;
+  let clientSearchModalOpen = false;
+  let clientSearchModalQuery = '';
+
+  const clearSelectedClient = () => { selectedClient = null; App.render(); };
+
+  const openClientSearchModal = () => {
+    clientSearchModalOpen = true;
+    clientSearchModalQuery = '';
+    const allClients = getClients();
+    currentClientSearchRes = allClients.slice(0, 50);
+    currentClientSearchIdx = -1;
+    App.render();
+    setTimeout(() => {
+      const input = document.getElementById('posClientModalSearch');
+      if (input) input.focus();
+    }, 100);
+  };
+
+  const closeClientSearchModal = () => {
+    clientSearchModalOpen = false;
+    clientSearchModalQuery = '';
+    currentClientSearchRes = [];
+    currentClientSearchIdx = -1;
+    App.render();
+  };
+
+  const filterClientSearchModal = (q) => {
+    clientSearchModalQuery = q;
+    const allClients = getClients();
+    if (!q || q.length < 1) {
+      currentClientSearchRes = allClients.slice(0, 50);
+    } else {
+      const ql = q.toLowerCase();
+      currentClientSearchRes = allClients.filter(c =>
+        (c.empresa || '').toLowerCase().includes(ql) ||
+        (c.nombreCliente || '').toLowerCase().includes(ql) ||
+        (c.cedulaRuc || c.cedula_ruc || '').toLowerCase().includes(ql) ||
+        (c.telefono || '').includes(ql)
+      ).slice(0, 50);
+    }
+    currentClientSearchIdx = currentClientSearchRes.length > 0 ? 0 : -1;
+    renderClientModalList();
+  };
+
+  const handleClientModalKeydown = (e) => {
+    const input = document.getElementById('posClientModalSearch');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      currentClientSearchIdx = Math.min(currentClientSearchIdx + 1, currentClientSearchRes.length - 1);
+      renderClientModalList();
+      if (input) input.focus();
+      return;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      currentClientSearchIdx = Math.max(currentClientSearchIdx - 1, 0);
+      renderClientModalList();
+      if (input) input.focus();
+      return;
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (currentClientSearchIdx >= 0 && currentClientSearchIdx < currentClientSearchRes.length) {
+        selectClientFromModal(currentClientSearchRes[currentClientSearchIdx].id);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeClientSearchModal();
+    }
+  };
+
+  const selectClientFromModal = (id) => {
+    selectedClient = id;
+    clientSearchModalOpen = false;
+    App.render();
+  };
+
+  const renderClientModalList = () => {
+    const el = document.getElementById('posClientModalList');
+    if (!el) return;
+    const allVentas = getData('ventas');
+    const hoy = new Date();
+    el.innerHTML = currentClientSearchRes.length === 0
+      ? '<div style="padding:2rem;text-align:center;color:var(--text-muted);">No se encontraron clientes</div>'
+      : currentClientSearchRes.map((c, i) => {
+        const nombre = c.empresa || c.nombreCliente || 'N/A';
+        const cedula = c.cedulaRuc || c.cedula_ruc || '';
+        const dir = c.direccion || '';
+        const limCredito = parseFloat(c.limiteCredito || c.limite_credito || 0);
+        const isSelected = i === currentClientSearchIdx;
+        // Detect overdue invoices (credit invoices older than 30 days with pending balance)
+        const facturasVencidas = limCredito > 0 ? allVentas.filter(v => v.clienteId === c.id && v.metodo === 'credito' && parseFloat(v.saldo_pendiente || 0) > 0 && v.fecha && ((hoy - new Date(v.fecha)) / 86400000) > 30) : [];
+        const totalVencido = facturasVencidas.reduce((s, v) => s + parseFloat(v.saldo_pendiente || 0), 0);
+        const hasOverdue = facturasVencidas.length > 0;
+        const rowId = `client-row-${i}`;
+        return `<div class="pos-client-modal-row ${isSelected ? 'pos-client-modal-row--active' : ''} ${hasOverdue ? 'pos-client-modal-row--overdue' : ''}" data-cidx="${i}">
+          <div style="display:flex;align-items:center;gap:12px;flex:1;cursor:pointer;" onclick="VentasModule.selectClientFromModal('${c.id}')">
+            <div style="width:36px;height:36px;border-radius:8px;background:${isSelected ? 'linear-gradient(135deg,#3b82f6,#1d4ed8)' : hasOverdue ? 'linear-gradient(135deg,#ef4444,#dc2626)' : '#e2e8f0'};color:${isSelected || hasOverdue ? 'white' : '#64748b'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;">${nombre.charAt(0).toUpperCase()}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:700;font-size:13px;">${nombre}</div>
+              <div style="font-size:11px;color:var(--text-muted);">${cedula || 'Sin cédula'} ${c.telefono ? '· 📞 ' + c.telefono : ''}${dir ? ` · 📍 ${dir}` : ''}</div>
+            </div>
+            ${limCredito > 0 ? `<div style="text-align:right;flex-shrink:0;"><div style="font-size:11px;font-weight:700;color:${hasOverdue ? '#ef4444' : '#10b981'};">Crédito: C$${fmt(limCredito)}</div>${hasOverdue ? `<div style="font-size:9px;color:#ef4444;font-weight:800;">⚠ ${facturasVencidas.length} fact. vencida${facturasVencidas.length > 1 ? 's' : ''}</div>` : ''}</div>` : ''}
+          </div>
+          ${hasOverdue ? `
+            <div style="margin-top:8px;margin-left:48px;">
+              <button type="button" onclick="event.stopPropagation();const d=document.getElementById('${rowId}');d.style.display=d.style.display==='none'?'block':'none';" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);color:#dc2626;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer;">⚠ Ver ${facturasVencidas.length} factura${facturasVencidas.length > 1 ? 's' : ''} vencida${facturasVencidas.length > 1 ? 's' : ''} — Total: C$${fmt(totalVencido)}</button>
+              <div id="${rowId}" style="display:none;margin-top:6px;background:rgba(239,68,68,0.04);border:1px solid rgba(239,68,68,0.15);border-radius:8px;padding:8px;max-height:120px;overflow-y:auto;">
+                <table style="width:100%;font-size:10px;border-collapse:collapse;">
+                  <thead><tr style="border-bottom:1px solid rgba(239,68,68,0.2);"><th style="text-align:left;padding:3px 6px;color:#dc2626;">Factura</th><th style="text-align:left;padding:3px 6px;color:#dc2626;">Fecha</th><th style="text-align:right;padding:3px 6px;color:#dc2626;">Pendiente</th><th style="text-align:right;padding:3px 6px;color:#dc2626;">Días</th></tr></thead>
+                  <tbody>${facturasVencidas.map(v => `<tr><td style="padding:3px 6px;font-weight:600;">${v.numero || 'N/A'}</td><td style="padding:3px 6px;">${fmtD(v.fecha)}</td><td style="padding:3px 6px;text-align:right;font-weight:700;color:#dc2626;">C$${fmt(v.saldo_pendiente)}</td><td style="padding:3px 6px;text-align:right;">${Math.floor((hoy - new Date(v.fecha)) / 86400000)}d</td></tr>`).join('')}</tbody>
+                </table>
+              </div>
+            </div>
+          ` : ''}
+        </div>`;
+      }).join('');
+    // Scroll to active
+    const activeRow = el.querySelector('.pos-client-modal-row--active');
+    if (activeRow) activeRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  const renderClientSearchModalOverlay = () => {
+    if (!clientSearchModalOpen) return '';
+    return `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999992;display:flex;align-items:center;justify-content:center;" onclick="VentasModule.closeClientSearchModal()">
+        <div style="background:var(--bg-primary);border-radius:12px;width:520px;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden;" onclick="event.stopPropagation()">
+          <div style="padding:16px 20px;background:linear-gradient(135deg,#0f172a,#1e3a5f);color:white;">
+            <h3 style="margin:0;font-size:1.1rem;font-weight:800;display:flex;align-items:center;gap:8px;">${Icons.users} Buscar Cliente</h3>
+            <p style="margin:4px 0 0;font-size:12px;opacity:0.7;">Use ↑↓ para navegar, Enter para seleccionar, Esc para cerrar</p>
+          </div>
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border-color);">
+            <input type="text" id="posClientModalSearch" class="form-input" placeholder="Buscar por nombre, cédula, RUC o teléfono..." value="${clientSearchModalQuery}" oninput="VentasModule.filterClientSearchModal(this.value)" onkeydown="VentasModule.handleClientModalKeydown(event)" autocomplete="off" style="width:100%;font-size:14px;padding:10px 12px;">
+          </div>
+          <div id="posClientModalList" style="flex:1;overflow-y:auto;max-height:400px;padding:8px;">
+            ${currentClientSearchRes.map((c, i) => {
+      const nombre = c.empresa || c.nombreCliente || 'N/A';
+      const cedula = c.identificacion || c.cedulaRuc || c.cedula_ruc || '';
+      const limCredito = parseFloat(c.limiteCredito || c.limite_credito || 0);
+      const isSelected = i === currentClientSearchIdx;
+      return `<div onclick="VentasModule.selectClientFromModal('${c.id}')" class="pos-client-modal-row ${isSelected ? 'pos-client-modal-row--active' : ''}" data-cidx="${i}">
+                <div style="width:36px;height:36px;border-radius:8px;background:${isSelected ? 'linear-gradient(135deg,#3b82f6,#1d4ed8)' : '#e2e8f0'};color:${isSelected ? 'white' : '#64748b'};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;">${nombre.charAt(0).toUpperCase()}</div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:700;font-size:13px;">${nombre}</div>
+                  <div style="font-size:11px;color:var(--text-muted);">${cedula || 'Sin cédula'} ${c.telefono ? '· 📞 ' + c.telefono : ''}</div>
+                </div>
+                ${limCredito > 0 ? `<div style="font-size:11px;font-weight:700;color:#10b981;">Crédito: C$${fmt(limCredito)}</div>` : ''}
+              </div>`;
+    }).join('')}
+          </div>
+          <div style="padding:10px 16px;background:var(--bg-secondary);border-top:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;">
+            <button type="button" onclick="VentasModule.openNewClientFromSearchModal()" class="btn btn--primary btn--sm" style="font-size:12px;">+ Nuevo Cliente</button>
+            <button onclick="VentasModule.closeClientSearchModal()" class="btn btn--ghost btn--sm">Cancelar</button>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  const openNewClientFromSearchModal = () => {
+    clientSearchModalOpen = false;
+    clientSearchModalQuery = '';
+    currentClientSearchRes = [];
+    currentClientSearchIdx = -1;
+    // Render the client create form directly in a POS overlay modal
+    posActionModal = 'newClientFull';
+    posActionData = null;
+    App.render();
+  };
+
+  // Called after client is created from POS to refresh and select
+  const onClientCreatedFromPOS = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const rawData = Object.fromEntries(formData.entries());
+    const isEmpresa = rawData.tipoRegistro === 'Empresa';
+    const data = {
+      tipo_registro: rawData.tipoRegistro || 'Persona Natural',
+      identificacion: rawData.identificacion || null,
+      nombre_cliente: rawData.nombreCliente,
+      empresa: isEmpresa ? rawData.nombreCliente : rawData.nombreCliente,
+      telefono: rawData.telefono,
+      correo: rawData.correo || null,
+      direccion: rawData.direccion || null,
+      limite_credito: parseFloat(rawData.limiteCredito) || 0,
+      porcentaje_descuento: parseFloat(rawData.porcentajeDescuento) || 0,
+      lista_precios: rawData.listaPrecios || 'General',
+      nota: rawData.nota || null,
+      imp_sumar_retencion: rawData.impSumarRetencion === 'on',
+      val_sumar_retencion: rawData.impSumarRetencion === 'on' ? (parseFloat(rawData.valSumarRetencion) || 0) : 0,
+      imp_retencion: rawData.impRetencion === 'on',
+      val_retencion: rawData.impRetencion === 'on' ? (parseFloat(rawData.valRetencion) || 0) : 0,
+      imp_iva: rawData.impIva === 'on',
+      val_iva: rawData.impIva === 'on' ? (parseFloat(rawData.valIva) || 0) : 0,
+      estado: rawData.estado || 'Activo'
+    };
+    try {
+      await DataService.createCliente(data);
+      alert('✅ Cliente creado exitosamente');
+      posActionModal = null; posActionData = null;
+      // Auto-select the new client from the refreshed list
+      const allClients = getClients();
+      const newClient = allClients.find(c => (c.nombreCliente || '').toLowerCase() === rawData.nombreCliente.toLowerCase());
+      if (newClient) selectedClient = newClient.id;
+      App.render();
+    } catch (error) {
+      alert('❌ Error al crear cliente: ' + (error.message || 'Error desconocido'));
+    }
+  };
+
   const searchClientsCombo = (q) => {
+    // Legacy: kept for compatibility but primary use is now the modal
     const el = document.getElementById('posClientResults');
     if (!el) return;
     if (!q || q.length < 1) { el.style.display = 'none'; return; }
-
     clearTimeout(clientSearchTimeout);
     clientSearchTimeout = setTimeout(() => {
       const found = getClients().filter(c => (c.empresa || c.nombreCliente || '').toLowerCase().includes(q.toLowerCase())).slice(0, 5);
-      if (found.length === 0) {
-        el.style.display = 'none';
-        posActionModal = 'newClient';
-        posActionData = { name: q };
-        App.render();
-      } else {
-        currentClientSearchRes = found;
-        currentClientSearchIdx = -1;
-        renderClientSearchResults();
-      }
+      if (found.length === 0) { el.style.display = 'none'; }
+      else { currentClientSearchRes = found; currentClientSearchIdx = -1; renderClientSearchResults(); }
     }, 600);
   };
   const renderClientSearchResults = () => {
@@ -801,9 +1873,17 @@ const VentasModule = (() => {
   const selectClientCombo = (id) => { selectedClient = id; App.render(); };
   const promptGlobalDiscount = () => { promptGlobalDiscountModal(); };
   const setPosComment = (v) => { posComment = v; };
-  const openPaymentModal = () => { if (cart.length === 0) return; posOpenModal = 'payment'; selectedPayment = 'efectivo'; posSelectedConfigIdx = 0; cashReceived = 0; App.render(); };
+  const addPosMultiple = () => { posMultiplePayments.push({ metodo: 'efectivo', monto: 0, referencia: '', configIdx: 0, tjmodo: 'cobrar' }); App.render(); };
+  const removePosMultiple = (i) => { posMultiplePayments.splice(i, 1); App.render(); };
+  const updatePosMultiple = (i, field, val) => {
+    posMultiplePayments[i][field] = val;
+    if (field === 'metodo') posMultiplePayments[i].configIdx = 0;
+    if (field === 'metodo' || field === 'tjmodo') App.render();
+  };
+
+  const openPaymentModal = () => { if (cart.length === 0) return; posOpenModal = 'payment'; selectedPayment = 'efectivo'; posMultiplePayments = [{ metodo: 'efectivo', monto: 0, referencia: '', configIdx: 0, tjmodo: 'cobrar' }]; posSelectedConfigIdx = 0; cashReceived = 0; posPayInUSD = false; posDocReference = ''; App.render(); };
   const closePaymentModal = () => { posOpenModal = null; App.render(); };
-  const closePosModal = () => { posOpenModal = null; App.render(); };
+  const closePosModal = () => { posOpenModal = null; consultorQuery = ''; consultorResult = null; cotizacionQuery = ''; cotizacionSelected = null; devolucionQuery = ''; devolucionSelectedId = null; devolucionProdQuery = ''; devolucionSelectedItems = {}; App.render(); };
   const setPaymentOnly = (m) => { selectedPayment = m; posSelectedConfigIdx = 0; App.render(); };
   const setTarjetaModo = (m) => { posTarjetaModo = m; posSelectedConfigIdx = 0; App.render(); };
   const setPaymentConfig = (idx) => { posSelectedConfigIdx = parseInt(idx); App.render(); };
@@ -829,7 +1909,15 @@ const VentasModule = (() => {
     clearTimeout(searchTimeout); const el = document.getElementById('posSearchResults'); if (!el) return;
     if (!query || query.length < 1) { el.style.display = 'none'; return; }
     searchTimeout = setTimeout(() => {
-      const prods = getProducts().filter(p => { const q = query.toLowerCase(); return (p.nombre || '').toLowerCase().includes(q) || (p.codigo || '').toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q); }).slice(0, 8);
+      const prods = getProducts().filter(p => {
+        const qArr = query.toLowerCase().split(' ').filter(x => x.length > 0);
+        const nombre = String(p.nombre || '').toLowerCase();
+        const codigo = String(p.codigo || '').toLowerCase();
+        const sku = String(p.sku || p.codigo || '').toLowerCase();
+        const codigoAlt = String(p.codigoAlt || p.codigo_alternativo || '').toLowerCase();
+
+        return qArr.every(q => nombre.includes(q) || codigo.includes(q) || sku.includes(q) || codigoAlt.includes(q));
+      }).slice(0, 8);
       if (prods.length === 0) {
         el.innerHTML = '<div style="padding:12px;color:var(--text-muted);text-align:center;">Sin resultados</div>';
         el.style.display = 'block';
@@ -896,8 +1984,44 @@ const VentasModule = (() => {
     const val = parseFloat(input.value) || 0; cashReceived = val;
     const total = parseFloat(input.dataset.total) || 0; const cambio = val - total;
     const box = document.getElementById('posCambioBox'); const recEl = document.getElementById('posCambioRecibido'); const camEl = document.getElementById('posCambioValor');
-    if (box && recEl && camEl) { box.style.display = val > 0 ? 'block' : 'none'; recEl.textContent = 'C$' + fmt(val); camEl.textContent = 'C$' + fmt(cambio >= 0 ? cambio : 0); camEl.style.color = cambio >= 0 ? '#059669' : '#ef4444'; }
+    const symbol = (posPayInUSD && selectedCurrency === 'NIO') ? '$ ' : (selectedCurrency === 'USD' ? '$ ' : 'C$ ');
+    if (box && recEl && camEl) { box.style.display = val > 0 ? 'block' : 'none'; recEl.textContent = symbol + fmt(val); camEl.textContent = symbol + fmt(cambio >= 0 ? cambio : 0); camEl.style.color = cambio >= 0 ? '#059669' : '#ef4444'; }
   };
+
+  const calcAmortizacionCredito = () => {
+    if (posActionModal !== 'credito-setup' || !posActionData) return;
+    const forms = document.getElementsByTagName('form');
+    let form = null;
+    for (let f of forms) { if (f.querySelector('select[name="modalidadPago"]')) form = f; }
+    if (!form) return;
+    const fd = new FormData(form);
+    const modalidadPago = fd.get('modalidadPago');
+    const container = document.getElementById('pos_credito_amortizacion');
+    if (!container) return;
+    if (modalidadPago !== 'cuotas') { container.innerHTML = ''; return; }
+
+    let numCuotas = parseInt(fd.get('numCuotas'));
+    if (isNaN(numCuotas) || numCuotas < 2) numCuotas = 2;
+    const periodicidad = fd.get('periodicidad') || 'Mensual';
+    const total = posActionData.finalTotal;
+    const cuotaMonto = total / numCuotas;
+
+    let date = new Date();
+    let daysAdd = periodicidad === 'Semanal' ? 7 : (periodicidad === 'Quincenal' ? 15 : 30);
+
+    let rows = '';
+    for (let i = 1; i <= numCuotas; i++) {
+      date.setDate(date.getDate() + daysAdd);
+      rows += `<tr><td style="padding:6px;border-bottom:1px solid var(--border-color);">${i}</td><td style="padding:6px;border-bottom:1px solid var(--border-color);">${date.toLocaleDateString('es-NI')}</td><td style="padding:6px;border-bottom:1px solid var(--border-color);text-align:right;font-weight:600;color:var(--text-primary);">C$${fmt(cuotaMonto)}</td></tr>`;
+    }
+    container.innerHTML = `<table style="width:100%;font-size:11px;text-align:left;border-collapse:collapse;">
+        <thead><tr><th style="padding:6px;border-bottom:2px solid var(--border-color);position:sticky;top:0;background:var(--bg-primary);">No.</th><th style="padding:6px;border-bottom:2px solid var(--border-color);position:sticky;top:0;background:var(--bg-primary);">Vencimiento</th><th style="padding:6px;border-bottom:2px solid var(--border-color);text-align:right;position:sticky;top:0;background:var(--bg-primary);">Monto a Pagar</th></tr></thead>
+        <tbody>${rows}</tbody>
+     </table>`;
+  };
+
+  const togglePayInUSD = () => { posPayInUSD = !posPayInUSD; cashReceived = 0; posDocReference = ''; App.render(); };
+  const setDocReference = (val) => { posDocReference = val; };
 
   const handleKeyboard = (e) => {
     const map = [
@@ -1100,124 +2224,1209 @@ const VentasModule = (() => {
             </div>
             
             <div style="background:var(--bg-primary);border-radius:8px;padding:1.5rem;border:1px solid var(--border-color);margin-top:1.5rem;">
-               <h4 style="margin-top:0;margin-bottom:1rem;color:var(--text-primary);display:flex;align-items:center;gap:0.5rem;">${Icons.wallet} Conteo Físico de Divisas</h4>
+               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                 <h4 style="margin:0;color:var(--text-primary);display:flex;align-items:center;gap:0.5rem;">${Icons.wallet} Conteo Físico de Divisas</h4>
+                 <button class="btn btn--sm btn--primary" onclick="VentasModule.promptContadorDivisas()">${Icons.calculator || '🧮'} Contador de Divisas</button>
+               </div>
                <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;">
                   <div>
                     <label style="font-size:0.85rem;font-weight:700;display:block;margin-bottom:0.4rem;color:var(--text-muted);text-transform:uppercase;">Córdobas (C$ Físico)</label>
-                    <input type="number" id="conteoCaja" class="form-input" placeholder="0.00" step="0.01" style="font-size:1.5rem;font-weight:bold;height:50px;">
+                    <input type="number" id="conteoCaja" class="form-input" placeholder="0.00" step="0.01" value="${cierreConteoNio}" oninput="VentasModule.updateConteoNio(this.value)" style="font-size:1.5rem;font-weight:bold;height:50px;">
                   </div>
                   <div>
                     <label style="font-size:0.85rem;font-weight:700;display:block;margin-bottom:0.4rem;color:var(--text-muted);text-transform:uppercase;">Dólares (USA Físico)</label>
-                    <input type="number" id="conteoDolares" class="form-input" placeholder="0.00" step="0.01" style="font-size:1.5rem;font-weight:bold;height:50px;">
+                    <input type="number" id="conteoDolares" class="form-input" placeholder="0.00" step="0.01" value="${cierreConteoUsd}" oninput="VentasModule.updateConteoUsd(this.value)" style="font-size:1.5rem;font-weight:bold;height:50px;">
                   </div>
                </div>
             </div>
          </div>
          <div style="background:var(--bg-primary);padding:1rem 2rem;display:flex;justify-content:flex-end;gap:1.5rem;border-top:1px solid var(--border-color);flex-shrink:0;">
-             <button onclick="VentasModule.closePOSOverlay()" class="btn btn--ghost" style="font-size:1.1rem;padding:0.6rem 2rem;">Cancelar y Volver</button>
+              <button onclick="VentasModule.cancelCloseTurno()" class="btn btn--ghost" style="font-size:1.1rem;padding:0.6rem 2rem;">Cancelar y Volver</button>
              <button onclick="VentasModule.confirmCloseTurno()" class="btn btn--danger" style="font-size:1.1rem;font-weight:700;padding:0.75rem 2rem;">Bloquear y Cerrar Turno</button>
          </div>
       </div>
+      ${posActionModal === 'contador-divisas' ? renderPosActionModal() : ''}
     `;
   };
-  const renderConsultorPrecios = () => '<div style="padding:2rem;">Consultor de precios... (En desarrollo)</div>';
+  const renderConsultorPrecios = () => {
+    return `
+      <div style="display:flex;flex-direction:column;height:100%;padding:1.5rem;background:var(--bg-secondary);">
+         <div style="margin-bottom:1.5rem;display:flex;gap:12px;align-items:center;">
+            <div style="position:relative;flex:1;">
+               <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:1.5rem;color:var(--text-muted);">🔍</span>
+               <input type="text" class="form-input" id="consultorSearchInput" placeholder="Escanee código de barras o busque por nombre..." style="width:100%;height:54px;font-size:1.1rem;padding-left:56px;border-radius:12px;border:2px solid var(--color-primary-300);" value="${consultorQuery}" oninput="VentasModule.searchConsultor(this.value)" autocomplete="off">
+            </div>
+         </div>
+         <div style="flex:1;overflow-y:auto;background:var(--bg-primary);border-radius:12px;border:1px solid var(--border-color);padding:1.5rem;">
+            ${!consultorResult ? '<div style="text-align:center;color:var(--text-muted);margin-top:2rem;"><div style="font-size:3rem;margin-bottom:1rem;">🛒</div><h2>Consultor de Precios</h2><p>Ingrese un producto para consultar detalles.</p></div>' :
+        consultorResult.length === 0 ? '<div style="text-align:center;color:var(--text-muted);margin-top:2rem;"><h2>No se encontraron productos</h2></div>' :
+          consultorResult.map(p => {
+            const imgTag = p.fotoPromocional ? `<img src="${p.fotoPromocional}" style="max-width:100%;max-height:100%;object-fit:cover;border-radius:6px;">` : '<span style="font-size:2rem;color:#cbd5e1;">📦</span>';
+            return `
+                <div style="display:flex;gap:0.75rem;margin-bottom:0.75rem;padding-bottom:0.75rem;border-bottom:1px solid var(--border-color);">
+                   <div style="width:60px;height:60px;background:white;border-radius:8px;border:1px solid var(--border-color);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+                      ${imgTag}
+                   </div>
+                   <div style="flex:1;">
+                      <h2 style="margin:0 0 2px;font-size:1.1rem;color:var(--text-primary);">${p.nombre}</h2>
+                      <div style="font-family:monospace;font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Código: ${p.codigo || p.sku || 'N/A'} &middot; Existencia: <strong style="color:${(p.inventario || 0) > 0 ? '#10b981' : '#ef4444'};">${p.inventario || 0}</strong></div>
+                      <p style="font-size:0.8rem;color:var(--text-primary);margin-bottom:8px;line-height:1.2;max-height:30px;overflow:hidden;text-overflow:ellipsis;">${p.descripcion || 'Sin descripción agregada.'}</p>
+                      
+                      <div style="display:flex;gap:0.5rem;margin-bottom:8px;flex-wrap:wrap;">
+                        <div style="background:var(--bg-secondary);padding:0.4rem;border-radius:6px;border:1px solid var(--border-color);">
+                           <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:1px;font-weight:700;">PRECIO PÚBLICO</div>
+                           <div style="font-size:1rem;font-weight:900;color:var(--color-primary-600);">C$${fmt(p.precioVentaA || p.precio_venta || 0)}</div>
+                        </div>
+                        ${p.masPrecios ? p.masPrecios.map(mp => `
+                           <div style="background:var(--bg-secondary);padding:0.4rem;border-radius:6px;border:1px solid var(--border-color);">
+                             <div style="font-size:0.65rem;color:var(--text-muted);margin-bottom:1px;font-weight:700;">${(mp.nombrePrecio || 'PRECIO').toUpperCase()}</div>
+                             <div style="font-size:0.9rem;font-weight:800;color:var(--text-primary);">C$${fmt(mp.monto)}</div>
+                           </div>
+                        `).join('') : ''}
+                      </div>
+                      
+                      <button onclick="VentasModule.navigateSidebar('pos'); VentasModule.addToCart('${p.id}');" class="btn btn--primary btn--sm" style="font-size:0.8rem;padding:4px 10px;">🛒 Agregar</button>
+                   </div>
+                </div>
+              `}).join('')
+      }
+         </div>
+      </div>
+      <script>setTimeout(() => { const i = document.getElementById('consultorSearchInput'); if (i) setTimeout(() => i.focus(), 50); }, 50);</script>
+    `;
+  };
   const renderPOSDevoluciones = () => '<div style="padding:2rem;">Devoluciones... (En desarrollo)</div>';
   const renderApartados = () => '<div style="padding:2rem;">Apartados... (En desarrollo)</div>';
-  const renderCotizaciones = () => '<div style="padding:2rem;">Cotizaciones... (En desarrollo)</div>';
+
+  let reportFilters = {
+    type: 'mes', // 'mes', 'rango', 'todos'
+    month: new Date().toISOString().substring(0, 7),
+    dateFrom: new Date().toISOString().substring(0, 10),
+    dateTo: new Date().toISOString().substring(0, 10)
+  };
+  const setReportFilterType = (t) => { reportFilters.type = t; App.render(); };
+  const setReportFilterMonth = (m) => { reportFilters.month = m; App.render(); };
+  const setReportFilterDate = (f, t) => { if (f) reportFilters.dateFrom = f; if (t) reportFilters.dateTo = t; App.render(); };
+
+  const applyReportFilters = (arr) => {
+    if (reportFilters.type === 'todos') return arr;
+    return arr.filter(item => {
+      if (!item.fecha) return false;
+      if (reportFilters.type === 'mes') {
+        return item.fecha.startsWith(reportFilters.month);
+      } else if (reportFilters.type === 'rango') {
+        const d = item.fecha.substring(0, 10);
+        return d >= reportFilters.dateFrom && d <= reportFilters.dateTo;
+      }
+      return true;
+    });
+  };
+
+  const renderReportesFilters = () => `
+        <div style="background:var(--bg-secondary);padding:1rem;border-radius:12px;margin-bottom:1.5rem;display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;box-shadow:var(--shadow-sm);border:1px solid var(--border-color);">
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+             <strong style="color:var(--text-primary);font-size:0.9rem;">Periodo:</strong>
+             <select class="form-input" style="width:180px;font-weight:600;" onchange="VentasModule.setReportFilterType(this.value)">
+               <option value="mes" ${reportFilters.type === 'mes' ? 'selected' : ''}>📅 Por Mes</option>
+               <option value="rango" ${reportFilters.type === 'rango' ? 'selected' : ''}>🗓️ Rango de Fechas</option>
+               <option value="todos" ${reportFilters.type === 'todos' ? 'selected' : ''}>🌍 Histórico Completo</option>
+             </select>
+          </div>
+          ${reportFilters.type === 'mes' ? `
+             <div style="display:flex;align-items:center;gap:0.5rem;animation:fadeIn 0.2s ease;">
+               <input type="month" class="form-input" value="${reportFilters.month}" onchange="VentasModule.setReportFilterMonth(this.value)">
+             </div>
+          ` : reportFilters.type === 'rango' ? `
+             <div style="display:flex;align-items:center;gap:0.5rem;animation:fadeIn 0.2s ease;">
+               <div style="color:var(--text-muted);font-size:0.85rem;font-weight:600;">Desde</div>
+               <input type="date" class="form-input" value="${reportFilters.dateFrom}" onchange="VentasModule.setReportFilterDate(this.value, null)">
+               <div style="color:var(--text-muted);font-size:0.85rem;font-weight:600;margin-left:0.5rem;">Hasta</div>
+               <input type="date" class="form-input" value="${reportFilters.dateTo}" onchange="VentasModule.setReportFilterDate(null, this.value)">
+             </div>
+          ` : ''}
+        </div>
+  `;
+
+  let cotizacionQuery = '';
+  let cotizacionSelected = null;
+
+  const searchCotizaciones = (q) => { cotizacionQuery = q; App.render(); };
+  const selectCotizacion = (num) => { cotizacionSelected = num; App.render(); };
+
+  const renderCotizaciones = () => {
+    const rawData = getData('cotizaciones').reverse();
+    let data = applyReportFilters(rawData);
+
+    if (cotizacionQuery.trim()) {
+      const q = cotizacionQuery.toLowerCase();
+      data = data.filter(c => String(c.numero || '').toLowerCase().includes(q) || (c.cliente && String(c.cliente || '').toLowerCase().includes(q)));
+    }
+
+    const listHtml = data.length === 0 ? '<div style="padding:2rem;text-align:center;color:var(--text-muted);">No hay cotizaciones registradas.</div>' :
+      `<table class="data-table" style="width:100%;font-size:13px;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:12px;">Número</th><th style="text-align:left;padding:12px;">Fecha</th><th style="text-align:left;padding:12px;">Venc.</th><th style="text-align:left;padding:12px;">Cliente</th><th style="text-align:right;padding:12px;">Total</th><th style="text-align:center;padding:12px;">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+           ${data.map(c => `
+             <tr style="border-bottom:1px solid var(--border-color); cursor:pointer; background:${cotizacionSelected === c.numero ? 'var(--color-primary-50)' : 'transparent'}; transition:background 0.2s;" onclick="VentasModule.selectCotizacion('${c.numero}')">
+               <td style="padding:12px 8px; color:${cotizacionSelected === c.numero ? 'var(--color-primary-600)' : 'inherit'};"><strong>${c.numero}</strong></td>
+               <td>${new Date(c.fecha).toLocaleDateString('es-NI')}</td>
+               <td><span style="${new Date(c.vencimiento) < new Date() && c.estado === 'vigente' ? 'color:#ef4444;font-weight:bold;' : ''}">${new Date(c.vencimiento).toLocaleDateString('es-NI')}</span></td>
+               <td><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">${c.cliente || 'Público'}</div></td>
+               <td style="font-weight:700;text-align:right;color:var(--color-primary-600);">${c.divisa === 'USD' ? '$' : 'C$'}${fmt(c.total)}</td>
+               <td style="text-align:center;"><span style="border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700;display:inline-block;background:${c.estado === 'vigente' ? 'rgba(56,189,248,0.1);color:#38bdf8;' : (c.estado === 'facturada' ? 'rgba(16,185,129,0.1);color:#10b981;' : 'rgba(148,163,184,0.1);color:#94a3b8;')}">${(c.estado || '').toUpperCase()}</span></td>
+             </tr>
+           `).join('')}
+        </tbody>
+      </table>`;
+
+    let sidebarHtml = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:1.1rem;text-align:center;">Seleccione una cotización para ver detalles.</div>';
+
+    if (cotizacionSelected) {
+      const c = rawData.find(x => x.numero === cotizacionSelected);
+      if (c) {
+        sidebarHtml = `
+            <div style="display:flex;flex-direction:column;height:100%;">
+              <h3 style="margin:0 0 16px;font-size:1.6rem;color:var(--color-primary-600); border-bottom:1px solid var(--border-color); padding-bottom:12px; font-weight:800; display:flex; align-items:center; justify-content:space-between;">
+                <span>Docs: ${c.numero}</span>
+                <span style="font-size:1rem;color:var(--text-muted);font-weight:500;">${new Date(c.fecha).toLocaleDateString('es-NI')}</span>
+              </h3>
+              <div style="flex:1;overflow-y:auto;margin-bottom:16px;">
+                <div style="margin-bottom:12px;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                  <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;font-weight:700;">CLIENTE</div>
+                  <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">${c.cliente || 'Público General'}</div>
+                </div>
+                
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                   <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                     <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;font-weight:700;">VENCE EL</div>
+                     <div style="font-size:1rem;font-weight:700;color:${new Date(c.vencimiento) < new Date() && c.estado === 'vigente' ? '#ef4444' : 'var(--text-primary)'};">${new Date(c.vencimiento).toLocaleDateString('es-NI')}</div>
+                   </div>
+                   <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                     <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;font-weight:700;">ESTADO</div>
+                     <div style="font-size:1rem;font-weight:700;color:${c.estado === 'vigente' ? '#38bdf8' : (c.estado === 'facturada' ? '#10b981' : '#94a3b8')}">${(c.estado || '').toUpperCase()}</div>
+                   </div>
+                </div>
+
+                <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:8px;font-weight:700;">CANTIDAD - LISTA DE PRODUCTOS</div>
+                <div style="background:var(--bg-secondary);border-radius:8px;padding:8px;border:1px solid var(--border-color);">
+                  <ul style="list-style:none;padding:0;margin:0;font-size:0.95rem;">
+                    ${c.items.map(i => `<li style="padding:6px 4px;border-bottom:1px dashed var(--border-color);display:flex;justify-content:space-between;align-items:flex-start;">
+                       <span style="flex:1;padding-right:8px;"><span style="color:var(--color-primary-600);font-weight:700;margin-right:4px;">${i.cantidad}x</span> <span>${i.nombre}</span></span> 
+                       <span style="font-weight:700;flex-shrink:0;">${c.divisa === 'USD' ? '$' : 'C$'}${fmt(i.precio * i.cantidad)}</span>
+                    </li>`).join('')}
+                  </ul>
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 4px 4px;margin-top:4px;border-top:1px solid var(--border-color);">
+                    <span style="font-weight:700;color:var(--text-muted);">Total Cotizado</span>
+                    <span style="font-weight:900;font-size:1.3rem;color:var(--color-primary-600);">${c.divisa === 'USD' ? '$' : 'C$'}${fmt(c.total)}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div style="border-top:1px solid var(--border-color);padding-top:16px;display:flex;flex-direction:column;gap:12px;">
+                 <div style="display:flex;gap:12px;">
+                   <button onclick="alert('Funcionalidad de PDF en desarrollo');" class="btn btn--secondary" style="flex:1;font-weight:600;"><span style="margin-right:8px;">📄</span> Imprimir</button>
+                   <button onclick="alert('Funcionalidad de correo en desarrollo');" class="btn btn--secondary" style="flex:1;font-weight:600;"><span style="margin-right:8px;">📧</span> Correo</button>
+                 </div>
+                 <button onclick="VentasModule.facturarCotizacion('${c.numero}')" class="btn btn--primary" style="width:100%;font-weight:800;font-size:1.15rem;padding:16px;letter-spacing:1px;" ${c.estado !== 'vigente' ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}><span style="margin-right:8px;">🛒</span> EFECTUAR VENTA</button>
+              </div>
+            </div>
+          `;
+      }
+    }
+
+    return `<div style="display:flex;height:100%;background:var(--bg-secondary);">
+       <div style="flex:1;display:flex;flex-direction:column;padding:1.5rem;border-right:1px solid var(--border-color);max-width:calc(100% - 420px);">
+           
+           <div style="display:flex;gap:1.5rem;margin-bottom:1.5rem;">
+              <div style="flex:1;position:relative;">
+                 <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:1.2rem;">🔍</span>
+                 <input type="text" class="form-input" placeholder="Buscar por cliente o número de proforma..." value="${cotizacionQuery}" oninput="VentasModule.searchCotizaciones(this.value)" style="width:100%;padding-left:48px;height:50px;font-size:1.1rem;border-width:2px;">
+              </div>
+           </div>
+           
+           ${renderReportesFilters()}
+           
+           <div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;flex:1;display:flex;flex-direction:column;">
+              <div style="flex:1;overflow-y:auto;">
+                 ${listHtml}
+              </div>
+           </div>
+       </div>
+       <div style="width:420px;background:var(--bg-primary);padding:1.5rem;display:flex;flex-direction:column;">
+          ${sidebarHtml}
+       </div>
+    </div>`;
+  };
   const renderProductosVendidos = () => '<div style="padding:2rem;">Productos Vendidos (En desarrollo)</div>';
   const renderClientes = () => '<div style="padding:2rem;">Clientes... (En desarrollo)</div>';
   const renderAbonos = () => '<div style="padding:2rem;">Abonos... (En desarrollo)</div>';
   const renderReimpresion = () => '<div style="padding:2rem;">Reimpresión... (En desarrollo)</div>';
-  const renderCortes = () => '<div style="padding:2rem;">Cortes de caja... (En desarrollo)</div>';
-  const renderDevoluciones = () => '<div style="padding:2rem;">Devoluciones general... (En desarrollo)</div>';
-  const renderReportes = () => {
-    const ventasList = getData('ventas').filter(v => v.detalles_pago && v.detalles_pago.asumido === true);
+  const renderCortes = () => { currentReportTab = 'cortes-caja'; return renderReportes(); };
+  let devolucionQuery = '';
+  let devolucionSelectedId = null;
+  let devolucionProdQuery = '';
+  let devolucionSelectedItems = {};
 
-    // Calculate totals
-    const totalVentas = ventasList.reduce((s, v) => s + parseFloat(v.base_total || v.total), 0);
-    const totalComision = ventasList.reduce((s, v) => s + parseFloat(v.detalles_pago.montoAsumidoBancario || 0), 0);
-    const totalIR = ventasList.reduce((s, v) => s + parseFloat(v.detalles_pago.montoAsumidoIR || 0), 0);
-    const totalDeducido = ventasList.reduce((s, v) => s + parseFloat(v.detalles_pago.totalImpuestoAsumido || 0), 0);
+  const searchDevoluciones = (q) => { devolucionQuery = q; App.render(); };
+  const selectDevolucion = (id) => { devolucionSelectedId = id; devolucionProdQuery = ''; devolucionSelectedItems = {}; App.render(); };
+  const searchDevolucionProducts = (q) => { devolucionProdQuery = q; App.render(); };
+  const toggleDevolucionItem = (idx) => { devolucionSelectedItems[idx] = !devolucionSelectedItems[idx]; App.render(); };
 
-    return `
-      <div style="padding: 2rem; max-width: 1200px; margin: 0 auto;">
-        <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; color: var(--text-primary); display:flex; align-items:center; gap:8px;">
-          ${Icons.chart} Reporte: Impuesto sobre Comisión Bancaria
-        </h2>
-        
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-          <div style="background: var(--bg-primary); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border-color);">
-            <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; margin-bottom: 0.5rem;">Total Ventas (Base)</div>
-            <div style="font-size: 1.8rem; font-weight: 800; color: var(--text-primary);">C$ ${fmt(totalVentas)}</div>
-          </div>
-          <div style="background: rgba(239,68,68,0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(239,68,68,0.2);">
-            <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; margin-bottom: 0.5rem;">Costo Bancario Asumido</div>
-            <div style="font-size: 1.8rem; font-weight: 800; color: #ef4444;">- C$ ${fmt(totalComision)}</div>
-          </div>
-          <div style="background: rgba(239,68,68,0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(239,68,68,0.2);">
-            <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; margin-bottom: 0.5rem;">IR Asumido</div>
-            <div style="font-size: 1.8rem; font-weight: 800; color: #ef4444;">- C$ ${fmt(totalIR)}</div>
-          </div>
-          <div style="background: rgba(16,185,129,0.05); padding: 1.5rem; border-radius: 8px; border: 1px solid rgba(16,185,129,0.2);">
-            <div style="font-size: 0.85rem; color: #059669; text-transform: uppercase; font-weight: 700; margin-bottom: 0.5rem;">Ganancia Neta (Deducida)</div>
-            <div style="font-size: 1.8rem; font-weight: 800; color: #059669;">C$ ${fmt(totalVentas - totalDeducido)}</div>
-          </div>
-        </div>
+  const checkAllDevolucionItems = (totalItems) => {
+    let allChecked = true;
+    for (let i = 0; i < totalItems; i++) { if (!devolucionSelectedItems[i]) allChecked = false; }
+    for (let i = 0; i < totalItems; i++) { devolucionSelectedItems[i] = !allChecked; }
+    App.render();
+  };
 
-        <div style="background: var(--bg-primary); border-radius: 8px; border: 1px solid var(--border-color); overflow: hidden;">
-          <table class="data-table" style="width: 100%; border-collapse: collapse;">
-            <thead style="background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); text-align: left;">
-              <tr>
-                <th style="padding: 1rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">No. Factura</th>
-                <th style="padding: 1rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Fecha</th>
-                <th style="padding: 1rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">POS Banco</th>
-                <th style="padding: 1rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Monto Base</th>
-                <th style="padding: 1rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Comisión Bancaria</th>
-                <th style="padding: 1rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">IR</th>
-                <th style="padding: 1rem; font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted);">Ganancia Neta</th>
+  const cancelarFacturaTotal = async (id) => {
+    const vnt = getData('ventas');
+    const vIdx = vnt.findIndex(x => x.id === id);
+    if (vIdx < 0) return;
+    const v = vnt[vIdx];
+    if (v.estado === 'cancelada') { alert('Esta factura ya está cancelada.'); return; }
+    if (!confirm('¿Desea CANCELAR TODA la factura #' + v.numero + '? Esta acción devolverá todo el stock.')) return;
+
+    // Actualizar ventas
+    vnt[vIdx].estado = 'cancelada';
+    setData('ventas', vnt);
+
+    // Guardar devolución
+    addRec('devoluciones', {
+      ventaId: id,
+      numeroVenta: v.numero,
+      tipo: 'total',
+      monto: v.total,
+      items: [...v.items],
+      fecha: new Date().toISOString(),
+      usuario: user()?.name || 'N/A'
+    });
+
+    // Actualizar stock de productos
+    for (const itm of v.items) {
+      if (itm.productId && typeof DataService !== 'undefined' && DataService.updateProducto) {
+        try {
+          const prod = await DataService.getProductoById(itm.productId);
+          if (prod) {
+            const currentStock = parseInt(prod.stock_actual || prod.stock || prod.cantidad || 0);
+            await syncProductStock(itm.productId, currentStock + itm.cantidad);
+          }
+        } catch (e) {
+          console.warn('Error al devolver stock:', e);
+        }
+      }
+    }
+
+    alert('✅ Factura cancelada y stock devuelto.');
+    App.render();
+  };
+
+  const devolucionParcial = async (id) => {
+    const vnt = getData('ventas');
+    const vIdx = vnt.findIndex(x => x.id === id);
+    if (vIdx < 0) return;
+    const v = vnt[vIdx];
+
+    const selectedIdxs = Object.keys(devolucionSelectedItems).filter(idx => devolucionSelectedItems[idx] === true);
+    if (selectedIdxs.length === 0) { alert('Seleccione al menos un producto.'); return; }
+
+    let itemsToDev = [];
+    let totalDevocion = 0;
+
+    for (const idx of selectedIdxs) {
+      const item = v.items[idx];
+      if (!item) continue;
+      let cantDev = 1;
+      if (item.cantidad > 1) {
+        const promptVal = prompt('¿Cuántas unidades desea devolver de: ' + item.nombre + '? (Máx: ' + item.cantidad + ')', item.cantidad);
+        if (promptVal === null) continue;
+        const isGranel = (item.ventaGranel === 'true' || item.ventaGranel === true);
+        cantDev = isGranel ? parseFloat(promptVal) : parseInt(promptVal);
+        if (isNaN(cantDev) || cantDev <= 0) continue;
+        if (cantDev > item.cantidad) cantDev = item.cantidad;
+      } else {
+        cantDev = 1;
+      }
+
+      itemsToDev.push({ ...item, cantidad: cantDev });
+      totalDevocion += (item.precio * cantDev);
+
+      // Actualizar stock y Sincronizar Cache Local
+      if (item.productId && typeof DataService !== 'undefined' && DataService.updateProducto) {
+        try {
+          const prod = await DataService.getProductoById(item.productId);
+          if (prod) {
+            const currentStock = parseInt(prod.stock_actual || prod.stock || prod.cantidad || 0);
+            await syncProductStock(item.productId, currentStock + cantDev);
+          }
+        } catch (e) { console.warn('Error devolviendo stock:', e); }
+      }
+    }
+
+    if (itemsToDev.length === 0) return;
+
+    // Guardar registro
+    addRec('devoluciones', {
+      ventaId: id,
+      numeroVenta: v.numero,
+      tipo: 'parcial',
+      monto: totalDevocion,
+      items: itemsToDev,
+      fecha: new Date().toISOString(),
+      usuario: user()?.name || 'N/A'
+    });
+
+    // Restar de la factura original
+    itemsToDev.forEach(it => {
+      const iIdx = vnt[vIdx].items.findIndex(orig => orig.id === it.id);
+      if (iIdx >= 0) {
+        vnt[vIdx].items[iIdx].cantidad -= it.cantidad;
+        if (vnt[vIdx].items[iIdx].cantidad <= 0) vnt[vIdx].items.splice(iIdx, 1);
+      }
+    });
+
+    vnt[vIdx].total -= totalDevocion;
+    if (vnt[vIdx].items.length === 0) vnt[vIdx].estado = 'cancelada';
+
+    setData('ventas', vnt);
+    devolucionSelectedItems = {};
+    alert('✅ Devolución parcial procesada!');
+    App.render();
+  };
+
+  const renderDevoluciones = () => {
+    const rawData = getData('ventas').reverse();
+    let data = applyReportFilters(rawData);
+
+    if (devolucionQuery.trim()) {
+      const q = devolucionQuery.toLowerCase();
+      data = data.filter(c => String(c.numero || '').toLowerCase().includes(q) || (c.cliente && String(c.cliente || '').toLowerCase().includes(q)));
+    }
+
+    const returnsHistory = getData('devoluciones').sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 10);
+
+    const listHtml = data.length === 0 ? '<div style="padding:2rem;text-align:center;color:var(--text-muted);">No hay facturas registradas.</div>' :
+      `<table class="data-table" style="width:100%;font-size:13px;">
+        <thead>
+          <tr>
+            <th style="padding:12px;text-align:left;">Ticket N°</th>
+            <th style="padding:12px;text-align:left;">Fecha</th>
+            <th style="padding:12px;text-align:left;">Cliente</th>
+            <th style="padding:12px;text-align:right;">Total Pagado</th>
+            <th style="padding:12px;text-align:center;">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+           ${data.map(v => {
+        const divisa = v.detalles_pago && v.detalles_pago.pagoEnUSD ? 'USD' : 'NIO';
+        const cur = divisa === 'USD' ? '$' : 'C$';
+        const isSel = devolucionSelectedId === v.id;
+        return `<tr style="border-bottom:1px solid var(--border-color); cursor:pointer; background:${isSel ? 'var(--color-primary-50)' : 'transparent'}; transition:background 0.2s;" onclick="VentasModule.selectDevolucion('${v.id}')">
+               <td style="padding:12px 8px; color:${isSel ? 'var(--color-primary-600)' : 'inherit'};"><strong>${v.numero}</strong></td>
+               <td>${new Date(v.fecha).toLocaleDateString('es-NI')}</td>
+               <td><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">${v.cliente || 'Público'}</div></td>
+               <td style="font-weight:700;text-align:right;color:var(--color-primary-600);">${cur}${fmt(v.total)}</td>
+               <td style="text-align:center;"><span style="border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700;display:inline-block;background:${v.estado === 'completada' ? 'rgba(16,185,129,0.1);color:#10b981;' : 'rgba(239,68,68,0.1);color:#ef4444;'}">${(v.estado || 'COMPLETADA').toUpperCase()}</span></td>
+             </tr>`;
+      }).join('')}
+        </tbody>
+      </table>`;
+
+    const returnsHistoryHtml = returnsHistory.length === 0 ? '' : `
+      <div style="margin-top:2rem;border-top:2px solid var(--border-color);padding-top:2rem;">
+        <h3 style="margin-bottom:1rem;color:var(--color-primary-600);display:flex;align-items:center;gap:10px;">🕒 Historial de Devoluciones Realizadas</h3>
+        <div style="background:var(--bg-primary);border-radius:10px;border:1px solid var(--border-color);overflow:hidden;">
+          <table class="data-table" style="width:100%;font-size:12px;">
+            <thead>
+              <tr style="background:var(--bg-secondary);">
+                <th style="padding:10px;">Fecha y Hora</th>
+                <th style="padding:10px;">N° Factura</th>
+                <th style="padding:10px;">Tipo</th>
+                <th style="padding:10px;">Monto Dev.</th>
+                <th style="padding:10px;">Usuario</th>
+                <th style="padding:10px;">Items</th>
               </tr>
             </thead>
             <tbody>
-              ${ventasList.length === 0 ? `<tr><td colspan="7" style="padding: 2.5rem; text-align: center; color: var(--text-muted);">No hay ventas registradas con comisión bancaria asumida.</td></tr>` :
-        ventasList.map(v => {
-          const base = parseFloat(v.base_total || v.total);
-          const com_b = parseFloat(v.detalles_pago.montoAsumidoBancario || 0);
-          const ir = parseFloat(v.detalles_pago.montoAsumidoIR || 0);
-          const bank = v.detalles_pago.banco || 'N/A';
-          return `
-                    <tr style="border-bottom: 1px solid var(--border-color);">
-                      <td style="padding: 1rem; font-weight: 600; color: var(--color-primary-600);">${v.numero}</td>
-                      <td style="padding: 1rem; font-size: 0.9rem;">${fmtD(v.fecha)}</td>
-                      <td style="padding: 1rem;">${bank}</td>
-                      <td style="padding: 1rem; font-weight: 600;">C$ ${fmt(base)}</td>
-                      <td style="padding: 1rem; color: #ef4444;">-C$ ${fmt(com_b)}</td>
-                      <td style="padding: 1rem; color: #ef4444;">-C$ ${fmt(ir)}</td>
-                      <td style="padding: 1rem; font-weight: 700; color: #059669;">C$ ${fmt(base - com_b - ir)}</td>
-                    </tr>
-                  `;
-        }).join('')
-      }
+              ${returnsHistory.map(h => `
+                <tr style="border-bottom:1px solid var(--border-color);">
+                  <td style="padding:8px;">${new Date(h.fecha).toLocaleString('es-NI')}</td>
+                  <td><b>${h.numeroVenta || 'N/A'}</b></td>
+                  <td><span style="border-radius:10px;padding:2px 8px;font-size:10px;font-weight:700;background:${h.tipo === 'total' ? '#fee2e2;color:#ef4444;' : '#fef3c7;color:#d97706;'}">${h.tipo === 'total' ? 'TOTAL' : 'PARCIAL'}</span></td>
+                  <td style="font-weight:700;color:#ef4444;">C$${fmt(h.monto)}</td>
+                  <td>${h.usuario || 'N/A'}</td>
+                  <td><div style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(h.items || []).map(i => i.nombre).join(', ')}">${(h.items || []).map(i => `${i.cantidad}x ${i.nombre}`).join(', ')}</div></td>
+                </tr>
+              `).join('')}
             </tbody>
           </table>
         </div>
       </div>
     `;
+
+    let sidebarHtml = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-muted);font-size:1.1rem;text-align:center;">Seleccione una factura para realizar una devolución.</div>';
+
+    if (devolucionSelectedId) {
+      const v = rawData.find(x => x.id === devolucionSelectedId);
+      if (v) {
+        let itemsFiltered = v.items || [];
+        if (devolucionProdQuery.trim()) {
+          const pq = devolucionProdQuery.toLowerCase();
+          itemsFiltered = itemsFiltered.filter(i => (i.nombre && String(i.nombre || '').toLowerCase().includes(pq)) || (i.codigo && String(i.codigo || '').toLowerCase().includes(pq)));
+        }
+
+        const isCanceled = v.estado === 'cancelada';
+
+        sidebarHtml = `
+            <div style="display:flex;flex-direction:column;height:100%;">
+              <h3 style="margin:0 0 16px;font-size:1.4rem;color:var(--color-primary-600); border-bottom:1px solid var(--border-color); padding-bottom:12px; font-weight:800; display:flex; align-items:center; justify:space-between;">
+                <span>Venta: ${v.numero}</span>
+                <span style="font-size:0.9rem;color:${isCanceled ? '#ef4444' : 'var(--text-muted)'};font-weight:500;">${isCanceled ? 'CANCELADA' : new Date(v.fecha).toLocaleDateString('es-NI')}</span>
+              </h3>
+              <div style="flex:1;overflow-y:auto;margin-bottom:16px;">
+                <div style="margin-bottom:12px;display:flex;gap:12px;">
+                  <div style="flex:1;background:var(--bg-secondary);padding:12px;border-radius:8px;">
+                    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;font-weight:700;">CLIENTE</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">${v.cliente || 'Público General'}</div>
+                  </div>
+                  <div style="background:var(--bg-secondary);padding:12px;border-radius:8px;text-align:right;">
+                    <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:4px;font-weight:700;">TOTAL PAGADO</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:var(--color-primary-600);">C$${fmt(v.total)}</div>
+                  </div>
+                </div>
+
+                <div style="position:relative;margin-bottom:12px;">
+                   <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:1rem;">🔍</span>
+                   <input type="text" class="form-input" placeholder="Buscar productos en la factura..." value="${devolucionProdQuery}" oninput="VentasModule.searchDevolucionProducts(this.value)" style="width:100%;padding-left:36px;height:40px;font-size:0.95rem;">
+                </div>
+
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                   <div style="font-size:0.85rem;color:var(--text-muted);font-weight:700;">PRODUCTOS EFECTUADOS</div>
+                   ${!isCanceled && (v.items && v.items.length > 0) ? `<button onclick="VentasModule.checkAllDevolucionItems(${v.items.length})" class="btn btn--secondary btn--sm" style="font-size:0.75rem;">Marcar Todo</button>` : ''}
+                </div>
+                
+                <div style="background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border-color);overflow:hidden;">
+                  <ul style="list-style:none;padding:0;margin:0;font-size:0.95rem;">
+                    ${itemsFiltered.length === 0 ? '<li style="padding:1rem;text-align:center;color:var(--text-muted);">No se encontraron productos disponibles.</li>' : ''}
+                    ${itemsFiltered.map((i, idx) => {
+          const originalIdx = (v.items || []).findIndex(orig => orig.id === i.id);
+          return `<li style="padding:8px 12px;border-bottom:1px dashed var(--border-color);display:flex;align-items:center;gap:12px;opacity:${isCanceled ? '0.6' : '1'};">
+                         <div style="display:flex;align-items:center;justify-content:center;">
+                           <input type="checkbox" ${isCanceled ? 'disabled' : ''} ${devolucionSelectedItems[originalIdx] ? 'checked' : ''} onchange="VentasModule.toggleDevolucionItem(${originalIdx})" style="width:18px;height:18px;cursor:pointer;">
+                         </div>
+                         <div style="flex:1;">
+                           <div style="color:var(--text-primary);font-weight:600;font-size:0.9rem;line-height:1.2;margin-bottom:2px;">${i.nombre}</div>
+                           <div style="color:var(--text-muted);font-size:0.75rem;">${i.codigo || 'S/N'}</div>
+                         </div>
+                         <div style="text-align:right;">
+                           <div style="font-weight:700;color:var(--color-primary-600);"><span style="color:var(--text-muted);font-weight:600;">${i.cantidad}x</span> C$${fmt(i.precio)}</div>
+                           <div style="font-weight:800;font-size:1.05rem;">C$${fmt(i.precio * i.cantidad)}</div>
+                         </div>
+                      </li>`
+        }).join('')}
+                  </ul>
+                </div>
+              </div>
+              
+              <div style="border-top:1px solid var(--border-color);padding-top:16px;display:flex;flex-direction:column;gap:12px;">
+                 <button onclick="VentasModule.devolucionParcial('${v.id}')" class="btn btn--primary" style="width:100%;font-weight:800;font-size:1.05rem;padding:14px;letter-spacing:0.5px;background:#f59e0b;border-color:#f59e0b;" ${isCanceled || (v.items && v.items.length === 0) ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}><span style="margin-right:8px;">↩️</span> DEVOLUCIÓN PARCIAL / MARCADOS</button>
+                 <button onclick="VentasModule.cancelarFacturaTotal('${v.id}')" class="btn btn--danger" style="width:100%;font-weight:800;font-size:1.05rem;padding:14px;letter-spacing:0.5px;" ${isCanceled || (v.items && v.items.length === 0) ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}><span style="margin-right:8px;">❌</span> CANCELAR FACTURA COMPLETA</button>
+              </div>
+            </div>`;
+      }
+    }
+
+    return `<div style="display:flex;height:100%;background:var(--bg-secondary);">
+       <div style="flex:1;display:flex;flex-direction:column;padding:1.5rem;border-right:1px solid var(--border-color);max-width:calc(100% - 460px);">
+           <div style="display:flex;gap:1.5rem;margin-bottom:1.5rem;">
+              <div style="flex:1;position:relative;">
+                 <span style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:1.2rem;">🔍</span>
+                 <input type="text" class="form-input" placeholder="Buscar factura por cliente o número de ticket..." value="${devolucionQuery}" oninput="VentasModule.searchDevoluciones(this.value)" style="width:100%;padding-left:48px;height:50px;font-size:1.1rem;border-width:2px;">
+              </div>
+           </div>
+           
+           <div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;flex:1;display:flex;flex-direction:column;">
+              <div style="flex:1;overflow-y:auto;padding:1rem;">
+                 ${listHtml}
+                 ${returnsHistoryHtml}
+              </div>
+           </div>
+       </div>
+       <div style="width:460px;background:var(--bg-primary);padding:1.5rem;display:flex;flex-direction:column;">
+          ${sidebarHtml}
+       </div>
+    </div>`;
   };
+
+  const renderReportes = () => {
+    const reporteActivo = currentReportTab || 'cortes-caja';
+
+    const tabs = [
+      { id: 'cortes-caja', icon: '🧾', label: 'Cortes de Caja' },
+      { id: 'comision-bancaria', icon: '🏦', label: 'Impuesto Comisión Bancaria' },
+      { id: 'iva-recaudado', icon: '🏛️', label: 'IVA Recaudado' },
+      { id: 'ganancias-brutas', icon: '📊', label: 'Ganancias Brutas' },
+      { id: 'ganancias-netas', icon: '💰', label: 'Ganancias Netas' }
+    ];
+
+    const reportContent = (() => {
+      switch (reporteActivo) {
+        case 'cortes-caja': return renderReporteCortesCaja();
+        case 'comision-bancaria': return renderReporteComisionBancaria();
+        case 'iva-recaudado': return renderReporteIvaRecaudado();
+        case 'ganancias-brutas': return renderReporteGananciasBrutas();
+        case 'ganancias-netas': return renderReporteGananciasNetas();
+        default: return renderReporteCortesCaja();
+      }
+    })();
+
+    return `
+      <div style="padding: 1.5rem; max-width: 1400px; margin: 0 auto;">
+        ${backBtn()}
+        <div class="ventas-reportes-header">
+          <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0; display:flex; align-items:center; gap:10px; color: var(--text-primary);">
+            ${Icons.barChart} Centro de Reportes
+          </h2>
+          <p style="font-size: 0.9rem; color: var(--text-muted); margin: 4px 0 0;">Análisis financiero y operativo de ventas</p>
+        </div>
+        
+        ${renderReportesFilters()}
+
+        <div class="ventas-reportes-tabs">
+          ${tabs.map(tab => `
+            <button class="ventas-reportes-tab ${reporteActivo === tab.id ? 'ventas-reportes-tab--active' : ''}" 
+                    onclick="VentasModule.setReportTab('${tab.id}')">
+              <span style="font-size:1.2rem;">${tab.icon}</span>
+              <span>${tab.label}</span>
+            </button>
+          `).join('')}
+        </div>
+
+        <div class="ventas-reporte-content" style="animation: fadeIn 0.2s ease-out;">
+          ${reportContent}
+        </div>
+      </div>
+  `;
+  };
+
+  let currentReportTab = 'cortes-caja';
+  const setReportTab = (tab) => { currentReportTab = tab; App.render(); };
+
+  // =========== REPORTE 1: CORTES DE CAJA ===========
+  const renderReporteCortesCaja = () => {
+    const cortesRaw = getData('cortes').sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    const cortes = applyReportFilters(cortesRaw);
+    const totalCortes = cortes.length;
+    const totalVentasCortes = cortes.reduce((s, c) => s + parseFloat(c.total_ventas || 0), 0);
+    const totalCajaCortes = cortes.reduce((s, c) => s + parseFloat(c.total_caja || 0), 0);
+    const promedioVentasPorCorte = totalCortes > 0 ? totalVentasCortes / totalCortes : 0;
+
+    return `
+      <div class="ventas-reporte-kpis">
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #3b82f6;">
+          <div class="ventas-reporte-kpi__label">Total Cortes</div>
+          <div class="ventas-reporte-kpi__value" style="color:#3b82f6;">${totalCortes}</div>
+          <div class="ventas-reporte-kpi__sub">Histórico</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #10b981;">
+          <div class="ventas-reporte-kpi__label">Ventas Acumuladas</div>
+          <div class="ventas-reporte-kpi__value" style="color:#10b981;">C$${fmt(totalVentasCortes)}</div>
+          <div class="ventas-reporte-kpi__sub">Todos los turnos</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #f59e0b;">
+          <div class="ventas-reporte-kpi__label">Caja Acumulada</div>
+          <div class="ventas-reporte-kpi__value" style="color:#f59e0b;">C$${fmt(totalCajaCortes)}</div>
+          <div class="ventas-reporte-kpi__sub">Total cerrado</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #8b5cf6;">
+          <div class="ventas-reporte-kpi__label">Promedio Ventas/Turno</div>
+          <div class="ventas-reporte-kpi__value" style="color:#8b5cf6;">C$${fmt(promedioVentasPorCorte)}</div>
+          <div class="ventas-reporte-kpi__sub">Por corte</div>
+        </div>
+      </div >
+
+  <div class="ventas-reporte-table-wrapper">
+    <table class="ventas-reporte-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Fecha y Hora</th>
+          <th>Usuario y Disp.</th>
+          <th>Fondo Inicial</th>
+          <th>Facturas</th>
+          <th>Total Ventas</th>
+          <th>Entradas</th>
+          <th>Salidas</th>
+          <th>Total en Caja</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${cortes.length === 0 ?
+        '<tr><td colspan="9" style="padding:2rem;text-align:center;color:var(--text-muted);">No hay cortes de caja registrados aún en este periodo.</td></tr>' :
+        cortes.map((c, i) => `
+                <tr>
+                  <td style="font-weight:700;color:var(--color-primary-600);">#${c.numero || (cortesRaw.length - i)}</td>
+                  <td>${fmtD(c.fecha)} <span style="font-size:0.8rem;color:var(--text-muted);">${c.fecha ? new Date(c.fecha).toLocaleTimeString('es-NI', { hour: '2-digit', minute: '2-digit' }) : ''}</span></td>
+                  <td>
+                    <span style="display:inline-flex;align-items:center;gap:4px;">
+                      <span style="width:24px;height:24px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:white;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${(c.usuario || 'N').charAt(0)}</span>
+                      <div style="display:flex;flex-direction:column;line-height:1.2;">
+                         <span>${c.usuario || 'N/A'}</span>
+                         <span style="font-size:0.75rem;color:var(--text-muted);">${c.dispositivo || 'PC Escritorio'}</span>
+                      </div>
+                    </span>
+                  </td>
+                  <td style="color:var(--text-muted);">C$${fmt(c.fondo_inicial)}</td>
+                  <td><span style="background:#eff6ff;color:#3b82f6;padding:2px 8px;border-radius:10px;font-weight:700;font-size:0.85rem;">${c.num_ventas || 0}</span></td>
+                  <td style="font-weight:700;color:#10b981;">C$${fmt(c.total_ventas)}</td>
+                  <td style="color:#059669;">+C$${fmt(c.entradas || 0)}</td>
+                  <td style="color:#ef4444;">-C$${fmt(c.salidas || 0)}</td>
+                  <td style="font-weight:800;font-size:1.05rem;color:var(--text-primary);">C$${fmt(c.total_caja)}</td>
+                </tr>
+              `).join('')
+      }
+      </tbody>
+    </table>
+  </div>
+`;
+  };
+
+  // =========== REPORTE 2: IMPUESTO SOBRE COMISIÓN BANCARIA ===========
+  const renderReporteComisionBancaria = () => {
+    const ventasListRaw = getData('ventas').filter(v => v.detalles_pago && v.detalles_pago.asumido === true);
+    const ventasList = applyReportFilters(ventasListRaw);
+
+    // Ventas con comisión cobrada al cliente
+    const ventasCobradasRaw = getData('ventas').filter(v => v.detalles_pago && !v.detalles_pago.asumido && parseFloat(v.detalles_pago.impuestoAgregado || 0) > 0);
+    const ventasCobradas = applyReportFilters(ventasCobradasRaw);
+
+    const totalVentas = ventasList.reduce((s, v) => s + parseFloat(v.base_total || v.total), 0);
+    const totalComision = ventasList.reduce((s, v) => s + parseFloat(v.detalles_pago.montoAsumidoBancario || 0), 0);
+    const totalIR = ventasList.reduce((s, v) => s + parseFloat(v.detalles_pago.montoAsumidoIR || 0), 0);
+    const totalDeducido = ventasList.reduce((s, v) => s + parseFloat(v.detalles_pago.totalImpuestoAsumido || 0), 0);
+
+    const totalCobrado = ventasCobradas.reduce((s, v) => s + parseFloat(v.detalles_pago.impuestoAgregado || 0), 0);
+
+    return `
+      <div class="ventas-reporte-kpis">
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #3b82f6;">
+          <div class="ventas-reporte-kpi__label">Total Ventas (Base)</div>
+          <div class="ventas-reporte-kpi__value" style="color:#3b82f6;">C$${fmt(totalVentas)}</div>
+          <div class="ventas-reporte-kpi__sub">${ventasList.length} transacciones asumidas</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #ef4444;">
+          <div class="ventas-reporte-kpi__label">Comisión Bancaria Asumida</div>
+          <div class="ventas-reporte-kpi__value" style="color:#ef4444;">-C$${fmt(totalComision)}</div>
+          <div class="ventas-reporte-kpi__sub">Gasto absorbido por empresa</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #f59e0b;">
+          <div class="ventas-reporte-kpi__label">IR Asumido</div>
+          <div class="ventas-reporte-kpi__value" style="color:#f59e0b;">-C$${fmt(totalIR)}</div>
+          <div class="ventas-reporte-kpi__sub">Impuesto sobre la renta</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #10b981;">
+          <div class="ventas-reporte-kpi__label">Comisión Cobrada a Clientes</div>
+          <div class="ventas-reporte-kpi__value" style="color:#10b981;">+C$${fmt(totalCobrado)}</div>
+          <div class="ventas-reporte-kpi__sub">${ventasCobradas.length} transacciones</div>
+        </div>
+      </div>
+
+  <div style="margin-bottom:1.5rem;">
+    <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:8px;color:var(--text-primary);">
+      <span style="color:#ef4444;">📉</span> Detalle — Comisiones Asumidas por la Empresa
+    </h3>
+    <div class="ventas-reporte-table-wrapper">
+      <table class="ventas-reporte-table">
+        <thead>
+          <tr>
+            <th>No. Factura</th>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>POS/Banco</th>
+            <th>% Bancario</th>
+            <th>% IR</th>
+            <th>Monto Base</th>
+            <th>Comisión</th>
+            <th>IR</th>
+            <th>Ganancia Neta</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${ventasList.length === 0 ? '<tr><td colspan="10" style="padding:2rem;text-align:center;color:var(--text-muted);">No hay ventas con comisión bancaria asumida.</td></tr>' :
+        ventasList.map(v => {
+          const base = parseFloat(v.base_total || v.total);
+          const com_b = parseFloat(v.detalles_pago.montoAsumidoBancario || 0);
+          const ir = parseFloat(v.detalles_pago.montoAsumidoIR || 0);
+          return `
+                    <tr>
+                      <td style="font-weight:600;color:var(--color-primary-600);">${v.numero}</td>
+                      <td>${fmtD(v.fecha)}</td>
+                      <td>${v.cliente || 'Público General'}</td>
+                      <td>${v.detalles_pago.banco || 'N/A'}</td>
+                      <td>${v.detalles_pago.porcentajeBancario || 0}%</td>
+                      <td>${v.detalles_pago.porcentajeIR || 0}%</td>
+                      <td style="font-weight:600;">C$${fmt(base)}</td>
+                      <td style="color:#ef4444;">-C$${fmt(com_b)}</td>
+                      <td style="color:#ef4444;">-C$${fmt(ir)}</td>
+                      <td style="font-weight:700;color:#059669;">C$${fmt(base - com_b - ir)}</td>
+                    </tr>`;
+        }).join('')
+      }
+        </tbody>
+        ${ventasList.length > 0 ? `
+            <tfoot style="background:var(--bg-secondary);font-weight:800;">
+              <tr>
+                <td colspan="6" style="padding:1rem;text-align:right;font-size:0.95rem;">TOTALES:</td>
+                <td style="padding:1rem;">C$${fmt(totalVentas)}</td>
+                <td style="padding:1rem;color:#ef4444;">-C$${fmt(totalComision)}</td>
+                <td style="padding:1rem;color:#ef4444;">-C$${fmt(totalIR)}</td>
+                <td style="padding:1rem;color:#059669;">C$${fmt(totalVentas - totalDeducido)}</td>
+              </tr>
+            </tfoot>` : ''}
+      </table>
+    </div>
+  </div>
+`;
+  };
+
+  // =========== REPORTE EXTRA: IVA RECAUDADO ===========
+  const renderReporteIvaRecaudado = () => {
+    const ventasRaw = getData('ventas').filter(v => parseFloat(v.iva || 0) > 0).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    const ventas = applyReportFilters(ventasRaw);
+
+    const totalRecaudado = ventas.reduce((s, v) => s + parseFloat(v.iva || 0), 0);
+    const totalVentasBase = ventas.reduce((s, v) => s + (parseFloat(v.total || 0) - parseFloat(v.iva || 0)), 0);
+
+    return `
+    <div class="ventas-reporte-kpis" style="margin-bottom:1.5rem;display:flex;gap:1rem;">
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #10b981;flex:1;">
+          <div class="ventas-reporte-kpi__label">Total IVA Deducido</div>
+          <div class="ventas-reporte-kpi__value" style="color:#10b981;">C$${fmt(totalRecaudado)}</div>
+          <div class="ventas-reporte-kpi__sub">${ventas.length} Transacciones gravables</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #3b82f6;flex:1;">
+          <div class="ventas-reporte-kpi__label">Total Ventas Base (Sin IVA)</div>
+          <div class="ventas-reporte-kpi__value" style="color:#3b82f6;">C$${fmt(totalVentasBase)}</div>
+          <div class="ventas-reporte-kpi__sub">Monto neto operado</div>
+        </div>
+      </div >
+  <div class="ventas-reporte-table-wrapper">
+    <table class="ventas-reporte-table">
+      <thead>
+        <tr>
+          <th>Factura / Ref</th>
+          <th>Fecha y Hora</th>
+          <th>Cliente</th>
+          <th>Subtotal Base</th>
+          <th>IVA (Deducido)</th>
+          <th>Total Cobrado</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${ventas.length === 0 ? '<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted);">No hay registros de IVA en este periodo.</td></tr>' :
+        ventas.map(v => `
+              <tr>
+                <td style="font-weight:700;">#${v.id.substring(0, 8).toUpperCase()}</td>
+                <td>${fmtD(v.fecha)} <span style="font-size:0.8rem;opacity:.7">${v.fecha.substring(11, 16)}</span></td>
+                <td>${(() => { const c = getData('clientes').find(x => x.id === v.clienteId); return c ? (c.empresa || c.nombreCliente || 'Público') : 'Público General'; })()}</td>
+                <td style="color:#3b82f6;">C$${fmt(parseFloat(v.total || 0) - parseFloat(v.iva || 0))}</td>
+                <td style="color:#10b981;font-weight:700;">C$${fmt(v.iva)}</td>
+                <td style="font-weight:800;color:var(--text-primary);">C$${fmt(v.total)}</td>
+              </tr>
+            `).join('')}
+      </tbody>
+    </table>
+  </div>
+`;
+  };
+
+  // =========== REPORTE 3: GANANCIAS BRUTAS ===========
+  const renderReporteGananciasBrutas = () => {
+    const allVentas = getData('ventas');
+    const td = today();
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const startOfYear = new Date(now.getFullYear(), 0, 1).toISOString();
+
+    const ventasHoy = allVentas.filter(v => (v.fecha || '').startsWith(td));
+    const ventasMes = allVentas.filter(v => v.fecha >= startOfMonth);
+    const ventasAnio = allVentas.filter(v => v.fecha >= startOfYear);
+
+    const calcGananciaBruta = (ventas) => {
+      const ingresos = ventas.reduce((s, v) => s + parseFloat(v.base_total || v.total || 0), 0);
+      const costos = ventas.reduce((s, v) => s + parseFloat(v.costo_total || 0), 0);
+      return { ingresos, costos, ganancia: ingresos - costos, margen: ingresos > 0 ? ((ingresos - costos) / ingresos * 100) : 0 };
+    };
+
+    const hoy = calcGananciaBruta(ventasHoy);
+    const mes = calcGananciaBruta(ventasMes);
+    const anio = calcGananciaBruta(ventasAnio);
+
+    // Productos más vendidos del mes
+    const itemsVendidos = {};
+    ventasMes.forEach(v => {
+      (v.items || []).forEach(item => {
+        const key = item.productId || item.nombre;
+        if (!itemsVendidos[key]) itemsVendidos[key] = { nombre: item.nombre, cantidad: 0, ingresos: 0, costos: 0 };
+        itemsVendidos[key].cantidad += item.cantidad;
+        itemsVendidos[key].ingresos += item.precio * item.cantidad - (item.descuento || 0);
+        itemsVendidos[key].costos += (item.costo || 0) * item.cantidad;
+      });
+    });
+    const topProductos = Object.values(itemsVendidos).sort((a, b) => (b.ingresos - b.costos) - (a.ingresos - a.costos)).slice(0, 10);
+
+    return `
+      <div class="ventas-reporte-kpis">
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #10b981;">
+          <div class="ventas-reporte-kpi__label">Ganancia Bruta Hoy</div>
+          <div class="ventas-reporte-kpi__value" style="color:${hoy.ganancia >= 0 ? '#10b981' : '#ef4444'};">C$${fmt(hoy.ganancia)}</div>
+          <div class="ventas-reporte-kpi__sub">Margen: ${hoy.margen.toFixed(1)}%</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #3b82f6;">
+          <div class="ventas-reporte-kpi__label">Ganancia Bruta Mes</div>
+          <div class="ventas-reporte-kpi__value" style="color:${mes.ganancia >= 0 ? '#3b82f6' : '#ef4444'};">C$${fmt(mes.ganancia)}</div>
+          <div class="ventas-reporte-kpi__sub">Margen: ${mes.margen.toFixed(1)}% · ${ventasMes.length} facturas</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #8b5cf6;">
+          <div class="ventas-reporte-kpi__label">Ganancia Bruta Año</div>
+          <div class="ventas-reporte-kpi__value" style="color:${anio.ganancia >= 0 ? '#8b5cf6' : '#ef4444'};">C$${fmt(anio.ganancia)}</div>
+          <div class="ventas-reporte-kpi__sub">Margen: ${anio.margen.toFixed(1)}%</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #f59e0b;">
+          <div class="ventas-reporte-kpi__label">Costo Total Mes</div>
+          <div class="ventas-reporte-kpi__value" style="color:#f59e0b;">C$${fmt(mes.costos)}</div>
+          <div class="ventas-reporte-kpi__sub">Costo de mercancía</div>
+        </div>
+      </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
+    <div style="background:var(--bg-secondary);border-radius:12px;padding:1.5rem;border:1px solid var(--border-color);">
+      <h4 style="margin:0 0 1rem;font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px;">📊 Resumen del Período</h4>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg-primary);border-radius:8px;">
+          <span style="font-weight:600;">Ingresos Brutos (Hoy)</span><strong style="color:#10b981;">C$${fmt(hoy.ingresos)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg-primary);border-radius:8px;">
+          <span style="font-weight:600;">Costo de Mercancía (Hoy)</span><strong style="color:#ef4444;">-C$${fmt(hoy.costos)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg-primary);border-radius:8px;">
+          <span style="font-weight:600;">Ingresos Brutos (Mes)</span><strong style="color:#3b82f6;">C$${fmt(mes.ingresos)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg-primary);border-radius:8px;">
+          <span style="font-weight:600;">Costo de Mercancía (Mes)</span><strong style="color:#ef4444;">-C$${fmt(mes.costos)}</strong>
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--bg-secondary);border-radius:12px;padding:1.5rem;border:1px solid var(--border-color);">
+      <h4 style="margin:0 0 1rem;font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px;">🏆 Top Productos por Rentabilidad</h4>
+      <div style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;">
+        ${topProductos.length === 0 ? '<div style="padding:1rem;text-align:center;color:var(--text-muted);">Sin datos disponibles</div>' :
+        topProductos.map((p, i) => {
+          const ganancia = p.ingresos - p.costos;
+          const margen = p.ingresos > 0 ? (ganancia / p.ingresos * 100) : 0;
+          return `
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg-primary);border-radius:8px;border:1px solid var(--border-color);">
+                  <span style="width:24px;height:24px;background:${i < 3 ? 'linear-gradient(135deg,#f59e0b,#d97706)' : 'var(--bg-secondary)'};color:${i < 3 ? 'white' : 'var(--text-muted)'};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;">${i + 1}</span>
+                  <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.nombre}</div>
+                    <div style="font-size:0.75rem;color:var(--text-muted);">${p.cantidad} uds · Margen: ${margen.toFixed(1)}%</div>
+                  </div>
+                  <strong style="color:${ganancia >= 0 ? '#10b981' : '#ef4444'};font-size:0.9rem;white-space:nowrap;">C$${fmt(ganancia)}</strong>
+                </div>`;
+        }).join('')
+      }
+      </div>
+    </div>
+  </div>
+`;
+  };
+
+  // =========== REPORTE 4: GANANCIAS NETAS ===========
+  const renderReporteGananciasNetas = () => {
+    const allVentas = getData('ventas');
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const ventasMes = allVentas.filter(v => v.fecha >= startOfMonth);
+
+    // Ingresos brutos del mes
+    const ingresosBrutos = ventasMes.reduce((s, v) => s + parseFloat(v.base_total || v.total || 0), 0);
+    const costoMercancia = ventasMes.reduce((s, v) => s + parseFloat(v.costo_total || 0), 0);
+    const gananciaBruta = ingresosBrutos - costoMercancia;
+
+    // Deducciones (comisiones bancarias asumidas)
+    const comisionesAsumidas = ventasMes
+      .filter(v => v.detalles_pago && v.detalles_pago.asumido)
+      .reduce((s, v) => s + parseFloat(v.detalles_pago.totalImpuestoAsumido || 0), 0);
+
+    // Descuentos otorgados
+    const descuentosTotales = ventasMes.reduce((s, v) => s + parseFloat(v.descuento || 0) + parseFloat(v.descuento_global || 0), 0);
+
+    // IVA generado
+    const ivaTotalGenerado = ventasMes.reduce((s, v) => s + parseFloat(v.iva || 0), 0);
+
+    // Devoluciones del mes
+    const devolsMes = getData('devoluciones').filter(d => d.fecha >= startOfMonth);
+    const totalDevoluciones = devolsMes.reduce((s, d) => s + parseFloat(d.total || d.monto || 0), 0);
+
+    // Movimientos de caja (salidas / gastos operativos)
+    const movsMes = getData('cajaMovs').filter(m => m.fecha >= startOfMonth);
+    const gastosOperativos = movsMes.filter(m => m.tipo === 'retiro').reduce((s, m) => s + parseFloat(m.monto || 0), 0);
+
+    // Cálculo de ganancia neta
+    const totalDeducciones = costoMercancia + comisionesAsumidas + descuentosTotales + totalDevoluciones + gastosOperativos;
+    const gananciaNeta = ingresosBrutos - totalDeducciones;
+    const margenNeto = ingresosBrutos > 0 ? (gananciaNeta / ingresosBrutos * 100) : 0;
+
+    // Ventas por método de pago del mes
+    const porMetodo = {
+      efectivo: ventasMes.filter(v => v.metodo === 'efectivo').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+      tarjeta: ventasMes.filter(v => v.metodo === 'tarjeta').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+      transferencia: ventasMes.filter(v => v.metodo === 'transferencia').reduce((s, v) => s + parseFloat(v.total || 0), 0),
+      credito: ventasMes.filter(v => v.metodo === 'credito').reduce((s, v) => s + parseFloat(v.total || 0), 0)
+    };
+
+    const mesNombre = now.toLocaleDateString('es-NI', { month: 'long', year: 'numeric' });
+
+    return `
+  <div style="margin-bottom:1.5rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+      <h3 style="margin:0;font-size:1.1rem;font-weight:700;color:var(--text-primary);">💰 Estado de Resultados — ${mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1)}</h3>
+      <span style="font-size:0.85rem;color:var(--text-muted);font-weight:600;">${ventasMes.length} ventas</span>
+    </div>
+  </div>
+
+      <div class="ventas-reporte-kpis">
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #3b82f6;">
+          <div class="ventas-reporte-kpi__label">Ingresos Brutos</div>
+          <div class="ventas-reporte-kpi__value" style="color:#3b82f6;">C$${fmt(ingresosBrutos)}</div>
+          <div class="ventas-reporte-kpi__sub">Ventas totales del mes</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #10b981;">
+          <div class="ventas-reporte-kpi__label">Ganancia Bruta</div>
+          <div class="ventas-reporte-kpi__value" style="color:#10b981;">C$${fmt(gananciaBruta)}</div>
+          <div class="ventas-reporte-kpi__sub">Ingresos - Costo Mercancía</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid ${gananciaNeta >= 0 ? '#059669' : '#ef4444'};">
+          <div class="ventas-reporte-kpi__label">Ganancia Neta</div>
+          <div class="ventas-reporte-kpi__value" style="color:${gananciaNeta >= 0 ? '#059669' : '#ef4444'};">C$${fmt(gananciaNeta)}</div>
+          <div class="ventas-reporte-kpi__sub">Margen Neto: ${margenNeto.toFixed(1)}%</div>
+        </div>
+        <div class="ventas-reporte-kpi" style="border-left:4px solid #ef4444;">
+          <div class="ventas-reporte-kpi__label">Total Deducciones</div>
+          <div class="ventas-reporte-kpi__value" style="color:#ef4444;">-C$${fmt(totalDeducciones)}</div>
+          <div class="ventas-reporte-kpi__sub">Costos + Gastos + Comisiones</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+        <!-- Estado de Resultados Detallado -->
+        <div style="background:var(--bg-secondary);border-radius:12px;padding:1.5rem;border:1px solid var(--border-color);">
+          <h4 style="margin:0 0 1rem;font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text-primary);">📋 Estado de Resultados</h4>
+          <div style="display:flex;flex-direction:column;gap:0;">
+            <div style="display:flex;justify-content:space-between;padding:10px 12px;background:rgba(59,130,246,0.05);border-radius:8px 8px 0 0;">
+              <span style="font-weight:700;color:#3b82f6;">Ingresos Brutos por Ventas</span><strong style="color:#3b82f6;">C$${fmt(ingresosBrutos)}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:8px 12px 8px 28px;border-left:2px solid #ef4444;">
+              <span style="color:var(--text-secondary);">(-) Costo de Mercancía Vendida</span><span style="color:#ef4444;">-C$${fmt(costoMercancia)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:10px 12px;background:rgba(16,185,129,0.05);font-weight:700;border-top:1px solid var(--border-color);">
+              <span style="color:#10b981;">= Ganancia Bruta</span><strong style="color:#10b981;">C$${fmt(gananciaBruta)}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:8px 12px 8px 28px;border-left:2px solid #ef4444;">
+              <span style="color:var(--text-secondary);">(-) Comisiones Bancarias Asumidas</span><span style="color:#ef4444;">-C$${fmt(comisionesAsumidas)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:8px 12px 8px 28px;border-left:2px solid #ef4444;">
+              <span style="color:var(--text-secondary);">(-) Descuentos Otorgados</span><span style="color:#ef4444;">-C$${fmt(descuentosTotales)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:8px 12px 8px 28px;border-left:2px solid #ef4444;">
+              <span style="color:var(--text-secondary);">(-) Devoluciones</span><span style="color:#ef4444;">-C$${fmt(totalDevoluciones)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:8px 12px 8px 28px;border-left:2px solid #ef4444;">
+              <span style="color:var(--text-secondary);">(-) Gastos Operativos (Salidas de Caja)</span><span style="color:#ef4444;">-C$${fmt(gastosOperativos)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:12px;background:${gananciaNeta >= 0 ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.08)'};font-weight:800;font-size:1.1rem;border-radius:0 0 8px 8px;border-top:2px solid ${gananciaNeta >= 0 ? '#059669' : '#ef4444'};">
+              <span style="color:${gananciaNeta >= 0 ? '#059669' : '#ef4444'};">= GANANCIA NETA</span><strong style="color:${gananciaNeta >= 0 ? '#059669' : '#ef4444'};">C$${fmt(gananciaNeta)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Distribución por Forma de Pago -->
+        <div style="background:var(--bg-secondary);border-radius:12px;padding:1.5rem;border:1px solid var(--border-color);">
+          <h4 style="margin:0 0 1rem;font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px;color:var(--text-primary);">💳 Distribución por Forma de Pago</h4>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            ${Object.entries(porMetodo).map(([metodo, monto]) => {
+      const pct = ingresosBrutos > 0 ? (monto / ingresosBrutos * 100) : 0;
+      const icons = { efectivo: '💵', tarjeta: '💳', transferencia: '🏦', credito: '📋' };
+      const colors = { efectivo: '#10b981', tarjeta: '#3b82f6', transferencia: '#8b5cf6', credito: '#f59e0b' };
+      return `
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                  <span style="font-weight:600;display:flex;align-items:center;gap:6px;">${icons[metodo]} ${metodo.charAt(0).toUpperCase() + metodo.slice(1)}</span>
+                  <span style="font-weight:700;color:${colors[metodo]};">C$${fmt(monto)} <span style="font-size:0.8rem;color:var(--text-muted);">(${pct.toFixed(1)}%)</span></span>
+                </div>
+                <div style="width:100%;height:8px;border-radius:10px;background:var(--border-color);overflow:hidden;">
+                  <div style="width:${Math.min(pct, 100)}%;height:100%;background:${colors[metodo]};border-radius:10px;transition:width 0.3s;"></div>
+                </div>
+              </div>`;
+    }).join('')}
+          </div>
+
+          <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--border-color);">
+            <h4 style="margin:0 0 0.75rem;font-size:0.9rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">📊 Indicadores Fiscales</h4>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;padding:8px 10px;background:var(--bg-primary);border-radius:6px;">
+                <span style="font-weight:600;font-size:0.9rem;">IVA Generado (15%)</span><strong style="color:#f59e0b;">C$${fmt(ivaTotalGenerado)}</strong>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:8px 10px;background:var(--bg-primary);border-radius:6px;">
+                <span style="font-weight:600;font-size:0.9rem;">Margen Bruto</span><strong style="color:#10b981;">${(ingresosBrutos > 0 ? (gananciaBruta / ingresosBrutos * 100) : 0).toFixed(1)}%</strong>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:8px 10px;background:var(--bg-primary);border-radius:6px;">
+                <span style="font-weight:600;font-size:0.9rem;">Margen Neto</span><strong style="color:${margenNeto >= 0 ? '#059669' : '#ef4444'};">${margenNeto.toFixed(1)}%</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+`;
+  };
+
   const renderGanancias = () => '<div style="padding:2rem;">Ganancias... (En desarrollo)</div>';
-  const renderCatalogo = () => '<div style="padding:2rem;">Catálogo... (En desarrollo)</div>';
+  const renderCatalogo = () => {
+    const rawData = getData('ventas').reverse();
+    const data = applyReportFilters(rawData);
+
+    const listHtml = data.length === 0 ? '<div style="padding:2rem;text-align:center;color:var(--text-muted);">No hay facturas registradas.</div>' :
+      `<table class="data-table" style="width:100%;font-size:13px;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:12px;">Ticket N°</th>
+            <th style="text-align:left;padding:12px;">Fecha/Hora</th>
+            <th style="text-align:left;padding:12px;">Vendedor</th>
+            <th style="text-align:left;padding:12px;">Cliente</th>
+            <th style="text-align:right;padding:12px;">Dcto Total</th>
+            <th style="text-align:right;padding:12px;">Total Pagado</th>
+            <th style="text-align:center;padding:12px;">Moneda</th>
+            <th style="text-align:center;padding:12px;">Método(s)</th>
+            <th style="text-align:center;padding:12px;">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+           ${data.map(v => {
+        const divisa = v.detalles_pago && v.detalles_pago.pagoEnUSD ? 'USD' : 'NIO';
+        const isUSD = divisa === 'USD';
+        const cur = isUSD ? '$' : 'C$';
+        return `
+             <tr style="border-bottom:1px solid var(--border-color);">
+               <td style="padding:12px 8px;font-weight:bold;color:var(--color-primary-600);">${v.numero}</td>
+               <td>${new Date(v.fecha).toLocaleString('es-NI')}</td>
+               <td>${v.vendedor || 'N/A'}</td>
+               <td><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">${v.cliente || 'Público'}</div></td>
+               <td style="text-align:right;color:#ef4444;">${((v.descuento || 0) + (v.descuento_global || 0)) > 0 ? '-' + cur + fmt((v.descuento || 0) + (v.descuento_global || 0)) : '-'}</td>
+               <td style="text-align:right;font-weight:bold;">${cur}${fmt(v.total)}</td>
+               <td style="text-align:center;font-weight:700;color:${isUSD ? '#10b981' : '#64748b'}">${divisa}</td>
+               <td style="text-align:center;"><span style="border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700;background:var(--bg-secondary);border:1px solid var(--border-color);">${(v.metodo || 'EFECTIVO').toUpperCase()}</span></td>
+               <td style="text-align:center;"><span style="border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700;display:inline-block;background:${v.estado === 'completada' ? 'rgba(16,185,129,0.1);color:#10b981;' : 'rgba(239,68,68,0.1);color:#ef4444;'}">${(v.estado || 'COMPLETADA').toUpperCase()}</span></td>
+             </tr>`
+      }).join('')}
+        </tbody>
+      </table>`;
+
+    return `<div style="padding:2rem;height:100%;overflow-y:auto;background:var(--bg-primary);">
+       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+          <h2 style="display:flex;align-items:center;gap:8px;margin:0;">📋 Historial de Facturas Registradas</h2>
+          ${renderReportesFilters()}
+       </div>
+       <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;">
+          ${listHtml}
+       </div>
+    </div>`;
+  };
   const showShortcutsHelp = () => { posActionModal = 'shortcuts'; posActionData = null; App.render(); };
+
+  const showProductDescription = () => {
+    if (selectedCartRow < 0 || selectedCartRow >= cart.length) return;
+    const item = cart[selectedCartRow];
+    const desc = item.descripcion && item.descripcion.trim() !== '' ? item.descripcion : 'Sin comentario agregado.';
+    alert(`Descripción de: ${item.nombre} \n\n${desc} `);
+  };
+
+  const searchConsultor = (q) => {
+    consultorQuery = q;
+    if (!q || q.length < 2) { consultorResult = null; App.render(); return; }
+    const lc = q.toLowerCase();
+    const qArr = lc.split(' ').filter(x => x.length > 0);
+    const prods = getProducts();
+
+    // Buscar coincidencia exacta por código o SKU primero
+    const found = prods.find(p => (String(p.codigo || '').toLowerCase() === lc) || (String(p.sku || p.codigo || '').toLowerCase() === lc));
+
+    if (found) {
+      consultorResult = [found];
+    } else {
+      consultorResult = prods.filter(p => {
+        const nombre = String(p.nombre || '').toLowerCase();
+        const codigo = String(p.codigo || '').toLowerCase();
+        const sku = String(p.sku || p.codigo || '').toLowerCase();
+        const codigoAlt = String(p.codigoAlt || p.codigo_alternativo || '').toLowerCase();
+
+        return qArr.every(qt => nombre.includes(qt) || codigo.includes(qt) || sku.includes(qt) || codigoAlt.includes(qt));
+      }).slice(0, 50);
+    }
+    App.render();
+  };
+
+  const crearCotizacionPrompt = () => {
+    if (cart.length === 0) { alert('El carrito está vacío, no se puede cotizar.'); return; }
+    posActionModal = 'cotizacion-setup';
+    App.render();
+  };
+
+  const facturarCotizacion = (num) => {
+    if (cart.length > 0) {
+      if (confirm('Tienes una venta en progreso. ¿Deseas enviarla a ESPERA para cargar esta cotización?')) {
+        suspendSale();
+      } else {
+        return;
+      }
+    }
+
+    const cots = getData('cotizaciones');
+    const cotIdx = cots.findIndex(c => c.numero === num);
+    if (cotIdx < 0) return;
+    const cot = cots[cotIdx];
+    cart = [...cot.items];
+    selectedClient = cot.clienteId;
+    globalDiscount = cot.descuento_global || 0;
+    selectedCurrency = cot.divisa || 'NIO';
+    posDocReference = num; // Link the quotation. It'll be updated automatically on success payment.
+    cotizacionSelected = null;
+
+    posSubView = 'pos';
+    posOverlayOpen = true;
+    navigateSidebar('pos'); // Return to POS explicitly
+    App.render();
+  };
 
   return {
     render, navigateTo, navigateSidebar,
-    searchProducts, addToCart, removeItem, selectCartRow, modifySelected, setPosComment, promptGlobalDiscount,
+    searchProducts, addToCart, removeItem, selectCartRow, modifySelected, setPosComment, promptGlobalDiscount, searchConsultor, searchCotizaciones, selectCotizacion,
     searchClientsCombo, selectClientCombo,
     setCurrency, clearCart, suspendSale, recoverSale, recoverSaleFromTab,
     openTurno, closeTurno, confirmCloseTurno,
-    openPaymentModal, closePaymentModal, closePosModal, setPaymentOnly, setPaymentConfig, setTarjetaModo, setPriceList, processPaymentOverride, updateCashDisplay,
-    openPOSOverlay, closePOSOverlay, restorePOS, showShortcutsHelp, modifySelectedAction,
-    submitPosActionModal, closeActionModal, promptGlobalDiscountModal, openPosNewClientModal
+    openPaymentModal, closePaymentModal, closePosModal, setPaymentOnly, setPaymentConfig, setTarjetaModo, setPriceList, processPaymentOverride, updateCashDisplay, togglePayInUSD, setDocReference,
+    openPOSOverlay, closePOSOverlay, restorePOS, showShortcutsHelp, modifySelectedAction, showProductDescription, crearCotizacionPrompt, facturarCotizacion,
+    searchDevoluciones, selectDevolucion, searchDevolucionProducts, toggleDevolucionItem, checkAllDevolucionItems, cancelarFacturaTotal, devolucionParcial,
+    submitPosActionModal, closeActionModal, promptGlobalDiscountModal, openPosNewClientModal, calcAmortizacionCredito,
+    addPosMultiple, removePosMultiple, updatePosMultiple,
+    setReportTab, updateConteoNio, updateConteoUsd, setReportFilterType, setReportFilterMonth, setReportFilterDate,
+    openClientSearchModal, closeClientSearchModal, filterClientSearchModal, handleClientModalKeydown, selectClientFromModal, clearSelectedClient, openNewClientFromSearchModal, cancelCloseTurno, onClientCreatedFromPOS,
+    promptContadorDivisas, submitContadorDivisas, liveCalcDivisas
   };
 })();
 
 window.VentasModule = VentasModule;
-console.log('✅ Módulo de Ventas cargado correctamente');
+console.log('✅ Módulo de Gestión de Ventas cargado correctamente');

@@ -927,8 +927,8 @@ const SupabaseDataService = (() => {
         if (updates.precio_costo !== undefined) dataToUpdate.precio_costo = parseFloat(updates.precio_costo) || 0;
 
         // Campos numéricos opcionales
-        if (updates.stockActual !== undefined || updates.stock_actual !== undefined) {
-            dataToUpdate.stock_actual = parseInt(updates.stockActual || updates.stock_actual) || 0;
+        if (updates.stockActual !== undefined || updates.stock_actual !== undefined || updates.stock !== undefined) {
+            dataToUpdate.stock_actual = parseInt(updates.stockActual || updates.stock_actual || updates.stock) || 0;
         }
         if (updates.stockMinimo !== undefined || updates.stock_minimo !== undefined) {
             dataToUpdate.stock_minimo = parseInt(updates.stockMinimo || updates.stock_minimo) || 0;

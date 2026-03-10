@@ -11,8 +11,8 @@ const App = (() => {
 
   const renderSidebar = () => {
     const menuItems = [
-      { id: 'dashboard', label: 'Dashboard', icon: Icons.home },
-      { id: 'ventas', label: 'Ventas', icon: Icons.shoppingBag },
+      { id: 'dashboard', label: 'Inicio', icon: Icons.home },
+      { id: 'ventas', label: 'Gestión de Ventas', icon: Icons.shoppingBag },
       { id: 'clientes', label: 'Clientes', icon: Icons.users },
       { id: 'pedidos', label: 'Pedidos', icon: Icons.shoppingCart },
       { id: 'productos', label: 'Gestión de Compras', icon: Icons.package },
@@ -168,7 +168,7 @@ const App = (() => {
     const user = State.get('user');
 
     const titles = {
-      dashboard: 'Dashboard',
+      dashboard: 'Inicio',
       clientes: 'Clientes',
       contratos: 'Contratos',
       visitas: 'Visitas / Servicios',
@@ -180,7 +180,7 @@ const App = (() => {
       software: 'Software y Licencias',
       prestaciones: 'Prestaciones Laborales',
       'gestion-financiera': 'Gestión Financiera',
-      ventas: 'Ventas',
+      ventas: 'Gestión de Ventas',
       calendario: 'Calendarios de Trabajos',
       reportes: 'Reportes',
       'gestion-tecnicos': 'Gestión de Técnicos',
@@ -192,7 +192,7 @@ const App = (() => {
         <button class="header__menu-btn btn btn--ghost btn--icon" id="menuToggle">
           ${Icons.menu}
         </button>
-        <h1 class="header__title">${titles[currentModule] || 'Dashboard'}</h1>
+        <h1 class="header__title">${titles[currentModule] || 'Inicio'}</h1>
         
         <div class="header__search">
           <span class="header__search-icon">${Icons.search}</span>
@@ -826,7 +826,7 @@ const App = (() => {
       recepciones: 'Recepción de Equipos',
       software: 'Software y Licencias',
       prestaciones: 'Prestaciones Laborales',
-      ventas: 'Ventas',
+      ventas: 'Gestión de Ventas',
       calendario: 'Calendario',
       reportes: 'Reportes',
       'gestion-tecnicos': 'Gestión de Técnicos',

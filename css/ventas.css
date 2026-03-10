@@ -1267,3 +1267,469 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
+
+/* ============================================
+   ACTIVE USERS PANEL — Mini Dashboard
+   ============================================ */
+.ventas-active-users-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-xl, 12px);
+    margin-bottom: var(--spacing-lg);
+    overflow: hidden;
+}
+
+.ventas-active-users-panel__header {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.05));
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-primary);
+}
+
+.ventas-pulse-dot {
+    width: 10px;
+    height: 10px;
+    background: #10b981;
+    border-radius: 50%;
+    display: inline-block;
+    position: relative;
+    animation: vntPulse 2s ease-in-out infinite;
+}
+
+.ventas-pulse-dot::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    background: rgba(16, 185, 129, 0.3);
+    animation: vntPulseRing 2s ease-in-out infinite;
+}
+
+@keyframes vntPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.7;
+        transform: scale(0.9);
+    }
+}
+
+@keyframes vntPulseRing {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.3;
+    }
+
+    50% {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+}
+
+.ventas-active-users-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
+    padding: 16px 20px;
+}
+
+.ventas-user-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.ventas-user-card:hover {
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    transform: translateY(-1px);
+}
+
+.ventas-user-card--current {
+    border-color: rgba(16, 185, 129, 0.3);
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.03), rgba(5, 150, 105, 0.01));
+}
+
+.ventas-user-card--current::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #10b981, #059669);
+}
+
+.ventas-user-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+}
+
+.ventas-user-card__avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 16px;
+    color: white;
+    flex-shrink: 0;
+}
+
+.ventas-user-card__device {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ventas-user-card__stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.ventas-user-card__stat-item {
+    text-align: center;
+    background: var(--bg-secondary);
+    padding: 8px 4px;
+    border-radius: 8px;
+}
+
+.ventas-user-card__stat-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.ventas-user-card__stat-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-top: 2px;
+}
+
+.ventas-user-card__payments {
+    border-top: 1px solid var(--border-color);
+    padding-top: 10px;
+}
+
+.ventas-user-card__payment-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ventas-payment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    transition: transform 0.15s;
+}
+
+.ventas-payment-chip:hover {
+    transform: scale(1.05);
+}
+
+.ventas-payment-chip--efectivo {
+    background: rgba(16, 185, 129, 0.1);
+    color: #059669;
+}
+
+.ventas-payment-chip--tarjeta {
+    background: rgba(59, 130, 246, 0.1);
+    color: #2563eb;
+}
+
+.ventas-payment-chip--transferencia {
+    background: rgba(139, 92, 246, 0.1);
+    color: #7c3aed;
+}
+
+.ventas-payment-chip--credito {
+    background: rgba(245, 158, 11, 0.1);
+    color: #d97706;
+}
+
+.ventas-payment-chip--extra {
+    background: rgba(236, 72, 153, 0.1);
+    color: #db2777;
+}
+
+/* ============================================
+   REPORTES — Tab System & Layout
+   ============================================ */
+.ventas-reportes-header {
+    margin-bottom: 1.25rem;
+}
+
+.ventas-reportes-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+    overflow-x: auto;
+}
+
+.ventas-reportes-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.ventas-reportes-tab:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.ventas-reportes-tab--active {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.ventas-reporte-content {
+    min-height: 400px;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ========== REPORTE KPIs ========== */
+.ventas-reporte-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.ventas-reporte-kpi {
+    background: var(--bg-primary);
+    padding: 1.25rem 1.5rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+}
+
+.ventas-reporte-kpi:hover {
+    border-color: rgba(59, 130, 246, 0.2);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+.ventas-reporte-kpi__label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.ventas-reporte-kpi__value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.ventas-reporte-kpi__sub {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-top: 4px;
+}
+
+/* ========== REPORTE TABLES ========== */
+.ventas-reporte-table-wrapper {
+    background: var(--bg-primary);
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    overflow-x: auto;
+    overflow-y: auto;
+    max-height: 500px;
+}
+
+.ventas-reporte-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+}
+
+.ventas-reporte-table thead {
+    background: var(--bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.ventas-reporte-table th {
+    padding: 10px 14px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-align: left;
+    border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.ventas-reporte-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.ventas-reporte-table tbody tr:hover {
+    background: rgba(59, 130, 246, 0.03);
+}
+
+.ventas-reporte-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.ventas-reporte-table tfoot td {
+    padding: 12px 14px;
+    border-top: 2px solid var(--border-color);
+}
+
+/* ============================================
+   POS ACTION BUTTONS — Unified Blue Theme
+   ============================================ */
+.pos-action-btn {
+    flex: 1;
+    border: none;
+    background: #f1f5f9;
+    color: #94a3b8;
+    padding: 10px 4px;
+    border-radius: 10px;
+    font-weight: 800;
+    font-size: 11px;
+    cursor: not-allowed;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.pos-action-btn kbd {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+    border: none;
+    font-family: inherit;
+}
+
+.pos-action-btn--active {
+    background: #dbeafe;
+    color: #1d4ed8;
+    cursor: pointer;
+}
+
+.pos-action-btn--active kbd {
+    background: rgba(29, 78, 216, 0.1);
+    color: #1d4ed8;
+}
+
+.pos-action-btn--active:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px -1px rgba(59, 130, 246, 0.25);
+    background: #bfdbfe;
+}
+
+.pos-action-btn--active:active {
+    transform: translateY(0);
+}
+
+/* ============================================
+   CLIENT SEARCH MODAL — Row Styles
+   ============================================ */
+.pos-client-modal-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-bottom: 2px;
+}
+
+.pos-client-modal-row:hover {
+    background: rgba(59, 130, 246, 0.06);
+}
+
+.pos-client-modal-row--active {
+    background: #dbeafe !important;
+    box-shadow: inset 3px 0 0 0 #3b82f6;
+}
+
+.pos-client-modal-row--active div:first-child {
+    box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+}
+
+.pos-client-modal-row--overdue {
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    background: rgba(239, 68, 68, 0.03);
+    flex-direction: column;
+}
+
+.pos-client-modal-row--overdue:hover {
+    background: rgba(239, 68, 68, 0.06);
+}
