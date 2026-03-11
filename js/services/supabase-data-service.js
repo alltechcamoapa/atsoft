@@ -7,6 +7,19 @@
 const SupabaseDataService = (() => {
     let client = null;
 
+    // ========== EMPRESA ACTIVA (Multi-Empresa Isolation) ==========
+    /**
+     * Obtiene el empresa_id de la sesión activa.
+     * Todas las consultas deben filtrar por este ID para aislar datos entre empresas.
+     */
+    const getActiveEmpresaId = () => {
+        if (typeof State !== 'undefined' && State.getCurrentUser) {
+            const user = State.getCurrentUser();
+            return user?.empresa_id || null;
+        }
+        return null;
+    };
+
     // ========== INICIALIZACIÓN ==========
     const init = () => {
         client = getSupabaseClient();
@@ -104,11 +117,11 @@ const SupabaseDataService = (() => {
     // ========== CLIENTES ==========
     const getClientesSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('clientes')
-            .select('*')
-            .order('created_at', { ascending: false });
+        let query = client.from('clientes').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching clientes:', error);
@@ -120,8 +133,10 @@ const SupabaseDataService = (() => {
 
     const getClientesFiltered = async (filter) => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
         let query = client.from('clientes').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
 
         // Aplicar filtros
         if (filter.search) {
@@ -162,6 +177,8 @@ const SupabaseDataService = (() => {
     };
 
     const createCliente = async (clienteData) => {
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !clienteData.empresa_id) clienteData.empresa_id = empresaId;
         if (!client) return {
             error: 'Not initialized',
             getRecepcionesSync,
@@ -235,14 +252,11 @@ const SupabaseDataService = (() => {
     // ========== CONTRATOS ==========
     const getContratosSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('contratos')
-            .select(`
-                *,
-                cliente:clientes(*)
-            `)
-            .order('created_at', { ascending: false });
+        let query = client.from('contratos').select(`*, cliente:clientes(*)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching contratos:', error);
@@ -254,13 +268,12 @@ const SupabaseDataService = (() => {
 
     const getContratosFiltered = async (filter) => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
         let query = client
             .from('contratos')
-            .select(`
-                *,
-                cliente:clientes(*)
-            `);
+            .select(`*, cliente:clientes(*)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
 
         if (filter.search) {
             query = query.or(`codigo_contrato.ilike.%${filter.search}%`);
@@ -308,6 +321,8 @@ const SupabaseDataService = (() => {
 
     const createContrato = async (contratoData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !contratoData.empresa_id) contratoData.empresa_id = empresaId;
 
         // Generar código secuencial si no existe (Formato: CTTO-0001)
         if (!contratoData.codigo_contrato) {
@@ -373,14 +388,11 @@ const SupabaseDataService = (() => {
     // ========== EQUIPOS ==========
     const getEquiposSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('equipos')
-            .select(`
-                *,
-                cliente:clientes(*)
-            `)
-            .order('created_at', { ascending: false });
+        let query = client.from('equipos').select(`*, cliente:clientes(*)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching equipos:', error);
@@ -446,6 +458,8 @@ const SupabaseDataService = (() => {
 
     const createEquipo = async (equipoData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !equipoData.empresa_id) equipoData.empresa_id = empresaId;
 
         // Generar código si no existe
         if (!equipoData.codigo_equipo) {
@@ -518,16 +532,11 @@ const SupabaseDataService = (() => {
     // ========== VISITAS ==========
     const getVisitasSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('visitas')
-            .select(`
-                *,
-                cliente:clientes(*),
-                contrato:contratos(*),
-                tecnico:profiles!tecnico_id(*)
-            `)
-            .order('fecha_inicio', { ascending: false });
+        let query = client.from('visitas').select(`*, cliente:clientes(*), contrato:contratos(*), tecnico:profiles!tecnico_id(*)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha_inicio', { ascending: false });
 
         if (error) {
             console.error('Error fetching visitas:', error);
@@ -539,6 +548,8 @@ const SupabaseDataService = (() => {
 
     const createVisita = async (visitaData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !visitaData.empresa_id) visitaData.empresa_id = empresaId;
 
         // 0. Generar codigo si no existe (Formato: VIS-0001)
         if (!visitaData.codigo_visita) {
@@ -788,11 +799,11 @@ const SupabaseDataService = (() => {
     // ========== PRODUCTOS ==========
     const getProductosSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('productos')
-            .select('*')
-            .order('created_at', { ascending: false });
+        let query = client.from('productos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching productos:', error);
@@ -821,8 +832,41 @@ const SupabaseDataService = (() => {
         return data;
     };
 
+    const getProductoByCodigoAndEmpresa = async (codigo, codigoAlt, empresaId, nombre = null) => {
+        if (!client || (!codigo && !codigoAlt && !nombre)) return null;
+
+        // Intento 1: buscar por código
+        if (codigo || codigoAlt) {
+            let query = client.from('productos').select('*');
+            if (empresaId) query = query.eq('empresa_id', empresaId);
+
+            const conditions = [];
+            if (codigo) conditions.push(`codigo.eq.${codigo}`);
+            if (codigoAlt) conditions.push(`codigo_alternativo.eq.${codigoAlt}`);
+
+            query = query.or(conditions.join(','));
+
+            const { data, error } = await query.limit(1).maybeSingle();
+            if (!error && data) return data;
+        }
+
+        // Intento 2: buscar por nombre exacto como fallback
+        if (nombre) {
+            let query2 = client.from('productos').select('*');
+            if (empresaId) query2 = query2.eq('empresa_id', empresaId);
+            query2 = query2.eq('nombre', nombre);
+
+            const { data: data2, error: error2 } = await query2.limit(1).maybeSingle();
+            if (!error2 && data2) return data2;
+        }
+
+        return null;
+    };
+
     const createProducto = async (productoData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !productoData.empresa_id) productoData.empresa_id = empresaId;
 
         // Generar código secuencial si no existe (Formato: PO-0001 para Producto, SO-0001 para Servicio)
         if (!productoData.codigo) {
@@ -840,6 +884,7 @@ const SupabaseDataService = (() => {
 
         // Mapear directamente a las columnas reales del schema
         const dataToInsert = {
+            empresa_id: productoData.empresa_id,
             codigo: productoData.codigo,
             nombre: productoData.nombre,
             descripcion: productoData.descripcion || null,
@@ -868,7 +913,9 @@ const SupabaseDataService = (() => {
             venta_granel: productoData.ventaGranel === 'true' || productoData.ventaGranel === true,
             usa_seriales: productoData.usaSeriales === 'true' || productoData.usaSeriales === true,
             tipo_seguimiento: productoData.tipoSeguimiento || productoData.tipo_seguimiento || null,
-            inventario_maximo: parseInt(productoData.inventarioMaximo || productoData.inventario_maximo || 0)
+            inventario_maximo: parseInt(productoData.inventarioMaximo || productoData.inventario_maximo || 0),
+            descuento_max_tipo: productoData.descMaxTipo || productoData.descuento_max_tipo || 'porcentaje',
+            descuento_max_valor: parseFloat(productoData.descMaxValor || productoData.descuento_max_valor || 0)
         };
 
         const { data, error } = await client
@@ -917,6 +964,8 @@ const SupabaseDataService = (() => {
         if (updates.usaSeriales !== undefined) dataToUpdate.usa_seriales = updates.usaSeriales === 'true' || updates.usaSeriales === true;
         if (updates.tipoSeguimiento !== undefined) dataToUpdate.tipo_seguimiento = updates.tipoSeguimiento;
         if (updates.inventarioMaximo !== undefined) dataToUpdate.inventario_maximo = parseInt(updates.inventarioMaximo || 0);
+        if (updates.descMaxTipo !== undefined) dataToUpdate.descuento_max_tipo = updates.descMaxTipo;
+        if (updates.descMaxValor !== undefined) dataToUpdate.descuento_max_valor = parseFloat(updates.descMaxValor || 0);
 
         // Mapeo de precio: el UI envía "precio", la DB usa "precio_venta"
         if (updates.precio !== undefined) dataToUpdate.precio_venta = parseFloat(updates.precio) || 0;
@@ -969,14 +1018,11 @@ const SupabaseDataService = (() => {
     // ========== PROFORMAS ==========
     const getProformasSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('proformas')
-            .select(`
-                *,
-                cliente:clientes(*)
-            `)
-            .order('created_at', { ascending: false });
+        let query = client.from('proformas').select(`*, cliente:clientes(*)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching proformas:', error);
@@ -1008,6 +1054,8 @@ const SupabaseDataService = (() => {
 
     const createProforma = async (proformaData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !proformaData.empresa_id) proformaData.empresa_id = empresaId;
 
         // Extraemos variables que podrian fallar en DB
         const { creado_por_nombre, ...dataToInsert } = proformaData;
@@ -1115,14 +1163,11 @@ const SupabaseDataService = (() => {
     // ========== PEDIDOS ==========
     const getPedidosSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('pedidos')
-            .select(`
-                *,
-                cliente:clientes(*)
-            `)
-            .order('created_at', { ascending: false });
+        let query = client.from('pedidos').select(`*, cliente:clientes(*)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching pedidos:', error);
@@ -1154,6 +1199,8 @@ const SupabaseDataService = (() => {
 
     const createPedido = async (pedidoData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !pedidoData.empresa_id) pedidoData.empresa_id = empresaId;
 
         // Generar IDs si no existen
         if (!pedidoData.pedido_id) {
@@ -1220,11 +1267,11 @@ const SupabaseDataService = (() => {
     // ========== EMPLEADOS ==========
     const getEmpleadosSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('empleados')
-            .select('*')
-            .order('created_at', { ascending: false });
+        let query = client.from('empleados').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching empleados:', error);
@@ -1253,9 +1300,12 @@ const SupabaseDataService = (() => {
 
     const createEmpleado = async (empleadoData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !empleadoData.empresa_id) empleadoData.empresa_id = empresaId;
 
         // Preparar datos para Supabase
         const dataToInsert = {
+            empresa_id: empleadoData.empresa_id,
             nombre: empleadoData.nombre,
             cedula: empleadoData.cedula,
             email: empleadoData.email || null,
@@ -1284,7 +1334,6 @@ const SupabaseDataService = (() => {
 
         return { success: true, data };
     };
-
     const updateEmpleado = async (id, empleadoData) => {
         if (!client) return { error: 'Not initialized' };
 
@@ -1766,14 +1815,11 @@ const SupabaseDataService = (() => {
     // ========== SOFTWARE ==========
     const getSoftwareSync = async () => {
         if (!client) return [];
+        const empresaId = getActiveEmpresaId();
 
-        const { data, error } = await client
-            .from('software')
-            .select(`
-                *,
-                cliente:clientes(id, nombre_cliente, empresa)
-            `)
-            .order('created_at', { ascending: false });
+        let query = client.from('software').select(`*, cliente:clientes(id, nombre_cliente, empresa)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching software:', error);
@@ -1839,6 +1885,8 @@ const SupabaseDataService = (() => {
 
     const createSoftware = async (softwareData) => {
         if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !softwareData.empresa_id) softwareData.empresa_id = empresaId;
 
         // Generar código si no existe
         if (!softwareData.codigoSoftware) {
@@ -2130,13 +2178,11 @@ const SupabaseDataService = (() => {
 
     const getRecepcionesSync = async () => {
         if (!client) return [];
-        const { data, error } = await client
-            .from('recepciones_equipos')
-            .select(`
-                *,
-                cliente:clientes(*),
-                equipo:equipos(*)
-            `)
+        const empresaId = getActiveEmpresaId();
+
+        let query = client.from('recepciones_equipos').select(`*, cliente:clientes(*), equipo:equipos(*)`);
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -2149,6 +2195,8 @@ const SupabaseDataService = (() => {
     const createRecepcion = async (recepcionData) => {
         console.log('🔵 createRecepcion called with:', JSON.stringify(recepcionData));
         if (!client) { console.error('❌ Supabase client not initialized'); return { error: 'Not initialized' }; }
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !recepcionData.empresa_id) recepcionData.empresa_id = empresaId;
 
         const numero_recepcion_str = await generateCode('recepciones_equipos', 'REC-', 5, 'codigo_recepcion');
         const matches = String(numero_recepcion_str).match(/\d+$/);
@@ -2201,9 +2249,166 @@ const SupabaseDataService = (() => {
         return { success: true };
     };
 
+    // ========== CONFIGURACION POS ==========
+    const getConfiguracionPosSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+
+        let query = client.from('configuracion_pos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: true });
+        
+        if (error) {
+            console.error('Error fetching configuracion pos:', error);
+            return [];
+        }
+        return data || [];
+    };
+
+    const createConfiguracionPos = async (configData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !configData.empresa_id) configData.empresa_id = empresaId;
+        
+        const { data, error } = await client
+            .from('configuracion_pos')
+            .insert([configData])
+            .select()
+            .single();
+
+        if (error) return { error: handleSupabaseError(error, 'createConfiguracionPos') };
+        return { data, success: true };
+    };
+
+    const deleteConfiguracionPos = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        
+        const { error } = await client
+            .from('configuracion_pos')
+            .delete()
+            .eq('id', id);
+
+        if (error) return { error: handleSupabaseError(error, 'deleteConfiguracionPos') };
+        return { success: true };
+    };
+
+    // ========== EMPRESAS & BODEGAS ==========
+    const getEmpresasSync = async () => {
+        if (!client) return [];
+        const { data, error } = await client.from('empresas').select('*').order('created_at', { ascending: true });
+        return data || [];
+    };
+
+    const createEmpresa = async (empresaData) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('empresas').insert([empresaData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createEmpresa') };
+        return { data, success: true };
+    };
+
+    const getBodegasSync = async () => {
+        if (!client) return [];
+        const { data, error } = await client.from('bodegas').select('*, empresa:empresas(*)').order('created_at', { ascending: true });
+        return data || [];
+    };
+
+    const createBodega = async (bodegaData) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('bodegas').insert([bodegaData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createBodega') };
+        return { data, success: true };
+    };
+
+    const updateEmpresa = async (id, dataObj) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('empresas').update(dataObj).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateEmpresa') };
+        return { data, success: true };
+    };
+
+    const updateBodega = async (id, dataObj) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('bodegas').update(dataObj).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateBodega') };
+        return { data, success: true };
+    };
+
+    const deleteBodega = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('bodegas').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteBodega') };
+        return { success: true };
+    };
+
     // ========== PUBLIC API ==========
-    return {
+    
+    // ========== PROVEEDORES ==========
+    const getProveedoresSync = async () => {
+        try {
+            const empresaId = State.getCurrentUser()?.empresa_id;
+            let req = supabase.from('proveedores').select('*');
+            if (empresaId) req = req.eq('empresa_id', empresaId);
+            const { data, error } = await req;
+            if (error) throw error;
+            return data;
+        } catch (e) { console.error('Error fetching proveedores:', e); return []; }
+    };
+
+    const createProveedor = async (proveedor) => {
+        try {
+            const empresaId = State.getCurrentUser()?.empresa_id;
+            if (empresaId) proveedor.empresa_id = empresaId;
+            const insertData = {
+                empresa_id: proveedor.empresa_id,
+                tipo_proveedor: proveedor.tipoProveedor || proveedor.tipo_proveedor || '',
+                ruc: proveedor.ruc || '',
+                razon_social: proveedor.razonSocial || proveedor.razon_social || '',
+                telefono: proveedor.telefono || '',
+                direccion: proveedor.direccion || '',
+                ciudad: proveedor.ciudad || ''
+            };
+            const { data, error } = await supabase.from('proveedores').insert([insertData]).select();
+            if (error) throw error;
+            return data[0];
+        } catch (e) {
+            console.error('Error createProveedor:', e);
+            throw e;
+        }
+    };
+
+    const updateProveedor = async (id, proveedor) => {
+        try {
+            const updateData = {
+                tipo_proveedor: proveedor.tipoProveedor || proveedor.tipo_proveedor || '',
+                ruc: proveedor.ruc || '',
+                razon_social: proveedor.razonSocial || proveedor.razon_social || '',
+                telefono: proveedor.telefono || '',
+                direccion: proveedor.direccion || '',
+                ciudad: proveedor.ciudad || ''
+            };
+            const { data, error } = await supabase.from('proveedores').update(updateData).eq('id', id).select();
+            if (error) throw error;
+            return data[0];
+        } catch (e) {
+            console.error('Error updateProveedor:', e);
+            throw e;
+        }
+    };
+
+    const deleteProveedor = async (id) => {
+        try {
+            const { error } = await supabase.from('proveedores').delete().eq('id', id);
+            if (error) throw error;
+            return true;
+        } catch (e) {
+            console.error('Error deleteProveedor:', e);
+            throw e;
+        }
+    };
+return {
         getRecepcionesFiltered,
+        // Multi-Empresa
+        getActiveEmpresaId,
         // Inicialización
         init,
         subscribeToChanges, // Exportar función
@@ -2213,12 +2418,16 @@ const SupabaseDataService = (() => {
         createUser, // Exportar createUser
         updateUser,
         deleteUser,
-        getCurrentUser,
-        getCurrentProfile,
         getUsersSync,
-        signIn,
-        signOut,
-        isAuthenticated,
+
+        // Empresas y Bodegas
+        getEmpresasSync,
+        createEmpresa,
+        updateEmpresa,
+        getBodegasSync,
+        createBodega,
+        updateBodega,
+        deleteBodega,
 
         // Dashboard
         getDashboardStats,
@@ -2264,6 +2473,7 @@ const SupabaseDataService = (() => {
         // Productos
         getProductosSync,
         getProductoById,
+        getProductoByCodigoAndEmpresa,
         createProducto,
         updateProducto,
         deleteProducto,
@@ -2335,6 +2545,20 @@ const SupabaseDataService = (() => {
         createRecepcion,
         updateRecepcion,
         deleteRecepcion,
+
+        // Configuracion POS
+        getConfiguracionPosSync,
+        createConfiguracionPos,
+        deleteConfiguracionPos,
+
+        // Empresas & Bodegas
+        getEmpresasSync,
+        createEmpresa,
+        updateEmpresa,
+        getBodegasSync,
+        createBodega,
+        updateBodega,
+        deleteBodega,
 
         // Helpers & Storage
         generateCode,

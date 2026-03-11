@@ -246,6 +246,14 @@ const ConfigModule = (() => {
       { id: 'usuarios', name: 'Usuarios', icon: Icons.users }
     ];
 
+    const empresas = typeof DataService !== 'undefined' && DataService.getEmpresasSync ? DataService.getEmpresasSync() : [];
+    if (empresas.length > 0) {
+      allModulos.push({ id: 'divider', isDivider: true, name: 'Acceso a Empresas' });
+      empresas.forEach(emp => {
+        allModulos.push({ id: 'empresa_' + emp.id, name: 'Empresa: ' + emp.nombre, icon: '🏢' });
+      });
+    }
+
     return `
       <div class="card">
         <div class="card__header">
@@ -303,6 +311,9 @@ const ConfigModule = (() => {
                   </thead>
                   <tbody>
                     ${allModulos.map(modulo => {
+        if (modulo.isDivider) {
+            return `<tr><td colspan="6" style="padding:var(--spacing-md); background:var(--bg-secondary); font-weight:bold; color:var(--text-primary);">${modulo.name}</td></tr>`;
+        }
         const perms = rolePerms[modulo.id] || { create: false, read: false, update: false, delete: false };
         const hasFullAccess = perms.create && perms.read && perms.update && perms.delete;
         const hasNoAccess = !perms.create && !perms.read && !perms.update && !perms.delete;
@@ -312,7 +323,7 @@ const ConfigModule = (() => {
                       <tr style="border-bottom: 1px solid var(--border-color); ${perms.read ? 'background: var(--bg-primary);' : ''}">
                         <td style="padding: var(--spacing-md);">
                           <div style="display: flex; align-items: center; gap: var(--spacing-sm);">
-                            <span style="color: ${perms.read ? 'var(--text-primary)' : 'var(--text-muted)'};">${modulo.icon}</span>
+                            <span style="color: ${perms.read ? 'var(--text-primary)' : 'var(--text-muted)'};">${modulo.icon || ''}</span>
                             <span style="font-weight: var(--font-weight-medium); color: ${perms.read ? 'var(--text-primary)' : 'var(--text-muted)'};">${modulo.name}</span>
                             ${hasFullAccess ? '<span class="badge badge--success" style="font-size: var(--font-size-xs); margin-left: var(--spacing-xs);">Full</span>' : ''}
                             ${hasReadOnly ? '<span class="badge badge--warning" style="font-size: var(--font-size-xs); margin-left: var(--spacing-xs);">Solo Lectura</span>' : ''}
@@ -570,7 +581,537 @@ const ConfigModule = (() => {
            </form>
         </div>
       </div>
+
+      <!-- Gestión de Empresas -->
+      <div class="card" style="margin-top: var(--spacing-lg);">
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h4 class="card__title">${Icons.briefcase || '🏢'} Directorio de Empresas</h4>
+            <p class="text-sm text-muted">Añade o edita entidades empresariales</p>
+          </div>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openEmpresaModal()">
+            ${Icons.plus || '+'} Nueva Empresa
+          </button>
+        </div>
+        <div class="card__body" style="padding:0;">
+          <table class="data-table">
+            <thead class="data-table__head">
+              <tr>
+                <th>Nombre / Razón Social</th>
+                <th>RUC</th>
+                <th>Moneda</th>
+                <th>Estado</th>
+                <th style="width:100px; text-align:right;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="data-table__body">
+              ${(typeof DataService !== 'undefined' && DataService.getEmpresasSync ? DataService.getEmpresasSync() : []).map(emp => `
+                <tr>
+                  <td><strong>${emp.nombre}</strong><br><small class="text-muted">${emp.razon_social || ''}</small></td>
+                  <td>${emp.ruc || '-'}</td>
+                  <td><span class="badge badge--neutral">${emp.moneda_principal || 'USD'}</span></td>
+                  <td><span class="badge ${emp.estado === 'Activo' ? 'badge--success' : 'badge--error'}">${emp.estado}</span></td>
+                  <td style="text-align:right;">
+                    <button class="btn btn--icon btn--ghost" onclick="ConfigModule.editEmpresa('${emp.id}', '${emp.nombre}')" title="Editar Nombre">✏️</button>
+                  </td>
+                </tr>
+              `).join('') || `<tr><td colspan="5" style="text-align:center; padding:var(--spacing-md); color:var(--text-muted)">No hay empresas adicionales registradas</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Gestión de Bodegas -->
+      <div class="card" style="margin-top: var(--spacing-lg);">
+        <div class="card__header" style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h4 class="card__title">${Icons.home || '🏭'} Bodegas y Sucursales</h4>
+            <p class="text-sm text-muted">Configura los puntos de almacenamiento e inventario</p>
+          </div>
+          <button class="btn btn--primary btn--sm" onclick="ConfigModule.openBodegaModal()">
+            ${Icons.plus || '+'} Nueva Bodega
+          </button>
+        </div>
+        <div class="card__body" style="padding:0;">
+          <table class="data-table">
+            <thead class="data-table__head">
+              <tr>
+                <th>Código</th>
+                <th>Nombre</th>
+                <th>Empresa Asociada</th>
+                <th>Principal</th>
+                <th style="width:100px; text-align:right;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody class="data-table__body">
+              ${(typeof DataService !== 'undefined' && DataService.getBodegasSync ? DataService.getBodegasSync() : []).map(bod => `
+                <tr>
+                  <td><span class="badge badge--primary">${bod.codigo}</span></td>
+                  <td>${bod.nombre}</td>
+                  <td>${bod.empresa?.nombre || 'Empresa Principal'}</td>
+                  <td>${bod.es_principal ? '<span class="badge badge--success">Sí</span>' : '<span class="badge badge--neutral">No</span>'}</td>
+                  <td style="text-align:right;">
+                    <button class="btn btn--icon btn--ghost" onclick="ConfigModule.editBodega('${bod.id}', '${bod.nombre}')" title="Editar Nombre">✏️</button>
+                    ${!bod.es_principal ? `<button class="btn btn--icon btn--ghost text-danger" onclick="ConfigModule.deleteBodega('${bod.id}')" title="Eliminar">🗑️</button>` : ''}
+                  </td>
+                </tr>
+              `).join('') || `<tr><td colspan="5" style="text-align:center; padding:var(--spacing-md); color:var(--text-muted)">No hay bodegas registradas</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Gestión de Régimen Fiscal -->
+      <div class="card" style="margin-top: var(--spacing-lg);">
+        <div class="card__header">
+          <h4 class="card__title">${Icons.scale || '⚖️'} Régimen Fiscal</h4>
+          <p class="text-sm text-muted">Configura el régimen fiscal de la empresa y cómo se manejan los impuestos.</p>
+        </div>
+        <div class="card__body">
+          ${renderRegimenSection()}
+        </div>
+      </div>
     `;
+  };
+
+  // ========== CAMBIO DE RÉGIMEN FISCAL ==========
+
+  /**
+   * Obtiene el régimen fiscal actual desde localStorage.
+   * 'cuota_fija' = precios con 15% incluido (no se desglosa).
+   * 'regimen_general' = precios base + IVA 15% desglosado.
+   */
+  const getRegimenActual = () => {
+    const suffix = getConfigEmpresaSuffix();
+    return localStorage.getItem('regimen_fiscal' + suffix) || 'cuota_fija';
+  };
+
+  const setRegimenActual = (regimen) => {
+    const suffix = getConfigEmpresaSuffix();
+    localStorage.setItem('regimen_fiscal' + suffix, regimen);
+  };
+
+  const getRegimenHistorial = () => {
+    const suffix = getConfigEmpresaSuffix();
+    try { return JSON.parse(localStorage.getItem('regimen_historial' + suffix) || '[]'); } catch { return []; }
+  };
+
+  const addRegimenHistorial = (entry) => {
+    const suffix = getConfigEmpresaSuffix();
+    const historial = getRegimenHistorial();
+    historial.unshift(entry);
+    localStorage.setItem('regimen_historial' + suffix, JSON.stringify(historial.slice(0, 50)));
+  };
+
+  const renderRegimenSection = () => {
+    const regimenActual = getRegimenActual();
+    const isCuotaFija = regimenActual === 'cuota_fija';
+    const historial = getRegimenHistorial().slice(0, 5);
+    const totalProductos = typeof DataService !== 'undefined' && DataService.getProductosSync
+      ? DataService.getProductosSync().length : 0;
+
+    return `
+      <!-- Estado Actual -->
+      <div style="display: flex; gap: var(--spacing-lg); margin-bottom: var(--spacing-lg); flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 260px; padding: var(--spacing-lg); border-radius: var(--border-radius-lg); border: 2px solid ${isCuotaFija ? 'rgba(34, 197, 94, 0.4)' : 'rgba(59, 130, 246, 0.4)'}; background: ${isCuotaFija ? 'rgba(34, 197, 94, 0.05)' : 'rgba(59, 130, 246, 0.05)'}; position: relative;">
+          <div style="position: absolute; top: 12px; right: 12px;">
+            <span class="badge ${isCuotaFija ? 'badge--success' : 'badge--primary'}" style="font-size: var(--font-size-sm); padding: 4px 12px;">
+              ${isCuotaFija ? '✅ Activo' : '✅ Activo'}
+            </span>
+          </div>
+          <div style="font-size: 2rem; margin-bottom: var(--spacing-sm);">${isCuotaFija ? '🏪' : '🏢'}</div>
+          <div style="font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); margin-bottom: var(--spacing-xs);">
+            ${isCuotaFija ? 'Cuota Fija' : 'Régimen General'}
+          </div>
+          <div style="font-size: var(--font-size-sm); color: var(--text-muted); line-height: 1.5;">
+            ${isCuotaFija
+              ? 'Los precios de venta <strong>incluyen el 15%</strong> de impuesto. No se desglosa IVA en las facturas.'
+              : 'Los precios de venta son <strong>precios base</strong>. Se agrega el <strong>15% IVA</strong> desglosado en las facturas.'}
+          </div>
+        </div>
+
+        <div style="flex: 1; min-width: 260px; padding: var(--spacing-lg); border-radius: var(--border-radius-lg); border: 2px dashed ${isCuotaFija ? 'rgba(59, 130, 246, 0.3)' : 'rgba(34, 197, 94, 0.3)'}; background: var(--bg-secondary); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: var(--spacing-md);">
+          <div style="font-size: 2rem;">${isCuotaFija ? '🏢' : '🏪'}</div>
+          <div style="font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); color: var(--text-secondary);">
+            Cambiar a: ${isCuotaFija ? 'Régimen General' : 'Cuota Fija'}
+          </div>
+          <button class="btn ${isCuotaFija ? 'btn--primary' : 'btn--warning'}" style="min-width: 200px;" onclick="ConfigModule.openCambioRegimenModal()">
+            ⚖️ Cambiar Régimen
+          </button>
+          <p style="font-size: 10px; color: var(--text-muted); text-align: center; max-width: 280px;">
+            ⚠️ Esta acción actualizará masivamente los precios de <strong>${totalProductos} producto(s)</strong>.
+            Se requiere contraseña de administrador.
+          </p>
+        </div>
+      </div>
+
+      <!-- Información Técnica -->
+      <div style="background: var(--bg-body); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-lg);">
+        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--spacing-sm);">📐 Fórmula de Conversión</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-md); font-size: var(--font-size-sm);">
+          <div style="padding: var(--spacing-sm); background: var(--bg-primary); border-radius: var(--border-radius-sm); border-left: 3px solid var(--color-success);">
+            <strong>Cuota Fija → Régimen General:</strong><br>
+            <code style="font-size: 11px;">Precio Base = Precio Actual ÷ 1.15</code><br>
+            <code style="font-size: 11px;">IVA (15%) = Precio Base × 0.15</code><br>
+            <code style="font-size: 11px;">Precio Final = Precio Base + IVA</code>
+          </div>
+          <div style="padding: var(--spacing-sm); background: var(--bg-primary); border-radius: var(--border-radius-sm); border-left: 3px solid var(--color-primary-500);">
+            <strong>Régimen General → Cuota Fija:</strong><br>
+            <code style="font-size: 11px;">Precio con IVA incluido = Precio Base × 1.15</code><br>
+            <code style="font-size: 11px;">Se elimina el desglose de IVA</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Historial de Cambios -->
+      ${historial.length > 0 ? `
+      <div style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); overflow: hidden;">
+        <div style="padding: var(--spacing-sm) var(--spacing-md); background: var(--bg-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color);">
+          📜 Historial de Cambios de Régimen
+        </div>
+        <div style="max-height: 200px; overflow-y: auto;">
+          ${historial.map(h => `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-sm) var(--spacing-md); border-bottom: 1px solid var(--border-color); font-size: 12px;">
+              <div>
+                <span class="badge ${h.nuevoRegimen === 'regimen_general' ? 'badge--primary' : 'badge--success'}" style="font-size: 10px;">
+                  ${h.nuevoRegimen === 'regimen_general' ? '🏢 Régimen General' : '🏪 Cuota Fija'}
+                </span>
+                <span style="margin-left: var(--spacing-sm); color: var(--text-muted);">
+                  ${h.productosActualizados || 0} productos actualizados
+                </span>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-weight: 600;">${h.usuario || 'Admin'}</div>
+                <div style="font-size: 10px; color: var(--text-muted);">${h.fecha ? new Date(h.fecha).toLocaleString('es-NI') : '-'}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
+    `;
+  };
+
+  /**
+   * Abre el modal de confirmación de cambio de régimen.
+   * Paso 1: Confirmación + Paso 2: Contraseña del admin.
+   */
+  const openCambioRegimenModal = () => {
+    const regimenActual = getRegimenActual();
+    const nuevoRegimen = regimenActual === 'cuota_fija' ? 'regimen_general' : 'cuota_fija';
+    const totalProductos = typeof DataService !== 'undefined' && DataService.getProductosSync
+      ? DataService.getProductosSync().length : 0;
+    const user = State.get('user');
+
+    const regimenLabel = nuevoRegimen === 'regimen_general' ? 'Régimen General (IVA 15% desglosado)' : 'Cuota Fija (15% incluido en precios)';
+    const fromLabel = regimenActual === 'cuota_fija' ? 'Cuota Fija' : 'Régimen General';
+
+    document.getElementById('configModal').innerHTML = `
+    <div class="modal-overlay open" style="z-index: 999999;">
+      <div class="modal" onclick="event.stopPropagation()" style="max-width: 520px;">
+        <div class="modal__header" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border-radius: 12px 12px 0 0;">
+          <h3 class="modal__title" style="color: white;">⚖️ Cambio de Régimen Fiscal</h3>
+          <button class="modal__close" onclick="ConfigModule.closeModal()" style="color: white;">${Icons.x}</button>
+        </div>
+        <div class="modal__body" style="padding: var(--spacing-lg);">
+          <!-- Información del Cambio -->
+          <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--border-radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-lg);">
+            <div style="display: flex; align-items: center; gap: var(--spacing-md); margin-bottom: var(--spacing-md);">
+              <div style="text-align: center;">
+                <div style="font-size: 1.3rem;">${regimenActual === 'cuota_fija' ? '🏪' : '🏢'}</div>
+                <div style="font-size: 10px; font-weight: 700; color: var(--text-muted);">${fromLabel}</div>
+              </div>
+              <div style="font-size: 1.5rem; color: var(--color-warning);">➡️</div>
+              <div style="text-align: center;">
+                <div style="font-size: 1.3rem;">${nuevoRegimen === 'regimen_general' ? '🏢' : '🏪'}</div>
+                <div style="font-size: 10px; font-weight: 700; color: var(--text-primary);">${regimenLabel}</div>
+              </div>
+            </div>
+            <div style="font-size: 12px; line-height: 1.6; color: var(--text-secondary);">
+              ${nuevoRegimen === 'regimen_general'
+                ? `<strong>Se realizarán los siguientes cambios:</strong>
+                   <ul style="margin: 4px 0 0 16px; padding: 0;">
+                     <li>Se extraerá el 15% incluido del precio de venta actual</li>
+                     <li>Se obtendrá el <strong>precio base</strong> (sin impuesto)</li>
+                     <li>Se registrará el <strong>IVA 15%</strong> como impuesto desglosado</li>
+                     <li>El precio final visible será el mismo, pero desglosado</li>
+                   </ul>`
+                : `<strong>Se realizarán los siguientes cambios:</strong>
+                   <ul style="margin: 4px 0 0 16px; padding: 0;">
+                     <li>Se tomará el precio base actual</li>
+                     <li>Se incluirá el 15% directamente en el precio de venta</li>
+                     <li>Se eliminará el desglose de IVA</li>
+                   </ul>`
+              }
+            </div>
+          </div>
+
+          <!-- Alerta Importante -->
+          <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: var(--border-radius-md); padding: var(--spacing-md); margin-bottom: var(--spacing-lg); display: flex; gap: var(--spacing-sm); align-items: flex-start;">
+            <span style="font-size: 1.2rem;">⚠️</span>
+            <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+              <strong style="color: var(--color-danger);">Acción irreversible parcial:</strong>
+              Se actualizarán los precios de <strong>${totalProductos} producto(s)</strong> de forma masiva.
+              Se guardará un registro del cambio para referencia futura.
+            </div>
+          </div>
+
+          <!-- Confirmación -->
+          <div style="margin-bottom: var(--spacing-lg);">
+            <label style="display: flex; align-items: center; gap: var(--spacing-sm); font-size: 13px; font-weight: 600; cursor: pointer; padding: var(--spacing-sm); border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+              <input type="checkbox" id="regimenConfirmCheck" onchange="document.getElementById('regimenPassSection').style.display = this.checked ? 'block' : 'none';">
+              Entiendo que esta acción modificará los precios de todos los productos
+            </label>
+          </div>
+
+          <!-- Sección de Contraseña (oculta hasta confirmar) -->
+          <div id="regimenPassSection" style="display: none;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--spacing-sm); padding-bottom: 4px; border-bottom: 1px solid var(--border-color);">
+              🔐 Verificación de Seguridad
+            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: var(--spacing-sm);">
+              Ingrese la contraseña del usuario administrador activo (<strong>${user?.name || user?.username || 'Admin'}</strong>) para confirmar.
+            </p>
+            <div class="form-group" style="margin-bottom: var(--spacing-md);">
+              <label class="form-label form-label--required">Contraseña del Administrador</label>
+              <input type="password" id="regimenAdminPass" class="form-input" placeholder="Ingrese su contraseña" autocomplete="current-password">
+            </div>
+            <div id="regimenError" style="display: none; color: var(--color-danger); font-size: 12px; margin-bottom: var(--spacing-sm); padding: var(--spacing-sm); background: rgba(239,68,68,0.08); border-radius: var(--border-radius-sm);"></div>
+            <div id="regimenProgress" style="display: none; text-align: center; padding: var(--spacing-lg);">
+              <div style="font-size: 2rem; margin-bottom: var(--spacing-sm);">⏳</div>
+              <div style="font-weight: 600; margin-bottom: var(--spacing-xs);">Actualizando precios...</div>
+              <div id="regimenProgressText" style="font-size: 12px; color: var(--text-muted);">Preparando datos...</div>
+              <div style="margin-top: var(--spacing-sm); height: 6px; background: var(--bg-tertiary); border-radius: 3px; overflow: hidden;">
+                <div id="regimenProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #f59e0b, #d97706); border-radius: 3px; transition: width 0.3s ease;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal__footer" style="border-top: 1px solid var(--border-color); padding: var(--spacing-md) var(--spacing-lg);">
+          <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
+          <button type="button" class="btn btn--warning" id="regimenSubmitBtn" onclick="ConfigModule.ejecutarCambioRegimen('${nuevoRegimen}')" style="min-width: 160px;">
+            ⚖️ Confirmar Cambio
+          </button>
+        </div>
+      </div>
+    </div>
+    `;
+  };
+
+  /**
+   * Ejecuta el cambio de régimen:
+   * 1. Verifica la contraseña del admin usando DataService.authenticateUser
+   * 2. Actualiza masivamente los precios de los productos
+   * 3. Guarda historial del cambio
+   */
+  const ejecutarCambioRegimen = async (nuevoRegimen) => {
+    const confirmCheck = document.getElementById('regimenConfirmCheck');
+    if (!confirmCheck || !confirmCheck.checked) {
+      alert('Debe confirmar que entiende los cambios antes de continuar.');
+      return;
+    }
+
+    const passwordInput = document.getElementById('regimenAdminPass');
+    const password = passwordInput?.value?.trim();
+    if (!password) {
+      showRegimenError('Debe ingresar la contraseña del administrador.');
+      passwordInput?.focus();
+      return;
+    }
+
+    const user = State.get('user');
+    if (!user || !user.username) {
+      showRegimenError('No se pudo identificar al usuario activo.');
+      return;
+    }
+
+    // Deshabilitar botón
+    const submitBtn = document.getElementById('regimenSubmitBtn');
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '⏳ Verificando...';
+    }
+
+    // Verificar contraseña del admin
+    try {
+      const authResult = await DataService.authenticateUser(user.username, password);
+
+      if (authResult.error) {
+        showRegimenError('❌ Contraseña incorrecta. Intente nuevamente.');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '⚖️ Confirmar Cambio';
+        }
+        passwordInput?.focus();
+        return;
+      }
+    } catch (authError) {
+      showRegimenError('Error de autenticación: ' + (authError.message || 'Intente de nuevo'));
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '⚖️ Confirmar Cambio';
+      }
+      return;
+    }
+
+    // Contraseña verificada — mostrar progreso
+    const passSection = document.getElementById('regimenPassSection');
+    const progressDiv = document.getElementById('regimenProgress');
+    if (passSection) {
+      // Ocultar inputs de contraseña, mostrar progreso
+      passSection.querySelectorAll('.form-group, p, div[style*="border-bottom"]').forEach(el => el.style.display = 'none');
+      if (progressDiv) progressDiv.style.display = 'block';
+    }
+    const errorDiv = document.getElementById('regimenError');
+    if (errorDiv) errorDiv.style.display = 'none';
+
+    try {
+      await procesarCambioRegimenMasivo(nuevoRegimen, user);
+    } catch (processError) {
+      showRegimenError('Error en el proceso: ' + (processError.message || 'Error desconocido'));
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '⚖️ Confirmar Cambio';
+      }
+    }
+  };
+
+  /**
+   * Actualización masiva de precios de productos.
+   * Cuota Fija → Régimen General:
+   *   precioBase = precioVentaActual / 1.15
+   *   IVA = precioBase * 0.15
+   *   Se guarda precioBase como nuevo precio_venta y 15 como impuesto_iva
+   * 
+   * Régimen General → Cuota Fija:
+   *   precioConIVA = precioVentaBase * 1.15
+   *   Se guarda precioConIVA como precio_venta y 0 como impuesto_iva
+   */
+  const procesarCambioRegimenMasivo = async (nuevoRegimen, user) => {
+    const productos = typeof DataService !== 'undefined' && DataService.getProductosSync
+      ? DataService.getProductosSync() : [];
+    const total = productos.length;
+    let actualizados = 0;
+    let errores = 0;
+    const IVA_RATE = 0.15;
+    const detallesCambios = [];  // Registro detallado por producto
+
+    updateRegimenProgress(0, total, 'Iniciando actualización masiva...');
+
+    for (let i = 0; i < productos.length; i++) {
+      const producto = productos[i];
+      const precioVentaActual = parseFloat(producto.precioVenta || producto.precio || 0);
+      const precioCostoActual = parseFloat(producto.precioCompra || producto.costo || 0);
+
+      if (precioVentaActual <= 0) {
+        // Producto sin precio, omitir
+        updateRegimenProgress(i + 1, total, `Omitido: ${producto.nombre || 'Sin nombre'} (sin precio)`);
+        continue;
+      }
+
+      let nuevoPrecioVenta, impuestoIva, precioBase, ivaAmount;
+
+      if (nuevoRegimen === 'regimen_general') {
+        // Cuota Fija → Régimen General: extraer el 15% incluido
+        precioBase = precioVentaActual / (1 + IVA_RATE);
+        ivaAmount = precioBase * IVA_RATE;
+        nuevoPrecioVenta = Math.round(precioBase * 100) / 100;
+        impuestoIva = 15;
+      } else {
+        // Régimen General → Cuota Fija: incluir el 15% en el precio
+        precioBase = precioVentaActual;
+        ivaAmount = precioBase * IVA_RATE;
+        nuevoPrecioVenta = Math.round((precioBase * (1 + IVA_RATE)) * 100) / 100;
+        impuestoIva = 0;
+      }
+
+      try {
+        await DataService.updateProducto(producto.id, {
+          precioVenta: nuevoPrecioVenta,
+          precio: nuevoPrecioVenta,
+          impuestoIva: impuestoIva
+        });
+
+        detallesCambios.push({
+          productoId: producto.id,
+          nombre: producto.nombre,
+          precioAnterior: precioVentaActual,
+          precioNuevo: nuevoPrecioVenta,
+          ivaPorcentaje: impuestoIva,
+          ivaMontoExtraido: Math.round(ivaAmount * 100) / 100
+        });
+
+        actualizados++;
+      } catch (updateError) {
+        console.error(`Error actualizando producto ${producto.nombre}:`, updateError);
+        errores++;
+      }
+
+      updateRegimenProgress(i + 1, total, `Procesando: ${producto.nombre || 'Producto'}`);
+
+      // Pequeña pausa cada 10 productos para no sobrecargar
+      if ((i + 1) % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+
+    // Guardar el nuevo régimen
+    setRegimenActual(nuevoRegimen);
+
+    // Guardar historial
+    addRegimenHistorial({
+      fecha: new Date().toISOString(),
+      usuario: user.name || user.username,
+      regimenAnterior: nuevoRegimen === 'regimen_general' ? 'cuota_fija' : 'regimen_general',
+      nuevoRegimen: nuevoRegimen,
+      productosActualizados: actualizados,
+      errores: errores,
+      detalles: detallesCambios
+    });
+
+    // Registrar en bitácora
+    if (typeof LogService !== 'undefined') {
+      LogService.log('configuracion', 'update', 'regimen_fiscal',
+        `Cambio de régimen: ${nuevoRegimen === 'regimen_general' ? 'Cuota Fija → Régimen General' : 'Régimen General → Cuota Fija'}. ${actualizados} productos actualizados.`,
+        { nuevoRegimen, actualizados, errores }
+      );
+    }
+
+    // Mostrar resultado
+    updateRegimenProgress(total, total, '¡Proceso completado!');
+
+    setTimeout(() => {
+      closeModal();
+      App.refreshCurrentModule();
+      alert(
+        `✅ Cambio de régimen completado exitosamente.\n\n` +
+        `📊 Resumen:\n` +
+        `• Régimen: ${nuevoRegimen === 'regimen_general' ? 'Régimen General (IVA 15%)' : 'Cuota Fija (15% incluido)'}\n` +
+        `• Productos actualizados: ${actualizados}\n` +
+        `${errores > 0 ? '• Errores: ' + errores + '\n' : ''}` +
+        `• El registro ha sido guardado en el historial.`
+      );
+    }, 800);
+  };
+
+  const showRegimenError = (message) => {
+    const errorDiv = document.getElementById('regimenError');
+    if (errorDiv) {
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+    }
+  };
+
+  const updateRegimenProgress = (current, total, message) => {
+    const progressBar = document.getElementById('regimenProgressBar');
+    const progressText = document.getElementById('regimenProgressText');
+    if (progressBar) {
+      const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+      progressBar.style.width = percent + '%';
+    }
+    if (progressText) {
+      progressText.textContent = `${message} (${current}/${total})`;
+    }
   };
 
   const renderSistemaTab = (config) => {
@@ -610,6 +1151,7 @@ const ConfigModule = (() => {
                        placeholder="36.85"
                        onchange="ConfigModule.setTipoCambio(this.value)">
                 <span class="text-sm text-muted">C$</span>
+                <button type="button" class="btn btn--primary btn--sm" style="height:32px;font-size:11px;padding:0 12px;white-space:nowrap;" onclick="ConfigModule.saveTipoCambio()">💾 Guardar Tasa</button>
               </div>
             </div>
           </div>
@@ -714,11 +1256,21 @@ const ConfigModule = (() => {
   };
 
   // ========== PUNTO DE VENTA TAB ==========
+  // Multi-Empresa: sufijo para aislar config POS por empresa en localStorage
+  const getConfigEmpresaSuffix = () => {
+    try {
+      const user = typeof State !== 'undefined' && State.getCurrentUser ? State.getCurrentUser() : null;
+      return user?.empresa_id ? '_' + user.empresa_id.substring(0, 8) : '';
+    } catch { return ''; }
+  };
+
   const getPosData = (key) => {
-    try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; }
+    const actualKey = key.startsWith('pos_') ? key + getConfigEmpresaSuffix() : key;
+    try { return JSON.parse(localStorage.getItem(actualKey) || '[]'); } catch { return []; }
   };
   const setPosData = (key, data) => {
-    localStorage.setItem(key, JSON.stringify(data));
+    const actualKey = key.startsWith('pos_') ? key + getConfigEmpresaSuffix() : key;
+    localStorage.setItem(actualKey, JSON.stringify(data));
   };
 
   const setPosConfigTab = (tab) => {
@@ -745,13 +1297,20 @@ const ConfigModule = (() => {
         { tipo: 'Moneda', divisa: 'USD', nombre: '1 Centavo', valor: 0.01 }
       ];
       setPosData('pos_divisas', divisas);
+      if (typeof SupabaseDataService !== 'undefined' && SupabaseDataService.createConfiguracionPos) {
+        divisas.forEach(d => {
+          SupabaseDataService.createConfiguracionPos({ tipo: 'pos_divisas', datos: d }).then(res => {
+            if(res.success && res.data) d.id = res.data.id;
+          });
+        });
+      }
     }
 
     const transferencias = getPosData('pos_transferencias');
     const tarjetas = getPosData('pos_tarjetas');
     const tarjetasAsumir = getPosData('pos_tarjetas_asumir');
     const extras = getPosData('pos_extrafinanciamiento');
-    const listas = getPosData('pos_listas_precios');
+    const listas = getPosData('pos_lista_precios');
 
     const tabs = [
       { id: 'transferencia', name: 'Transferencias' },
@@ -838,7 +1397,7 @@ const ConfigModule = (() => {
             <table class="data-table">
               <thead class="data-table__head"><tr><th>Código Precio</th><th>Nombre de Precio</th><th>Acciones</th></tr></thead>
               <tbody class="data-table__body">
-                ${listas.map((t, i) => `<tr><td style="font-weight:600; color:var(--primary);">${t.codigoPrecio}</td><td>${t.nombrePrecio}</td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_listas_precios', ${i})">${Icons.trash || '🗑️'}</button></td></tr>`).join('')}
+                ${listas.map((t, i) => `<tr><td style="font-weight:600; color:var(--primary);">${t.codigo}</td><td>${t.nombre}</td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ConfigModule.deletePosItem('pos_lista_precios', ${i})">${Icons.trash || '🗑️'}</button></td></tr>`).join('')}
               </tbody>
             </table>
           ` : '<p style="padding: var(--spacing-md); text-align: center; color: var(--text-muted);">No hay listas de precios registradas</p>'}
@@ -879,9 +1438,20 @@ const ConfigModule = (() => {
     `;
   };
 
-  const deletePosItem = (key, index) => {
+  const deletePosItem = async (key, index) => {
     if (!confirm('¿Eliminar este registro?')) return;
     const data = getPosData(key);
+    const item = data[index];
+    
+    // Eliminar de Supabase si tiene ID
+    if (item && item.id && typeof SupabaseDataService !== 'undefined' && SupabaseDataService.deleteConfiguracionPos) {
+      const res = await SupabaseDataService.deleteConfiguracionPos(item.id);
+      if (!res.success) {
+        alert('Error al eliminar en la nube');
+        return;
+      }
+    }
+
     data.splice(index, 1);
     setPosData(key, data);
     App.refreshCurrentModule();
@@ -981,14 +1551,14 @@ const ConfigModule = (() => {
     } else if (type === 'precio') {
       title = 'Agregar Lista de Precios';
       formContent = `
-        <input type="hidden" name="posType" value="pos_listas_precios">
+        <input type="hidden" name="posType" value="pos_lista_precios">
         <div class="form-group">
           <label class="form-label form-label--required">Código Precio</label>
-          <input type="text" name="codigoPrecio" class="form-input" required placeholder="Ej: PRECIO-1">
+          <input type="text" name="codigo" class="form-input" required placeholder="Ej: PRECIO-1">
         </div>
         <div class="form-group">
           <label class="form-label form-label--required">Nombre de Precio</label>
-          <input type="text" name="nombrePrecio" class="form-input" required placeholder="Ej: General / Mayoreo">
+          <input type="text" name="nombre" class="form-input" required placeholder="Ej: General / Mayoreo">
         </div>
       `;
     } else if (type === 'divisas') {
@@ -1040,12 +1610,26 @@ const ConfigModule = (() => {
     document.getElementById('configModal').innerHTML = html;
   };
 
-  const handleSavePosModal = (event) => {
+  const handleSavePosModal = async (event) => {
     event.preventDefault();
     const formData = new FormData(event.target);
     const data = Object.fromEntries(formData.entries());
     const storeKey = data.posType;
     delete data.posType;
+
+    // Guardar en Supabase
+    if (typeof SupabaseDataService !== 'undefined' && SupabaseDataService.createConfiguracionPos) {
+      const res = await SupabaseDataService.createConfiguracionPos({
+        tipo: storeKey,
+        datos: data
+      });
+      if (res.success && res.data) {
+        data.id = res.data.id;
+      } else {
+        alert('Error al guardar la configuración en la nube');
+        return;
+      }
+    }
 
     const list = getPosData(storeKey);
     list.push(data);
@@ -1053,6 +1637,179 @@ const ConfigModule = (() => {
 
     closeModal();
     App.refreshCurrentModule();
+  };
+
+  const handleSaveBodegaModal = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    const id = document.getElementById('bodegaModalId')?.value;
+    data.es_principal = !!data.es_principal;
+    
+    try {
+      if (id) {
+        await DataService.updateBodega(id, data);
+        alert('Bodega actualizada exitosamente');
+      } else {
+        await DataService.createBodega(data);
+        alert('Bodega creada exitosamente');
+      }
+      closeModal();
+      App.refreshCurrentModule();
+    } catch (e) {
+        console.error(e);
+        alert('Error al guardar bodega: ' + e.message);
+    }
+  };
+
+  const handleSaveEmpresaModal = async (event) => {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData.entries());
+    const id = document.getElementById('empresaModalId')?.value;
+    
+    try {
+      if (id) {
+        await DataService.updateEmpresa(id, data);
+        alert('Empresa actualizada exitosamente');
+      } else {
+        await DataService.createEmpresa(data);
+        alert('Empresa creada exitosamente');
+      }
+      closeModal();
+      App.refreshCurrentModule();
+    } catch (e) {
+        console.error(e);
+        alert('Error al guardar empresa: ' + e.message);
+    }
+  };
+
+  const openEmpresaModal = (empresaId = null) => {
+    let emp = { nombre: '', razon_social: '', ruc: '', moneda_principal: 'USD', direccion: '' };
+    if (empresaId) {
+        const empresas = DataService.getEmpresasSync();
+        const found = empresas.find(e => e.id === empresaId);
+        if (found) emp = found;
+    }
+    
+    const html = `
+      <div class="modal-overlay open">
+        <div class="modal" onclick="event.stopPropagation()">
+          <div class="modal__header">
+            <h3 class="modal__title">${empresaId ? 'Editar Empresa' : 'Nueva Empresa'}</h3>
+            <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
+          </div>
+          <form class="modal__body" onsubmit="ConfigModule.handleSaveEmpresaModal(event)">
+            ${empresaId ? `<input type="hidden" id="empresaModalId" name="id" value="${empresaId}">` : ''}
+            <div class="form-group">
+              <label class="form-label form-label--required">Nombre Comercial</label>
+              <input type="text" name="nombre" class="form-input" value="${emp.nombre || ''}" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Razón Social</label>
+              <input type="text" name="razon_social" class="form-input" value="${emp.razon_social || ''}">
+            </div>
+            <div class="form-group">
+              <label class="form-label form-label--required">RUC o Identificación Tributaria</label>
+              <input type="text" name="ruc" class="form-input" value="${emp.ruc || ''}" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Moneda Principal</label>
+              <select name="moneda_principal" class="form-select">
+                <option value="USD" ${emp.moneda_principal === 'USD' ? 'selected' : ''}>Dólares (USD)</option>
+                <option value="NIO" ${emp.moneda_principal === 'NIO' ? 'selected' : ''}>Córdobas (NIO)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Dirección</label>
+              <input type="text" name="direccion" class="form-input" value="${emp.direccion || ''}">
+            </div>
+            <div class="modal__footer" style="padding-top: var(--spacing-lg);">
+              <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
+              <button type="submit" class="btn btn--primary">${empresaId ? 'Guardar Cambios' : 'Crear Empresa'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    document.getElementById('configModal').innerHTML = html;
+  };
+
+  const openBodegaModal = (bodegaId = null) => {
+    const empresas = DataService.getEmpresasSync();
+    
+    let bod = { empresa_id: '', nombre: '', codigo: '', es_principal: false };
+    if (bodegaId) {
+        const bodegas = DataService.getBodegasSync();
+        const found = bodegas.find(b => b.id === bodegaId);
+        if (found) bod = found;
+    }
+
+    const html = `
+      <div class="modal-overlay open">
+        <div class="modal" onclick="event.stopPropagation()">
+          <div class="modal__header">
+            <h3 class="modal__title">${bodegaId ? 'Editar Bodega' : 'Nueva Bodega'}</h3>
+            <button class="modal__close" onclick="ConfigModule.closeModal()">${Icons.x}</button>
+          </div>
+          <form class="modal__body" onsubmit="ConfigModule.handleSaveBodegaModal(event)">
+            ${bodegaId ? `<input type="hidden" id="bodegaModalId" name="id" value="${bodegaId}">` : ''}
+            <div class="form-group">
+              <label class="form-label form-label--required">Empresa a la que pertenece</label>
+              <select name="empresa_id" class="form-select" required>
+                ${empresas.map(e => `<option value="${e.id}" ${e.id === bod.empresa_id ? 'selected' : ''}>${e.nombre}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label form-label--required">Nombre de la Bodega</label>
+              <input type="text" name="nombre" class="form-input" required value="${bod.nombre || ''}" placeholder="Ej: Bodega Central MGA">
+            </div>
+            <div class="form-group">
+              <label class="form-label form-label--required">Código de Bodega</label>
+              <input type="text" name="codigo" class="form-input" required value="${bod.codigo || ''}" placeholder="Ej: BOD-MGA-01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">
+                <input type="checkbox" name="es_principal" value="true" ${bod.es_principal ? 'checked' : ''}>
+                ¿Es la bodega principal de esta empresa?
+              </label>
+            </div>
+            <div class="modal__footer" style="padding-top: var(--spacing-lg);">
+              <button type="button" class="btn btn--secondary" onclick="ConfigModule.closeModal()">Cancelar</button>
+              <button type="submit" class="btn btn--primary">${bodegaId ? 'Guardar Cambios' : 'Crear Bodega'}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    document.getElementById('configModal').innerHTML = html;
+  };
+
+  const editEmpresa = async (id) => {
+      openEmpresaModal(id);
+  };
+
+  const editBodega = async (id) => {
+      openBodegaModal(id);
+  };
+
+  const deleteBodega = async (id) => {
+      const prods = typeof DataService.getProductosSync === 'function' ? DataService.getProductosSync() : [];
+      const hasProducts = prods.some(p => p.bodega_id === id);
+      
+      if (hasProducts) {
+          alert('No se puede eliminar la bodega porque tiene productos o inventario asociado. Solo se permite editar su nombre.');
+          return;
+      }
+      
+      if (confirm('¿Está seguro de que desea eliminar esta bodega? Esta acción no se puede deshacer.')) {
+          try {
+              await DataService.deleteBodega(id);
+              App.refreshCurrentModule();
+          } catch (e) {
+              alert('Error al eliminar bodega: ' + e.message);
+          }
+      }
   };
 
   // ========== ACTIONS ==========
@@ -1142,6 +1899,17 @@ const ConfigModule = (() => {
 
   const setTipoCambio = (valor) => {
     DataService.updateConfig({ tipoCambio: parseFloat(valor) });
+  };
+
+  const saveTipoCambio = () => {
+    const input = document.querySelector('input[onchange*="setTipoCambio"]');
+    if (!input) { alert('No se encontró el campo de tipo de cambio.'); return; }
+    const val = parseFloat(input.value);
+    if (isNaN(val) || val <= 0) { alert('Ingrese un valor válido para la tasa de cambio.'); return; }
+    DataService.updateConfig({ tipoCambio: val });
+    const suffix = typeof State !== 'undefined' && State.getCurrentUser()?.empresa_id ? '_' + State.getCurrentUser().empresa_id : '';
+    localStorage.setItem('pos_tipoCambio' + suffix, JSON.stringify(val));
+    alert('✅ Tasa de cambio guardada: 1 USD = C$' + val.toFixed(2));
   };
 
   const toggleAlertasContratos = (enabled) => {
@@ -1507,7 +2275,7 @@ const ConfigModule = (() => {
     togglePermission,
     setTheme,
     setMoneda,
-    setTipoCambio,
+    setTipoCambio, saveTipoCambio,
     toggleAlertasContratos,
     toggleRecordatoriosVisitas,
     setDiasAnticipacion,
@@ -1528,6 +2296,15 @@ const ConfigModule = (() => {
     openPosModal,
     handleSavePosModal,
     deletePosItem,
-    setPosConfigTab
+    setPosConfigTab,
+    openEmpresaModal,
+    openBodegaModal,
+    handleSaveEmpresaModal,
+    handleSaveBodegaModal,
+    openCambioRegimenModal,
+    ejecutarCambioRegimen,
+    editEmpresa,
+    editBodega,
+    deleteBodega
   };
 })();

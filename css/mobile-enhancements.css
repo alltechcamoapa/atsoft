@@ -1222,3 +1222,239 @@
     width: 100%;
   }
 }
+
+/* ===================================================================
+   SECTION 8: MOBILE OPTIMIZATIONS V2 - Quick Actions & Gestures
+   =================================================================== */
+
+/* Mobile Quick Action Buttons */
+@media (max-width: 768px) {
+    /* Floating Action Button for quick actions */
+    .mobile-fab {
+        position: fixed;
+        bottom: 80px;
+        right: 20px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--color-primary-500);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        z-index: 900;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .mobile-fab:active {
+        transform: scale(0.95);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .mobile-fab--secondary {
+        background: var(--color-success);
+        bottom: 150px;
+    }
+
+    /* Slide-in panels for mobile */
+    .mobile-panel {
+        position: fixed;
+        top: 0;
+        right: -100%;
+        width: 85%;
+        max-width: 400px;
+        height: 100%;
+        background: var(--bg-primary);
+        box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        transition: right 0.3s ease;
+        overflow-y: auto;
+        padding: var(--spacing-lg);
+    }
+
+    .mobile-panel.active {
+        right: 0;
+    }
+
+    .mobile-panel__overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+
+    .mobile-panel__overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* Better table scrolling on mobile */
+    .data-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 0 calc(-1 * var(--spacing-md));
+        padding: 0 var(--spacing-md);
+    }
+
+    /* Pull to refresh indicator */
+    .pull-to-refresh {
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        font-size: 0.875rem;
+    }
+
+    /* Mobile-friendly cards */
+    .mobile-card {
+        background: var(--bg-primary);
+        border-radius: 12px;
+        padding: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .mobile-card__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .mobile-card__title {
+        font-weight: var(--font-weight-semibold);
+        font-size: 1rem;
+    }
+
+    /* Swipe actions for list items */
+    .swipe-action {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .swipe-action__content {
+        transition: transform 0.2s ease;
+    }
+
+    .swipe-action__buttons {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        transform: translateX(100%);
+        transition: transform 0.2s ease;
+    }
+
+    .swipe-action.active .swipe-action__buttons {
+        transform: translateX(0);
+    }
+
+    .swipe-action__btn {
+        width: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        color: white;
+    }
+
+    .swipe-action__btn--delete {
+        background: var(--color-danger);
+    }
+
+    .swipe-action__btn--edit {
+        background: var(--color-primary-500);
+    }
+
+    /* Better form inputs on mobile */
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        font-size: 16px !important; /* Prevents iOS zoom */
+    }
+
+    /* Compact mode for mobile lists */
+    .list-compact {
+        padding: var(--spacing-xs) 0;
+    }
+
+    .list-compact .list-item {
+        padding: var(--spacing-sm) var(--spacing-md);
+        min-height: 56px;
+    }
+
+    /* Mobile action sheet */
+    .action-sheet {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: var(--bg-primary);
+        border-radius: 16px 16px 0 0;
+        padding: var(--spacing-md);
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+        z-index: 1001;
+    }
+
+    .action-sheet.active {
+        transform: translateY(0);
+    }
+
+    .action-sheet__item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: 8px;
+        font-size: 1rem;
+    }
+
+    .action-sheet__item:active {
+        background: var(--bg-secondary);
+    }
+
+    .action-sheet__divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: var(--spacing-sm) 0;
+    }
+}
+
+/* Landscape mobile adjustments */
+@media (max-width: 768px) and (orientation: landscape) {
+    .sidebar {
+        width: 220px;
+    }
+
+    .module-stats,
+    .module-stats--4 {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .content {
+        padding: var(--spacing-sm);
+    }
+}
+
+/* Very small screens */
+@media (max-width: 360px) {
+    .module-stats,
+    .module-stats--4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .sidebar__menu-label {
+        font-size: 0.8rem;
+    }
+
+    .sidebar {
+        width: 200px;
+    }
+}

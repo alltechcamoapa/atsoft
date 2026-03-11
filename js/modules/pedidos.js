@@ -1,22 +1,57 @@
 /**
  * ALLTECH - Pedidos Module
  * Gestión de pedidos de clientes con categorías, listas y reportes
+ * Versión profesional con modales modernos
  */
 
 const PedidosModule = (() => {
     // ========== STATE ==========
-    let filterState = { search: '', clienteId: 'all', estado: 'all', categoria: 'all' };
+    let filterState = { search: '', clienteId: 'all', estado: 'all', categoria: 'all', proveedorId: 'all' };
     let currentPedido = null;
     let currentItems = [];
     let productosCache = [];
 
+    // ========== MODAL MODERNO ==========
+    const openModernModal = (id, title, content, footer = '') => {
+        const existing = document.getElementById(id);
+        if (existing) existing.remove();
+        
+        const modalHtml = `
+            <div class="modal-overlay open" id="${id}" style="z-index: 10000; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);">
+                <div class="modal modal--xlg animate-scaleIn" onclick="event.stopPropagation()" style="max-width: 90vw; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+                    <div class="modal__header" style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); color: white; padding: 1.25rem 1.5rem; border-radius: 0;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <h3 class="modal__title" style="color: white; margin: 0; font-size: 1.25rem;">${title}</h3>
+                            <button class="modal__close" onclick="PedidosModule.closeModal()" style="color: white; opacity: 0.8; font-size: 1.5rem;">&times;</button>
+                        </div>
+                    </div>
+                    <div class="modal__body" style="flex: 1; overflow-y: auto; padding: 1.5rem;">
+                        ${content}
+                    </div>
+                    ${footer ? `
+                    <div class="modal__footer" style="padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); background: var(--bg-secondary);">
+                        ${footer}
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+    };
+
+    const closeModal = () => {
+        document.querySelectorAll('.modal-overlay').forEach(m => {
+            m.classList.remove('open');
+            setTimeout(() => m.remove(), 200);
+        });
+    };
+
     // ========== CATEGORÍAS PREDEFINIDAS ==========
-    // ========== CATEGORÍAS ==========
     const DEFAULT_CATEGORIAS = [
         { id: 'hardware', nombre: 'Hardware', icon: '💻', color: '#3b82f6' },
         { id: 'software', nombre: 'Software', icon: '📀', color: '#8b5cf6' },
         { id: 'redes', nombre: 'Redes', icon: '🌐', color: '#06b6d4' },
-        { id: 'impresoras', nombre: 'Impresoras', icon: '🖨️', color: '#d97706' }, // Darker amber for readability
+        { id: 'impresoras', nombre: 'Impresoras', icon: '🖨️', color: '#d97706' },
         { id: 'accesorios', nombre: 'Accesorios', icon: '🔌', color: '#10b981' },
         { id: 'servicios', nombre: 'Servicios', icon: '🔧', color: '#ef4444' },
         { id: 'otros', nombre: 'Otros', icon: '📦', color: '#6b7280' }
@@ -40,10 +75,25 @@ const PedidosModule = (() => {
             <div class="module-container animate-fadeIn">
                 <div class="module-header">
                     <div class="module-header__left">
-                        <h2 class="module-title">${Icons.shoppingCart} Pedidos</h2>
+                        <h2 class="module-title">${Icons.shoppingCart} Gestión de Pedidos</h2>
                         <p class="module-subtitle">${pedidos.length} pedidos registrados</p>
                     </div>
                     <div class="module-header__right">
+                        <button class="btn btn--secondary" onclick="PedidosModule.verInventarioMinimo()" title="Inventario Mínimo">
+                            📦 Inventario Mínimo
+                        </button>
+                        <button class="btn btn--secondary" onclick="PedidosModule.verSugerenciasCompra()" title="Sugerencias de Compra">
+                            🛒 Sugerencias
+                        </button>
+                        <button class="btn btn--secondary" onclick="PedidosModule.verEstadisticasCompletas()" title="Estadísticas">
+                            📊 Análisis
+                        </button>
+                        <button class="btn btn--secondary" onclick="PedidosModule.abrirCotizador()" title="Cotizador">
+                            📋 Cotizador
+                        </button>
+                        <button class="btn btn--secondary" onclick="PedidosModule.generarReporteProveedor()" title="Por Proveedor">
+                            🏢 Por Proveedor
+                        </button>
                         <button class="btn btn--secondary" onclick="PedidosModule.openCategoriasModal()" title="Gestionar Categorías">
                             ${Icons.list} Categorías
                         </button>
@@ -55,6 +105,39 @@ const PedidosModule = (() => {
                             ${Icons.plus} Nuevo Pedido
                         </button>
                         ` : ''}
+                    </div>
+                </div>
+
+                <!-- Nueva sección de Análisis Rápido -->
+                <div class="card" style="margin-bottom: var(--spacing-md); background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);">
+                    <div class="card__body">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--spacing-md);">
+                            <div style="text-align: center; cursor: pointer; padding: 10px; border-radius: 8px; background: white; transition: transform 0.2s;" onclick="PedidosModule.verProductosMasVendidos()">
+                                <div style="font-size: 24px;">🔥</div>
+                                <div style="font-weight: 600; font-size: 14px;">Más Vendidos</div>
+                                <div style="font-size: 12px; color: var(--text-muted);">Ver top 20</div>
+                            </div>
+                            <div style="text-align: center; cursor: pointer; padding: 10px; border-radius: 8px; background: white; transition: transform 0.2s;" onclick="PedidosModule.verProductosMenosVendidos()">
+                                <div style="font-size: 24px;">❄️</div>
+                                <div style="font-weight: 600; font-size: 14px;">Menos Vendidos</div>
+                                <div style="font-size: 12px; color: var(--text-muted);">Baja rotación</div>
+                            </div>
+                            <div style="text-align: center; cursor: pointer; padding: 10px; border-radius: 8px; background: white; transition: transform 0.2s;" onclick="PedidosModule.verAnalisisRentabilidad()">
+                                <div style="font-size: 24px;">💰</div>
+                                <div style="font-weight: 600; font-size: 14px;">Rentabilidad</div>
+                                <div style="font-size: 12px; color: var(--text-muted);">Margen por producto</div>
+                            </div>
+                            <div style="text-align: center; cursor: pointer; padding: 10px; border-radius: 8px; background: white; transition: transform 0.2s;" onclick="PedidosModule.generarOrdenCompra()">
+                                <div style="font-size: 24px;">📄</div>
+                                <div style="font-weight: 600; font-size: 14px;">Generar OC</div>
+                                <div style="font-size: 12px; color: var(--text-muted);">Desde sugerencias</div>
+                            </div>
+                            <div style="text-align: center; cursor: pointer; padding: 10px; border-radius: 8px; background: white; transition: transform 0.2s;" onclick="PedidosModule.verHistorialPedidos({})">
+                                <div style="font-size: 24px;">📜</div>
+                                <div style="font-weight: 600; font-size: 14px;">Historial</div>
+                                <div style="font-size: 12px; color: var(--text-muted);">Todos los pedidos</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -299,26 +382,6 @@ const PedidosModule = (() => {
             }
             return matches;
         }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-    };
-
-    const handleSearch = (value) => {
-        filterState.search = value;
-        App.render();
-    };
-
-    const handleClienteFilter = (value) => {
-        filterState.clienteId = value;
-        App.render();
-    };
-
-    const handleEstadoFilter = (value) => {
-        filterState.estado = value;
-        App.render();
-    };
-
-    const handleCategoriaFilter = (value) => {
-        filterState.categoria = value;
-        App.render();
     };
 
     // ========== TOGGLE COMPLETE ==========
@@ -632,12 +695,6 @@ const PedidosModule = (() => {
             document.getElementById('pedidoModal').innerHTML = renderFormModal(currentPedido);
             setTimeout(calculateTotals, 100);
         }
-    };
-
-    const closeModal = (event) => {
-        if (event && event.target !== event.currentTarget) return;
-        document.getElementById('pedidoModal').innerHTML = '';
-        currentPedido = null;
     };
 
     // ========== HANDLE SUBMIT ==========
@@ -1211,6 +1268,7 @@ const PedidosModule = (() => {
         handleClienteFilter,
         handleEstadoFilter,
         handleCategoriaFilter,
+        handleProveedorFilter,
         toggleComplete,
         openCreateModal,
         openEditModal,
@@ -1224,14 +1282,462 @@ const PedidosModule = (() => {
         generateCategoriaReport,
         generateFechaReport,
         toggleItemComplete,
-        // Categories
         openCategoriasModal,
         addCategoria,
         updateCategoria,
         deleteCategoria,
         removeItem,
         onProductSelect,
-        addSelectedProduct
+        addSelectedProduct,
+
+        // ========== MODALES PROFESIONALES ==========
+
+        //: Modal Inventario Mínimo
+        openInventarioMinimoModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const productos = DataService.getProductosInventarioMinimo();
+            
+            const content = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div style="background: linear-gradient(135deg, #fef2f2, #fee2e2); padding: 16px; border-radius: 12px; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #dc2626;">${productos.length}</div>
+                        <div style="color: #991b1b; font-size: 0.875rem;">Productos en mínimo</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #fef3c7, #fde68a); padding: 16px; border-radius: 12px; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #d97706;">${productos.reduce((s,p) => s + p.deficit, 0)}</div>
+                        <div style="color: #92400e; font-size: 0.875rem;">Unidades faltantes</div>
+                    </div>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Producto</th><th>Stock</th><th>Mínimo</th><th>Deficit</th><th>Acción</th></tr></thead>
+                        <tbody>
+                            ${productos.map(p => `
+                                <tr>
+                                    <td><strong>${p.nombre}</strong><br><span class="text-xs text-muted">${p.codigo || ''}</span></td>
+                                    <td style="color: ${p.stockActual <= 0 ? '#dc2626' : '#d97706'}; font-weight: bold;">${p.stockActual}</td>
+                                    <td>${p.stockMinimo}</td>
+                                    <td style="color: #dc2626; font-weight: bold;">${p.deficit}</td>
+                                    <td><button class="btn btn--primary btn--sm" onclick="PedidosModule.openCreateModal()">+ Pedido</button></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('inventarioMinimo', '📦 Inventario Mínimo', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+                <button class="btn btn--primary" onclick="PedidosModule.openSugerenciasModal()">Ver Sugerencias</button>
+            `);
+        },
+
+        // Modal: Sugerencias de Compra
+        openSugerenciasModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const sugerencias = DataService.getSugerenciasCompra();
+            
+            const content = `
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;">
+                    <div style="background: #f0fdf4; padding: 16px; border-radius: 12px; text-align: center; border: 1px solid #bbf7d0;">
+                        <div style="font-size: 1.5rem; font-weight: bold; color: #16a34a;">${sugerencias.filter(s => s.prioridad === 'alta').length}</div>
+                        <div style="color: #166534; font-size: 0.8rem;">Alta prioridad</div>
+                    </div>
+                    <div style="background: #fef3c7; padding: 16px; border-radius: 12px; text-align: center; border: 1px solid #fde68a;">
+                        <div style="font-size: 1.5rem; font-weight: bold; color: #d97706;">${sugerencias.filter(s => s.prioridad === 'media').length}</div>
+                        <div style="color: #92400e; font-size: 0.8rem;">Media prioridad</div>
+                    </div>
+                    <div style="background: #f0f9ff; padding: 16px; border-radius: 12px; text-align: center; border: 1px solid #bae6fd;">
+                        <div style="font-size: 1.5rem; font-weight: bold; color: #0284c7;">${sugerencias.length}</div>
+                        <div style="color: #075985; font-size: 0.8rem;">Total sugerencias</div>
+                    </div>
+                </div>
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Producto</th><th>Tipo</th><th>Prioridad</th><th>Cantidad</th><th>Razón</th></tr></thead>
+                        <tbody>
+                            ${sugerencias.slice(0, 20).map(s => `
+                                <tr>
+                                    <td><strong>${s.producto.nombre}</strong></td>
+                                    <td>${s.tipo === 'inventario_minimo' ? '⚠️ Inventario' : '📈 Rotación'}</td>
+                                    <td><span class="badge badge--${s.prioridad === 'alta' ? 'danger' : 'warning'}">${s.prioridad.toUpperCase()}</span></td>
+                                    <td><strong>${s.cantidadSugerida}</strong></td>
+                                    <td style="font-size: 0.85rem;">${s.razon}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('sugerencias', '🛒 Sugerencias de Compra', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+                <button class="btn btn--primary" onclick="PedidosModule.generarOrdenDesdeSugerencias()">Generar Orden de Compra</button>
+            `);
+        },
+
+        // Modal: Análisis General
+        openAnalisisModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const stats = DataService.getEstadisticasProductos('month');
+            
+            const content = `
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px;">
+                    <div class="card" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white;">
+                        <div class="card__body" style="text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold;">${stats.totales.unidadesVendidas}</div>
+                            <div style="opacity: 0.9;">Unidades Vendidas</div>
+                        </div>
+                    </div>
+                    <div class="card" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">
+                        <div class="card__body" style="text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold;">$${stats.totales.ingresosGenerados.toFixed(0)}</div>
+                            <div style="opacity: 0.9;">Ingresos</div>
+                        </div>
+                    </div>
+                    <div class="card" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white;">
+                        <div class="card__body" style="text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold;">${stats.totales.promedioVentaDia}</div>
+                            <div style="opacity: 0.9;">Promedio/día</div>
+                        </div>
+                    </div>
+                    <div class="card" style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white;">
+                        <div class="card__body" style="text-align: center;">
+                            <div style="font-size: 2rem; font-weight: bold;">${stats.totales.productosEnMinimo}</div>
+                            <div style="opacity: 0.9;">En Inventario Mínimo</div>
+                        </div>
+                    </div>
+                </div>
+                <h4 style="margin: 16px 0 8px;">🔥 Top 5 Productos Más Vendidos</h4>
+                <table class="data-table">
+                    <thead><tr><th>#</th><th>Producto</th><th>Cantidad</th><th>Ingresos</th></tr></thead>
+                    <tbody>
+                        ${stats.masVendidos.slice(0, 5).map((p, i) => `
+                            <tr>
+                                <td><span class="badge ${i === 0 ? 'badge--warning' : 'badge--info'}">${i + 1}</span></td>
+                                <td>${p.nombre}</td>
+                                <td><strong>${p.cantidad}</strong></td>
+                                <td>$${p.ingresos.toFixed(2)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            openModernModal('analisis', '📊 Análisis de Productos', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+                <button class="btn btn--primary" onclick="PedidosModule.openMasVendidosModal()">Ver Más Vendidos</button>
+            `);
+        },
+
+        // Modal: Productos Más Vendidos
+        openMasVendidosModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const productos = DataService.getProductosMasVendidos(30, 'month');
+            
+            const content = `
+                <div style="background: linear-gradient(135deg, #fef2f2, #fff7ed); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 1.25rem; font-weight: bold; color: #ea580c;">🔥 Productos Más Vendidos</div>
+                    <div style="color: #9a3412;">Período: Último mes</div>
+                </div>
+                <div style="max-height: 450px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Rank</th><th>Producto</th><th>Cantidad</th><th>Ingresos</th><th>趋势</th></tr></thead>
+                        <tbody>
+                            ${productos.map((p, i) => `
+                                <tr>
+                                    <td><span class="badge badge--${i < 3 ? 'warning' : 'info'}">#${i + 1}</span></td>
+                                    <td><strong>${p.nombre}</strong></td>
+                                    <td style="font-weight: bold; color: #059669;">${p.cantidad}</td>
+                                    <td>$${p.ingresos.toFixed(2)}</td>
+                                    <td>${i < 10 ? '📈' : '➖'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('masVendidos', '🔥 Top Productos Más Vendidos', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+            `);
+        },
+
+        // Modal: Productos Menos Vendidos
+        openMenosVendidosModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const productos = DataService.getProductosMenosVendidos(30, 'year');
+            
+            const content = `
+                <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 1.25rem; font-weight: bold; color: #0284c7;">❄️ Productos con Baja Rotación</div>
+                    <div style="color: #075985;">Considerar promociones o descuentos</div>
+                </div>
+                <div style="max-height: 450px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Producto</th><th>Stock Actual</th><th>Stock Mínimo</th><th>Estado</th></tr></thead>
+                        <tbody>
+                            ${productos.map(p => `
+                                <tr>
+                                    <td><strong>${p.nombre}</strong></td>
+                                    <td>${p.stock || 0}</td>
+                                    <td>${p.inventarioMinimo || 0}</td>
+                                    <td><span class="badge badge--${(p.stock || 0) > (p.inventarioMinimo || 0) ? 'success' : 'warning'}">${(p.stock || 0) > (p.inventarioMinimo || 0) ? 'OK' : 'Bajo'}</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('menosVendidos', '❄️ Productos Baja Rotación', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+            `);
+        },
+
+        // Modal: Rentabilidad
+        openRentabilidadModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const analisis = DataService.getAnalisisRentabilidad();
+            
+            const content = `
+                <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 1.25rem; font-weight: bold; color: #16a34a;">💰 Análisis de Rentabilidad</div>
+                    <div style="color: #166534;">Margen de ganancia por producto</div>
+                </div>
+                <div style="max-height: 450px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Producto</th><th>Vendidos</th><th>Ingresos</th><th>Costo</th><th>Margen</th><th>Nivel</th></tr></thead>
+                        <tbody>
+                            ${analisis.slice(0, 20).map(p => `
+                                <tr>
+                                    <td><strong>${p.nombre}</strong></td>
+                                    <td>${p.cantidad}</td>
+                                    <td>$${p.ingresos.toFixed(2)}</td>
+                                    <td>$${p.costo.toFixed(2)}</td>
+                                    <td style="color: ${p.margen > 30 ? '#16a34a' : p.margen > 15 ? '#d97706' : '#dc2626'}; font-weight: bold;">${p.margen.toFixed(1)}%</td>
+                                    <td><span class="badge badge--${p.rentabilidad === 'alta' ? 'success' : p.rentabilidad === 'media' ? 'warning' : 'danger'}">${p.rentabilidad}</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('rentabilidad', '💰 Rentabilidad por Producto', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+            `);
+        },
+
+        // Modal: Orden de Compra
+        openOrdenCompraModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const sugerencias = DataService.getSugerenciasCompra();
+            
+            const total = sugerencias.reduce((s, sgt) => s + (sgt.cantidadSugerida * (sgt.producto.precioCompra || 0)), 0);
+            
+            const content = `
+                <div style="background: linear-gradient(135deg, #f5f3ff, #ede9fe); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 1.25rem; font-weight: bold; color: #7c3aed;">📄 Generar Orden de Compra</div>
+                    <div style="color: #6d28d9;">Se generará una orden con ${sugerencias.length} productos sugeridos</div>
+                </div>
+                <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; margin-bottom: 16px; text-align: center;">
+                    <div style="font-size: 1.5rem; font-weight: bold; color: #16a34a;">Total Estimado: $${total.toFixed(2)}</div>
+                </div>
+                <div style="max-height: 350px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Producto</th><th>Cantidad</th><th>Precio Unit.</th><th>Subtotal</th></tr></thead>
+                        <tbody>
+                            ${sugerencias.slice(0, 15).map(s => `
+                                <tr>
+                                    <td>${s.producto.nombre}</td>
+                                    <td>${s.cantidadSugerida}</td>
+                                    <td>$${(s.producto.precioCompra || 0).toFixed(2)}</td>
+                                    <td>$${(s.cantidadSugerida * (s.producto.precioCompra || 0)).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('ordenCompra', '📄 Orden de Compra', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cancelar</button>
+                <button class="btn btn--primary" onclick="PedidosModule.generarOrdenDesdeSugerencias(); PedidosModule.closeModal();">Confirmar Orden</button>
+            `);
+        },
+
+        // Generar orden desde sugerencias
+        generarOrdenDesdeSugerencias: () => {
+            if (typeof DataService === 'undefined') return;
+            const sugerencias = DataService.getSugerenciasCompra();
+            if (sugerencias.length === 0) {
+                alert('No hay sugerencias de compra');
+                return;
+            }
+            const orden = DataService.generarOrdenDesdeSugerencias(sugerencias);
+            alert(`Orden de compra #${orden.id.slice(0,8)} generada exitosamente`);
+            App.render();
+        },
+
+        // Modal: Historial
+        openHistorialModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const historial = DataService.getHistorialPedidos({});
+            
+            const content = `
+                <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <input type="date" class="form-input" style="width: 150px;" id="historialFechaInicio" placeholder="Fecha inicio">
+                    <input type="date" class="form-input" style="width: 150px;" id="historialFechaFin" placeholder="Fecha fin">
+                    <select class="form-select" style="width: 150px;" id="historialEstado">
+                        <option value="">Todos los estados</option>
+                        <option value="Pendiente">Pendiente</option>
+                        <option value="En Proceso">En Proceso</option>
+                        <option value="Completado">Completado</option>
+                    </select>
+                    <button class="btn btn--primary" onclick="PedidosModule.filtrarHistorial()">Filtrar</button>
+                </div>
+                <div style="max-height: 450px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Número</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Estado</th></tr></thead>
+                        <tbody id="historialTableBody">
+                            ${historial.slice(0, 30).map(p => `
+                                <tr>
+                                    <td><strong>${p.numeroPedido || p.pedidoId || p.id}</strong></td>
+                                    <td>${new Date(p.fecha).toLocaleDateString('es-NI')}</td>
+                                    <td>${p.cliente || 'N/A'}</td>
+                                    <td>$${(p.total || 0).toFixed(2)}</td>
+                                    <td><span class="badge badge--${p.estado === 'Completado' ? 'success' : p.estado === 'Pendiente' ? 'warning' : 'info'}">${p.estado}</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('historial', '📜 Historial de Pedidos', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+                <button class="btn btn--primary" onclick="window.print()">Imprimir</button>
+            `);
+        },
+
+        filtrarHistorial: () => {
+            const inicio = document.getElementById('historialFechaInicio')?.value;
+            const fin = document.getElementById('historialFechaFin')?.value;
+            const estado = document.getElementById('historialEstado')?.value;
+            
+            const filtros = {};
+            if (inicio) filtros.fechaInicio = inicio;
+            if (fin) filtros.fechaFin = fin;
+            if (estado) filtros.estado = estado;
+            
+            const historial = DataService.getHistorialPedidos(filtros);
+            
+            const tbody = document.getElementById('historialTableBody');
+            if (tbody) {
+                tbody.innerHTML = historial.slice(0, 30).map(p => `
+                    <tr>
+                        <td><strong>${p.numeroPedido || p.pedidoId || p.id}</strong></td>
+                        <td>${new Date(p.fecha).toLocaleDateString('es-NI')}</td>
+                        <td>${p.cliente || 'N/A'}</td>
+                        <td>$${(p.total || 0).toFixed(2)}</td>
+                        <td><span class="badge badge--${p.estado === 'Completado' ? 'success' : p.estado === 'Pendiente' ? 'warning' : 'info'}">${p.estado}</span></td>
+                    </tr>
+                `).join('');
+            }
+        },
+
+        // Modal: Proveedores
+        openProveedoresModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const porProveedor = DataService.getPedidosPorProveedor();
+            
+            const content = `
+                <div style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 1.25rem; font-weight: bold; color: #0284c7;">🏢 Pedidos por Proveedor</div>
+                    <div style="color: #075985;">Resumen de compras por proveedor</div>
+                </div>
+                <div style="max-height: 450px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead><tr><th>Proveedor</th><th>Pedidos</th><th>Total Compras</th><th>Promedio</th></tr></thead>
+                        <tbody>
+                            ${porProveedor.map(pp => `
+                                <tr>
+                                    <td><strong>${pp.nombre}</strong></td>
+                                    <td><span class="badge badge--info">${pp.pedidos.length}</span></td>
+                                    <td style="font-weight: bold; color: #059669;">$${pp.total.toFixed(2)}</td>
+                                    <td>$${pp.pedidos.length > 0 ? (pp.total / pp.pedidos.length).toFixed(2) : '0.00'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            openModernModal('proveedores', '🏢 Pedidos por Proveedor', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+                <button class="btn btn--primary" onclick="window.print()">Imprimir Reporte</button>
+            `);
+        },
+
+        // Modal: Cotizador
+        openCotizadorModal: () => {
+            if (typeof DataService === 'undefined') return;
+            const productos = DataService.getProductosSync();
+            
+            const content = `
+                <div style="margin-bottom: 16px;">
+                    <label class="form-label">Seleccionar Producto para Cotizar</label>
+                    <select class="form-select" id="cotizadorProducto" onchange="PedidosModule.actualizarCotizacion()">
+                        <option value="">-- Seleccionar --</option>
+                        ${productos.map(p => `<option value="${p.id}">${p.nombre} (Stock: ${p.stock || 0})</option>`).join('')}
+                    </select>
+                </div>
+                <div id="cotizacionResult">
+                    <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        Selecciona un producto para ver las cotizaciones
+                    </div>
+                </div>
+            `;
+            
+            openModernModal('cotizador', '📋 Cotizador de Precios', content, `
+                <button class="btn btn--secondary" onclick="PedidosModule.closeModal()">Cerrar</button>
+            `);
+        },
+
+        actualizarCotizacion: () => {
+            const productoId = document.getElementById('cotizadorProducto')?.value;
+            if (!productoId) return;
+            
+            const cotizacion = DataService.getCotizacionProveedor(productoId);
+            const resultDiv = document.getElementById('cotizacionResult');
+            
+            if (!cotizacion || !cotizacion.cotizaciones.length) {
+                resultDiv.innerHTML = '<div style="text-align: center; padding: 20px;">No hay cotizaciones disponibles</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = `
+                <div style="background: linear-gradient(135deg, #f5f3ff, #ede9fe); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+                    <div style="font-size: 1rem; font-weight: bold;">${cotizacion.producto.nombre}</div>
+                    <div style="color: #6d28d9; font-size: 0.875rem;">Código: ${cotizacion.producto.codigo || 'N/A'}</div>
+                </div>
+                <table class="data-table">
+                    <thead><tr><th>Proveedor</th><th>Precio</th><th>Tiempo Entrega</th><th>Confiabilidad</th><th>Seleccionar</th></tr></thead>
+                    <tbody>
+                        ${cotizacion.cotizaciones.map((c, i) => `
+                            <tr>
+                                <td><strong>${c.proveedor}</strong> ${i === 0 ? '<span class="badge badge--success">Mejor Precio</span>' : ''}</td>
+                                <td style="font-weight: bold; color: #059669; font-size: 1.1rem;">$${c.precio.toFixed(2)}</td>
+                                <td>${c.tiempoEntrega}</td>
+                                <td><span class="badge badge--${c.confiable > 90 ? 'success' : 'warning'}">${c.confiable}%</span></td>
+                                <td><button class="btn btn--primary btn--sm" onclick="alert('Agregando ${c.proveedor} a orden de compra')">Seleccionar</button></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
     };
 })();
 

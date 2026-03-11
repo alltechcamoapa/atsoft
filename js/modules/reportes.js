@@ -21,6 +21,9 @@ const ReportesModule = (() => {
     }
 
     const stats = DataService.getReportesStats(filterState);
+    const weeklySummary = DataService.getWeeklySummary();
+    const productividadTecnicos = DataService.getTecnicoProductividad('month');
+    const contratosPorVencer = DataService.getContratosPorVencer(30);
 
     return `
       <div class="module-container">
@@ -31,10 +34,16 @@ const ReportesModule = (() => {
           </div>
           <div class="module-header__right">
             <button class="btn btn--primary" onclick="ReportesModule.generateGeneralReport()">
-              ${Icons.fileText} Reporte General de Trabajos
+              ${Icons.fileText} Reporte General
             </button>
-            <button class="btn btn--secondary" onclick="ReportesModule.exportReport()">
-              ${Icons.download} Exportar Dashboard
+            <button class="btn btn--secondary" onclick="ReportesModule.exportToExcel()">
+              ${Icons.download} Excel
+            </button>
+            <button class="btn btn--secondary" onclick="ReportesModule.exportToPDF()">
+              ${Icons.fileText} PDF
+            </button>
+            <button class="btn btn--success" onclick="DataService.createManualBackup()">
+              ${Icons.database} Backup
             </button>
           </div>
         </div>
@@ -67,22 +76,37 @@ const ReportesModule = (() => {
           </div>
         </div>
 
-        <!-- Summary Stats -->
+        <!-- Summary Stats with Trends -->
         <div class="module-stats module-stats--4">
           <div class="stat-card stat-card--primary">
             <div class="stat-card__icon">${Icons.users}</div>
             <span class="stat-card__label">Total Clientes</span>
             <span class="stat-card__value">${stats.totalClientes}</span>
+            ${stats.tendencias?.servicios ? `
+              <span class="stat-card__trend ${stats.tendencias.servicios.cambio >= 0 ? 'stat-card__trend--up' : 'stat-card__trend--down'}">
+                ${stats.tendencias.servicios.cambio >= 0 ? '↑' : '↓'} ${Math.abs(stats.tendencias.servicios.cambio)}% vs período anterior
+              </span>
+            ` : ''}
           </div>
           <div class="stat-card stat-card--success">
             <div class="stat-card__icon">${Icons.wrench}</div>
             <span class="stat-card__label">Servicios Realizados</span>
             <span class="stat-card__value">${stats.totalServicios}</span>
+            ${stats.tendencias?.servicios ? `
+              <span class="stat-card__trend ${stats.tendencias.servicios.cambio >= 0 ? 'stat-card__trend--up' : 'stat-card__trend--down'}">
+                ${stats.tendencias.servicios.cambio >= 0 ? '↑' : '↓'} ${Math.abs(stats.tendencias.servicios.cambio)}% vs período anterior
+              </span>
+            ` : ''}
           </div>
           <div class="stat-card stat-card--warning">
             <div class="stat-card__icon">${Icons.wallet}</div>
             <span class="stat-card__label">Ingresos Totales</span>
             <span class="stat-card__value">$${stats.ingresosTotales.toFixed(2)}</span>
+            ${stats.tendencias?.ingresos ? `
+              <span class="stat-card__trend ${stats.tendencias.ingresos.cambio >= 0 ? 'stat-card__trend--up' : 'stat-card__trend--down'}">
+                ${stats.tendencias.ingresos.cambio >= 0 ? '↑' : '↓'} ${Math.abs(stats.tendencias.ingresos.cambio)}%
+              </span>
+            ` : ''}
           </div>
           <div class="stat-card stat-card--info">
             <div class="stat-card__icon">${Icons.fileText}</div>
@@ -90,6 +114,90 @@ const ReportesModule = (() => {
             <span class="stat-card__value">${stats.contratosActivos}</span>
           </div>
         </div>
+
+        <!-- Weekly Summary & Contratos por Vencer -->
+        <div class="reports-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-top: var(--spacing-lg);">
+          <!-- Resumen Semanal -->
+          <div class="card">
+            <div class="card__header">
+              <h4 class="card__title">📅 Resumen Semanal</h4>
+              <span class="text-muted text-sm">${weeklySummary.periodo.inicio} - ${weeklySummary.periodo.fin}</span>
+            </div>
+            <div class="card__body">
+              <div class="weekly-summary">
+                <div class="weekly-summary__item">
+                  <div class="weekly-summary__label">Servicios</div>
+                  <div class="weekly-summary__value">${weeklySummary.servicios.actual}</div>
+                  <span class="weekly-summary__change ${weeklySummary.servicios.cambio >= 0 ? 'positive' : 'negative'}">
+                    ${weeklySummary.servicios.cambio >= 0 ? '↑' : '↓'} ${Math.abs(weeklySummary.servicios.cambio)}%
+                  </span>
+                </div>
+                <div class="weekly-summary__item">
+                  <div class="weekly-summary__label">Ingresos</div>
+                  <div class="weekly-summary__value">$${weeklySummary.ingresos.actual.toFixed(2)}</div>
+                  <span class="weekly-summary__change ${weeklySummary.ingresos.cambio >= 0 ? 'positive' : 'negative'}">
+                    ${weeklySummary.ingresos.cambio >= 0 ? '↑' : '↓'} ${Math.abs(weeklySummary.ingresos.cambio)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Contratos por Vencer -->
+          <div class="card">
+            <div class="card__header">
+              <h4 class="card__title">⚠️ Contratos por Vencer</h4>
+              <span class="text-muted text-sm">Próximos 30 días</span>
+            </div>
+            <div class="card__body" style="max-height: 200px; overflow-y: auto;">
+              ${contratosPorVencer.length > 0 ? contratosPorVencer.slice(0, 5).map(c => `
+                <div class="contract-alert contract-alert--${c.urgencia}" style="padding: var(--spacing-sm); margin-bottom: var(--spacing-xs); border-radius: 6px; background: var(--bg-secondary);">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 500;">${c.clienteNombre}</span>
+                    <span class="badge badge--${c.urgencia === 'critica' ? 'danger' : c.urgencia === 'alta' ? 'warning' : 'info'}">${c.diasRestantes} días</span>
+                  </div>
+                  <div class="text-sm text-muted">Vence: ${new Date(c.fechaFin || c.fecha_fin).toLocaleDateString('es-NI')}</div>
+                </div>
+              `).join('') : '<p class="text-muted">No hay contratos por vencer</p>'}
+            </div>
+          </div>
+
+          <!-- Productividad Técnicos -->
+          <div class="card">
+            <div class="card__header">
+              <h4 class="card__title">🏆 Productividad Técnicos</h4>
+              <span class="text-muted text-sm">Este mes</span>
+            </div>
+            <div class="card__body">
+              ${productividadTecnicos.length > 0 ? productividadTecnicos.slice(0, 4).map(t => `
+                <div class="tecnico-productividad" style="display: flex; align-items: center; gap: var(--spacing-md); margin-bottom: var(--spacing-sm);">
+                  <div style="flex: 1;">
+                    <div style="font-weight: 500;">${t.nombre}</div>
+                    <div class="progress" style="height: 6px; margin-top: 4px;">
+                      <div class="progress-bar" style="width: ${t.productividad}%; background: var(--color-primary-500);"></div>
+                    </div>
+                  </div>
+                  <div style="text-align: right; min-width: 60px;">
+                    <div style="font-weight: 600;">${t.servicios}</div>
+                    <div class="text-xs text-muted">servicios</div>
+                  </div>
+                </div>
+              `).join('') : '<p class="text-muted">No hay datos de técnicos</p>'}
+            </div>
+          </div>
+        </div>
+
+        <!-- Monthly Trends Chart -->
+        ${stats.monthlyTrends && stats.monthlyTrends.length > 0 ? `
+        <div class="card" style="margin-top: var(--spacing-lg);">
+          <div class="card__header">
+            <h4 class="card__title">📊 Tendencia de Servicios - Últimos 6 Meses</h4>
+          </div>
+          <div class="card__body">
+            ${renderMonthlyTrendsChart(stats.monthlyTrends)}
+          </div>
+        </div>
+        ` : ''}
 
         <!-- Report Cards Grid -->
         <div class="reports-grid">
@@ -348,6 +456,47 @@ const ReportesModule = (() => {
           <div class="currency-stat__info">
             <span class="currency-stat__label">NIO</span>
             <span class="currency-stat__value">C$${data.nio.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  const renderMonthlyTrendsChart = (data) => {
+    if (!data || data.length === 0) {
+      return '<p class="text-muted">No hay datos disponibles</p>';
+    }
+
+    const maxServicios = Math.max(...data.map(d => d.servicios), 1);
+    const maxIngresos = Math.max(...data.map(d => d.ingresos), 1);
+
+    return `
+      <div class="trends-chart">
+        <div class="trends-chart__bars">
+          ${data.map((item, index) => {
+            const serviciosHeight = (item.servicios / maxServicios) * 100;
+            const ingresosHeight = (item.ingresos / maxIngresos) * 100;
+            return `
+              <div class="trends-chart__bar-group">
+                <div class="trends-chart__bar-wrapper" title="Servicios: ${item.servicios}">
+                  <div class="trends-chart__bar trends-chart__bar--servicios" style="height: ${serviciosHeight}%;"></div>
+                </div>
+                <div class="trends-chart__bar-wrapper" title="Ingresos: $${item.ingresos.toFixed(0)}">
+                  <div class="trends-chart__bar trends-chart__bar--ingresos" style="height: ${ingresosHeight}%;"></div>
+                </div>
+                <span class="trends-chart__label">${item.mes}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="trends-chart__legend">
+          <div class="trends-chart__legend-item">
+            <span class="trends-chart__legend-color trends-chart__legend-color--servicios"></span>
+            <span>Servicios</span>
+          </div>
+          <div class="trends-chart__legend-item">
+            <span class="trends-chart__legend-color trends-chart__legend-color--ingresos"></span>
+            <span>Ingresos ($)</span>
           </div>
         </div>
       </div>
@@ -684,6 +833,28 @@ const ReportesModule = (() => {
     printReport('Reporte General de Visitas', content);
   };
 
+  const exportToExcel = () => {
+    const stats = DataService.getReportesStats(filterState);
+    
+    const data = [
+      { tipo: 'Clientes', total: stats.totalClientes },
+      { tipo: 'Servicios', total: stats.totalServicios },
+      { tipo: 'Ingresos', total: stats.ingresosTotales },
+      { tipo: 'Contratos Activos', total: stats.contratosActivos },
+      ...(stats.serviciosPorTecnico || []).map(t => ({ tipo: `Técnico: ${t.tecnico}`, total: t.count }))
+    ];
+
+    const result = DataService.exportToExcel(data, 'alltech_reportes', 'Reportes');
+    if (result.success) {
+      if (typeof showNotification === 'function') showNotification('Reporte exportado exitosamente', 'success');
+      else alert('Reporte exportado exitosamente');
+    }
+  };
+
+  const exportToPDF = () => {
+    DataService.exportReportToPDF('General', filterState);
+  };
+
   return {
     render,
     handlePeriodoFilter,
@@ -692,6 +863,8 @@ const ReportesModule = (() => {
     exportReport,
     generateGeneralReport,
     openExternalReport,
-    generateInventoryReport
+    generateInventoryReport,
+    exportToExcel,
+    exportToPDF
   };
 })();

@@ -62,23 +62,40 @@ const LoginModule = (() => {
                             />
                         </div>
 
-                        <!-- Biometric options -->
+                        <!-- Empresa Selection -->
                         <div style="margin-bottom: 28px; display:flex; flex-direction: column; gap: 10px;">
-                            <div style="display:flex; align-items:center; justify-content:space-between;">
-                                ${window.PublicKeyCredential ? `
-                                <label style="color: #cbd5e1; font-size: 13px; display:flex; align-items:center; cursor:pointer;">
-                                    <input type="checkbox" id="enableBiometric" style="margin-right: 8px;">
-                                    Guardar para Huella
-                                </label>
-                                ` : '<span style="color: #94a3b8; font-size: 11px;">⚠️ Huella no disponible (Requiere HTTPS)</span>'}
-                                
-                                ${hasSavedBiometric() ? `
-                                <button type="button" onclick="LoginModule.handleBiometricLogin()" style="background:rgba(26, 115, 232, 0.1); border:1px solid #1a73e8; border-radius: 8px; padding: 6px 12px; color:#60a5fa; font-size:13px; cursor:pointer; font-weight:600; display:flex; align-items:center; transition:all 0.2s;">
-                                     <svg style="width:16px; height:16px; margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.092a14.5 14.5 0 00-2.8-5.619m11.536-4.524A14.502 14.502 0 0012 3a14.502 14.502 0 00-6.19 1.39A8.96 8.96 0 004.5 7.5"></path></svg>
-                                     Entrar con Huella
-                                </button>
-                                ` : ''}
-                            </div>
+                            <label style="color: #cbd5e1; font-size: 14px; font-weight: 600; display: block; margin-bottom: 5px;">Empresa a Ingresar</label>
+                            <select id="empresaSelect" class="form-select" style="width: 100%; padding: 14px 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid #444444; border-radius: 10px; color: #ffffff; font-size: 15px; outline: none; transition: all 0.2s; box-sizing: border-box;">
+                                <!-- Se llena dinámicamente -->
+                            </select>
+                            <img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" onload="
+                                setTimeout(() => {
+                                    const select = document.getElementById('empresaSelect');
+                                    if (select && select.options.length === 0) {
+                                      if (typeof SupabaseDataService !== 'undefined' && SupabaseDataService.getEmpresasSync) {
+                                          SupabaseDataService.getEmpresasSync().then(res => {
+                                              const empresas = Array.isArray(res) ? res : (res.data || []);
+                                              if (empresas.length === 0) {
+                                                  const opt = document.createElement('option');
+                                                  opt.value = ''; opt.textContent = 'Sin empresas creadas'; opt.style.color = '#000'; select.appendChild(opt);
+                                              }
+                                              empresas.forEach(emp => {
+                                                  const opt = document.createElement('option');
+                                                  opt.value = emp.id;
+                                                  opt.textContent = emp.nombre;
+                                                  opt.style.color = '#000';
+                                                  select.appendChild(opt);
+                                              });
+                                          }).catch(err => console.error('Error fetching empresas', err));
+                                      } else if (typeof DataService !== 'undefined' && DataService.getEmpresasSync) {
+                                          const empresas = DataService.getEmpresasSync();
+                                          empresas.forEach(emp => {
+                                              const opt = document.createElement('option'); opt.value = emp.id; opt.textContent = emp.nombre; opt.style.color = '#000'; select.appendChild(opt);
+                                          });
+                                      }
+                                    }
+                                }, 500); 
+                            " style="display:none;" />
                         </div>
 
                         <!-- Error message -->
@@ -106,97 +123,6 @@ const LoginModule = (() => {
         `;
     };
 
-
-    // ========== BIOMETRIC LOGIC ==========
-    const isBiometricSupported = () => {
-        return window.PublicKeyCredential !== undefined;
-    };
-
-    const hasSavedBiometric = () => {
-        return !!localStorage.getItem('alltech_bio_username') && isBiometricSupported();
-    };
-
-    const registerBiometric = async (username, password) => {
-        if (!isBiometricSupported()) {
-            console.warn('Biometría no soportada (necesita HTTPS o localhost).');
-            return;
-        }
-        try {
-            const challenge = new Uint8Array(32);
-            window.crypto.getRandomValues(challenge);
-            const userId = new Uint8Array(16);
-            window.crypto.getRandomValues(userId);
-
-            const credential = await navigator.credentials.create({
-                publicKey: {
-                    challenge: challenge,
-                    rp: { name: "ALLTECH SUPPORT" },
-                    user: {
-                        id: userId,
-                        name: username,
-                        displayName: username
-                    },
-                    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-                    authenticatorSelection: {
-                        authenticatorAttachment: "platform",
-                        userVerification: "required"
-                    },
-                    timeout: 60000
-                }
-            });
-
-            if (credential) {
-                localStorage.setItem('alltech_bio_username', btoa(encodeURIComponent(username)));
-                localStorage.setItem('alltech_bio_pwd', btoa(encodeURIComponent(password)));
-                console.log('✅ Biometric registered locally for Quick Login');
-                showSuccess('Huella vinculada con éxito. La próxima vez podrás entrar con tu huella.');
-                setTimeout(() => { hideError(); }, 3000);
-            }
-        } catch (e) {
-            console.error("❌ Error registering biometric:", e);
-            showError("No se pudo vincular la huella. ¿Cancelaste o el dispositivo no lo soporta?");
-        }
-    };
-
-    const handleBiometricLogin = async () => {
-        if (!isBiometricSupported()) {
-            showError("Tu navegador no soporta iniciar sesión con huella (Requiere HTTPS).");
-            return;
-        }
-        try {
-            const challenge = new Uint8Array(32);
-            window.crypto.getRandomValues(challenge);
-
-            const assertion = await navigator.credentials.get({
-                publicKey: {
-                    challenge: challenge,
-                    userVerification: "required"
-                }
-            });
-
-            if (assertion) {
-                const uMatch = localStorage.getItem('alltech_bio_username');
-                const pMatch = localStorage.getItem('alltech_bio_pwd');
-
-                if (uMatch && pMatch) {
-                    const u = decodeURIComponent(atob(uMatch));
-                    const p = decodeURIComponent(atob(pMatch));
-
-                    document.getElementById('loginUsername').value = u;
-                    document.getElementById('loginPassword').value = p;
-
-                    showSuccess('Huella reconocida. Iniciando sesión...');
-                    // Procede al login directamente
-                    handleLogin();
-                } else {
-                    showError("No se encontraron credenciales guardadas. Inicia sesión con contraseña.");
-                }
-            }
-        } catch (e) {
-            console.error("❌ Biometric login failed", e);
-            showError("La autenticación con huella falló o fue cancelada.");
-        }
-    };
 
     // ========== LOGIN HANDLER ==========
     const handleLogin = async () => {
@@ -289,10 +215,19 @@ const LoginModule = (() => {
                 return;
             }
 
-            // Biometric Register Check
-            const bioCheck = document.getElementById('enableBiometric');
-            if (bioCheck && bioCheck.checked) {
-                await registerBiometric(username, password);
+            // Biometric Register Check (Renoved)
+
+            const empresaId = document.getElementById('empresaSelect')?.value;
+            if (empresaId) {
+                const checkRole = profile.role?.name || 'Usuario';
+                const canAccess = DataService.canPerformAction(checkRole, 'empresa_' + empresaId, 'read');
+                // Admin role has full permissions always because of canPerformAction, but just explicitly allow Admin:
+                if (!canAccess && checkRole !== 'Administrador') {
+                     showError('⚠️ No tienes los permisos para entrar a esta empresa.');
+                     await signOut();
+                     setLoading(false);
+                     return;
+                }
             }
 
             // Crear objeto usuario para State
@@ -302,7 +237,8 @@ const LoginModule = (() => {
                 name: profile.full_name,
                 email: result.data.user.email || '', // Email opcional
                 role: profile.role?.name || 'Usuario',
-                role_id: profile.role_id
+                role_id: profile.role_id,
+                empresa_id: empresaId || null
             };
 
             // Login en State
@@ -416,8 +352,7 @@ const LoginModule = (() => {
     // ========== PUBLIC API ==========
     return {
         render,
-        handleLogin,
-        handleBiometricLogin
+        handleLogin
     };
 })();
 

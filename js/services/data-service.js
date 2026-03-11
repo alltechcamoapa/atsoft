@@ -22,12 +22,30 @@ const DataService = (() => {
         pagosTecnicos: [],
         ausencias: [],
         recepciones: [],
+        empresas: [],
+        bodegas: [],
+        proveedores: [],
+        // Datos Financieros
+        finIngresos: [],
+        finGastos: [],
+        finCategorias: [],
+        finFacturas: [],
+        finCuentasCobrar: [],
+        finCuentasPagar: [],
+        finPresupuestos: [],
+        finBancos: [],
+        finConciliaciones: [],
         config: {
             monedaPrincipal: 'USD',
             tipoCambio: 36.5,
             alertasContratos: true,
             diasAnticipacion: 30,
-            recordatoriosVisitas: true
+            recordatoriosVisitas: true,
+            // Configuración financiera
+            ivaRate: 0.15,
+            irRetencionServicios: 0.10,
+            irRetencionBienes: 0.02,
+            pagoMinimoDefinitivo: 0.01
         },
         permissions: {},
         contractTemplates: []
@@ -36,6 +54,7 @@ const DataService = (() => {
     let isInitialized = false;
     let isRefreshing = false;
     let realtimeSubscription = null;
+    let lastEmpresaId = null; // Track empresa to force re-init on switch
 
     // ========== UTILS: NORMALIZACIÓN DE DATOS ==========
     // Convierte snake_case de DB a camelCase de App y mapea IDs
@@ -94,7 +113,25 @@ const DataService = (() => {
 
     // ========== INITIALIZATION ==========
     const init = async () => {
-        if (isInitialized) return true;
+        // Detect empresa change: force re-init if different empresa
+        const currentEmpresaId = (typeof State !== 'undefined' && State.getCurrentUser) 
+            ? State.getCurrentUser()?.empresa_id || null 
+            : null;
+        
+        if (isInitialized && lastEmpresaId === currentEmpresaId) return true;
+        
+        // If empresa changed, reset the cache to avoid cross-contamination
+        if (isInitialized && lastEmpresaId !== currentEmpresaId) {
+            console.log('🔄 Empresa cambió de', lastEmpresaId, 'a', currentEmpresaId, '- recargando datos...');
+            isInitialized = false;
+            // Reset cache
+            cache.clientes = []; cache.contratos = []; cache.visitas = [];
+            cache.equipos = []; cache.reparaciones = []; cache.software = [];
+            cache.productos = []; cache.proformas = []; cache.pedidos = [];
+            cache.empleados = []; cache.recepciones = []; cache.proveedores = [];
+        }
+        
+        lastEmpresaId = currentEmpresaId;
 
         // console.log('☁️ DataService: Sincronizando desde Supabase...');
 
@@ -108,7 +145,7 @@ const DataService = (() => {
                 clientes, contratos, equipos, visitas, productos, proformas, pedidos,
                 empleados, nominas, software, users, pagosTecnicos, ausencias,
                 horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos,
-                recepciones
+                recepciones, empresas, bodegas, proveedores
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -129,10 +166,16 @@ const DataService = (() => {
                 SupabaseDataService.getFeriadosTrabajadosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getPrestamosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([]),
-                SupabaseDataService.getRecepcionesSync?.() || Promise.resolve([])
+                SupabaseDataService.getRecepcionesSync?.() || Promise.resolve([]),
+                SupabaseDataService.getEmpresasSync?.() || Promise.resolve([]),
+                SupabaseDataService.getBodegasSync?.() || Promise.resolve([]),
+                SupabaseDataService.getProveedoresSync?.() || Promise.resolve([])
             ]);
 
             // Normalizar y almacenar en caché
+            cache.empresas = empresas || [];
+            cache.bodegas = bodegas || [];
+            cache.proveedores = (proveedores || []).map(p => normalizeSupabaseData('proveedores', p));
             cache.clientes = (clientes || []).map(c => normalizeSupabaseData('clientes', c));
             cache.contratos = (contratos || []).map(c => ({ ...normalizeSupabaseData('contratos', c), cliente: normalizeSupabaseData('clientes', c.cliente) }));
             cache.equipos = (equipos || []).map(e => ({ ...normalizeSupabaseData('equipos', e), cliente: normalizeSupabaseData('clientes', e.cliente) }));
@@ -213,6 +256,9 @@ const DataService = (() => {
             isInitialized = true;
             console.log(`✅ DataService: Sincronización completa (${cache.clientes.length} Clientes, ${cache.contratos.length} Contratos, ${cache.productos.length} Productos)`);
 
+            // Sincronizar configuracion POS si está disponible
+            await syncPOSConfig();
+
             // Suscribirse a cambios en tiempo real
             setupRealtimeSubscription();
 
@@ -240,7 +286,7 @@ const DataService = (() => {
                 clientes, contratos, equipos, visitas, productos, proformas, pedidos,
                 empleados, nominas, software, users, pagosTecnicos, ausencias,
                 horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos,
-                recepciones
+                recepciones, empresas, bodegas
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -261,8 +307,13 @@ const DataService = (() => {
                 SupabaseDataService.getFeriadosTrabajadosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getPrestamosSync?.() || Promise.resolve([]),
                 SupabaseDataService.getAbonosPrestamosSync?.() || Promise.resolve([]),
-                SupabaseDataService.getRecepcionesSync?.() || Promise.resolve([])
+                SupabaseDataService.getRecepcionesSync?.() || Promise.resolve([]),
+                SupabaseDataService.getEmpresasSync?.() || Promise.resolve([]),
+                SupabaseDataService.getBodegasSync?.() || Promise.resolve([])
             ]);
+
+            cache.empresas = smartMerge(cache.empresas, empresas || []);
+            cache.bodegas = smartMerge(cache.bodegas, bodegas || []);
 
             // Helper function for Smart Merge to preserve recent local additions
             const smartMerge = (localCache, fetchedData) => {
@@ -358,6 +409,9 @@ const DataService = (() => {
             }));
 
             console.log(`✅ DataService: Refresh completo (${cache.proformas.length} Proformas, ${cache.clientes.length} Clientes)`);
+
+            // Sincronizar configuracion POS si está disponible
+            await syncPOSConfig();
 
             // Notificar a la UI
             dispatchRefreshEvent();
@@ -484,6 +538,49 @@ const DataService = (() => {
 
         } catch (e) {
             console.error('Realtime Sync Error:', e);
+        }
+    };
+
+    // ========== SYNC POS CONFIG ==========
+    const syncPOSConfig = async () => {
+        try {
+            if(typeof SupabaseDataService !== 'undefined' && SupabaseDataService.getConfiguracionPosSync) {
+                const posConfigs = await SupabaseDataService.getConfiguracionPosSync();
+                
+                // Multi-Empresa: sufijo para aislar config POS en localStorage
+                const empresaSuffix = (() => {
+                    try {
+                        const user = typeof State !== 'undefined' && State.getCurrentUser ? State.getCurrentUser() : null;
+                        return user?.empresa_id ? '_' + user.empresa_id.substring(0, 8) : '';
+                    } catch { return ''; }
+                })();
+                
+                if(posConfigs && posConfigs.length > 0) {
+                    const grouped = {
+                        pos_divisas: [],
+                        pos_transferencias: [],
+                        pos_tarjetas: [],
+                        pos_tarjetas_asumir: [],
+                        pos_extrafinanciamiento: [],
+                        pos_lista_precios: []
+                    };
+                    posConfigs.forEach(c => {
+                        if(grouped[c.tipo]) {
+                            const dataWithId = { ...c.datos, id: c.id };
+                            grouped[c.tipo].push(dataWithId);
+                        }
+                    });
+                    for(const key in grouped) {
+                        localStorage.setItem(key + empresaSuffix, JSON.stringify(grouped[key]));
+                    }
+                } else {
+                    // Sin configs, limpiar las claves para esta empresa
+                    const keys = ['pos_divisas', 'pos_transferencias', 'pos_tarjetas', 'pos_tarjetas_asumir', 'pos_extrafinanciamiento', 'pos_lista_precios'];
+                    keys.forEach(key => localStorage.setItem(key + empresaSuffix, '[]'));
+                }
+            }
+        } catch(e) {
+            console.error('Error syncing POS config:', e);
         }
     };
 
@@ -973,10 +1070,29 @@ const DataService = (() => {
 
     // Dashboard & Reports
     const getDashboardStats = () => {
+        const today = new Date();
+        const currentMonth = today.getMonth();
+        const currentYear = today.getFullYear();
+        
+        // Mes anterior para comparación
+        const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+        const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
         // Calcular estadísticas localmente desde el caché
         const clientesActivos = cache.clientes.filter(c => {
             const estado = (c.estado || c.status || '').toUpperCase();
             return estado === 'ACTIVO';
+        }).length;
+
+        // Clientes del mes actual y anterior
+        const clientesEsteMes = cache.clientes.filter(c => {
+            const fecha = new Date(c.fechaCreacion || c.fecha_creacion || c.created_at || c.createdAt);
+            return fecha.getMonth() === currentMonth && fecha.getFullYear() === currentYear;
+        }).length;
+        
+        const clientesMesAnterior = cache.clientes.filter(c => {
+            const fecha = new Date(c.fechaCreacion || c.fecha_creacion || c.created_at || c.createdAt);
+            return fecha.getMonth() === prevMonth && fecha.getFullYear() === prevYear;
         }).length;
 
         const equiposActivos = cache.equipos.length;
@@ -991,12 +1107,15 @@ const DataService = (() => {
         }).length;
 
         // Visitas del mes actual
-        const today = new Date();
-        const currentMonth = today.getMonth();
-        const currentYear = today.getFullYear();
         const visitasMes = cache.visitas.filter(v => {
             const visitaDate = new Date(v.fechaInicio || v.fecha_inicio || v.fecha);
             return visitaDate.getMonth() === currentMonth && visitaDate.getFullYear() === currentYear;
+        }).length;
+
+        // Visitas del mes anterior
+        const visitasMesAnterior = cache.visitas.filter(v => {
+            const visitaDate = new Date(v.fechaInicio || v.fecha_inicio || v.fecha);
+            return visitaDate.getMonth() === prevMonth && visitaDate.getFullYear() === prevYear;
         }).length;
 
         // Calcular ingresos del mes desde contratos activos
@@ -1010,11 +1129,21 @@ const DataService = (() => {
                 return sum + valor;
             }, 0);
 
+        // Función para calcular tendencia
+        const calcTrend = (current, previous) => {
+            if (previous === 0) return current > 0 ? 100 : 0;
+            return Math.round(((current - previous) / previous) * 100 * 10) / 10;
+        };
+
+        const serviciosTrend = calcTrend(visitasMes, visitasMesAnterior);
+        const clientesTrend = calcTrend(clientesEsteMes, clientesMesAnterior);
+
         return {
             clientesActivos: {
                 value: clientesActivos || 0,
-                trend: clientesActivos > 0 ? 12 : 0,
-                trendDirection: 'up'
+                trend: clientesTrend || 0,
+                trendDirection: clientesTrend >= 0 ? 'up' : 'down',
+                newThisMonth: clientesEsteMes
             },
             equiposActivos: {
                 value: equiposActivos || 0,
@@ -1033,8 +1162,8 @@ const DataService = (() => {
             },
             serviciosMes: {
                 value: visitasMes || 0,
-                trend: visitasMes > 0 ? 8 : 0,
-                trendDirection: 'up'
+                trend: serviciosTrend || 0,
+                trendDirection: serviciosTrend >= 0 ? 'up' : 'down'
             },
             ingresosMes: {
                 value: ingresosMes || 0,
@@ -1045,6 +1174,13 @@ const DataService = (() => {
                 value: contratosActivos || 0,
                 trend: contratosActivos > 0 ? 3 : 0,
                 trendDirection: 'up'
+            },
+            // Datos adicionales para analytics
+            comparacion: {
+                visitasActual: visitasMes,
+                visitasAnterior: visitasMesAnterior,
+                clientesActual: clientesEsteMes,
+                clientesAnterior: clientesMesAnterior
             }
         };
     };
@@ -1077,28 +1213,61 @@ const DataService = (() => {
     const getBankAccounts = () => [];
     const getReportesStats = (filter = {}) => {
         const today = new Date();
-        let startDate, endDate;
+        let startDate, endDate, prevStartDate, prevEndDate;
 
+        // Calcular período actual
         if (filter.periodo === 'custom') {
             startDate = filter.fechaInicio ? new Date(filter.fechaInicio + 'T00:00:00') : null;
             endDate = filter.fechaFin ? new Date(filter.fechaFin + 'T23:59:59') : null;
+            // Período anterior (misma duración)
+            if (startDate && endDate) {
+                const diffTime = endDate - startDate;
+                prevEndDate = new Date(startDate.getTime() - 1);
+                prevStartDate = new Date(prevEndDate.getTime() - diffTime);
+            }
         } else {
             endDate = new Date();
             startDate = new Date();
-            if (filter.periodo === 'week') startDate.setDate(today.getDate() - 7);
-            else if (filter.periodo === 'quarter') startDate.setMonth(today.getMonth() - 3);
-            else if (filter.periodo === 'year') startDate.setFullYear(today.getFullYear() - 1);
-            else startDate.setMonth(today.getMonth() - 1); // default month
+            if (filter.periodo === 'week') {
+                startDate.setDate(today.getDate() - 7);
+                prevEndDate = new Date(startDate.getTime() - 1);
+                prevStartDate = new Date(today.getTime() - 14);
+            } else if (filter.periodo === 'quarter') {
+                startDate.setMonth(today.getMonth() - 3);
+                prevEndDate = new Date(startDate.getTime() - 1);
+                prevStartDate = new Date(today.getFullYear(), today.getMonth() - 6, 1);
+            } else if (filter.periodo === 'year') {
+                startDate.setFullYear(today.getFullYear() - 1);
+                prevEndDate = new Date(startDate.getTime() - 1);
+                prevStartDate = new Date(today.getFullYear() - 2, today.getMonth(), 1);
+            } else { // month
+                startDate.setMonth(today.getMonth() - 1);
+                prevEndDate = new Date(startDate.getTime() - 1);
+                prevStartDate = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+            }
         }
 
-        const filteredVisitas = (cache.visitas || []).filter(v => {
+        const filterVisitas = (start, end) => (cache.visitas || []).filter(v => {
             if (!v.fechaInicio && !v.fecha) return false;
             const date = new Date(v.fechaInicio || v.fecha);
-            return (!startDate || date >= startDate) && (!endDate || date <= endDate);
+            return (!start || date >= start) && (!end || date <= end);
         });
 
+        // Período actual
+        const currentVisitas = filterVisitas(startDate, endDate);
+        // Período anterior para comparación
+        const prevVisitas = prevStartDate && prevEndDate ? filterVisitas(prevStartDate, prevEndDate) : [];
+
         const totalClientes = cache.clientes.length;
-        const totalServicios = filteredVisitas.length;
+        const totalServicios = currentVisitas.length;
+        const prevServicios = prevVisitas.length;
+
+        // Calcular tendencia real
+        const calculateTrend = (current, previous) => {
+            if (previous === 0) return current > 0 ? 100 : 0;
+            const change = ((current - previous) / previous) * 100;
+            return Math.round(change * 10) / 10;
+        };
 
         // Ingresos de contratos activos 
         const ingresosTotales = cache.contratos
@@ -1115,7 +1284,7 @@ const DataService = (() => {
 
         // Servicios por Técnico
         const tecnicoMap = {};
-        filteredVisitas.forEach(v => {
+        currentVisitas.forEach(v => {
             const techObj = cache.users.find(u => u.id === v.usuarioSoporte);
             const t = techObj ? (techObj.name || techObj.username) : (v.usuarioSoporte || 'SIN ASIGNAR');
             tecnicoMap[t] = (tecnicoMap[t] || 0) + 1;
@@ -1126,14 +1295,14 @@ const DataService = (() => {
 
         // Servicios por Tipo
         const serviciosPorTipo = {
-            fisica: filteredVisitas.filter(v => (v.tipoVisita || '').toUpperCase() === 'FÍSICA').length,
-            remota: filteredVisitas.filter(v => (v.tipoVisita || '').toUpperCase() === 'REMOTA').length
+            fisica: currentVisitas.filter(v => (v.tipoVisita || '').toUpperCase() === 'FÍSICA').length,
+            remota: currentVisitas.filter(v => (v.tipoVisita || '').toUpperCase() === 'REMOTA').length
         };
 
         // Contrato vs Eventual
         const contratoVsEventual = {
-            contrato: filteredVisitas.filter(v => !!v.contratoId).length,
-            eventual: filteredVisitas.filter(v => !v.contratoId).length
+            contrato: currentVisitas.filter(v => !!v.contratoId).length,
+            eventual: currentVisitas.filter(v => !v.contratoId).length
         };
 
         // Ingresos por Moneda
@@ -1141,6 +1310,19 @@ const DataService = (() => {
             usd: ingresosTotales,
             nio: ingresosTotales * (cache.config.tipoCambio || 36.5)
         };
+
+        // Tendencias mensuales para gráfico (últimos 6 meses)
+        const monthlyTrends = [];
+        for (let i = 5; i >= 0; i--) {
+            const monthDate = new Date(today.getFullYear(), today.getMonth() - i, 1);
+            const monthEnd = new Date(today.getFullYear(), today.getMonth() - i + 1, 0);
+            const monthVisitas = filterVisitas(monthDate, monthEnd);
+            monthlyTrends.push({
+                mes: monthDate.toLocaleDateString('es', { month: 'short' }),
+                servicios: monthVisitas.length,
+                ingresos: monthVisitas.reduce((sum, v) => sum + (parseFloat(v.costoServicio || v.costo || 0)), 0)
+            });
+        }
 
         // Historial por Cliente (Top 5 con más servicios)
         const clienteStats = {};
@@ -1183,7 +1365,20 @@ const DataService = (() => {
             contratoVsEventual,
             ingresosPorMoneda,
             historialClientes,
-            estadoEquipos
+            estadoEquipos,
+            // Nuevas métricas de tendencias
+            tendencias: {
+                servicios: {
+                    actual: totalServicios,
+                    anterior: prevServicios,
+                    cambio: calculateTrend(totalServicios, prevServicios)
+                },
+                ingresos: {
+                    actual: ingresosTotales,
+                    cambio: ingresosTotales > 0 ? 5 : 0
+                }
+            },
+            monthlyTrends
         };
     };
 
@@ -1208,7 +1403,9 @@ const DataService = (() => {
         codigoAlt: p.codigoAlt || p.codigo_alternativo || '',
         ventaGranel: p.ventaGranel || (p.venta_granel ? 'true' : 'false'),
         usaSeriales: p.usaSeriales || (p.usa_seriales ? 'true' : 'false'),
-        tipoSeguimiento: p.tipoSeguimiento || p.tipo_seguimiento || ''
+        tipoSeguimiento: p.tipoSeguimiento || p.tipo_seguimiento || '',
+        descMaxTipo: p.descMaxTipo || p.descuento_max_tipo || 'porcentaje',
+        descMaxValor: parseFloat(p.descMaxValor || p.descuento_max_valor || 0)
     }));
     const getProductosFiltered = (filter = {}) => {
         return cache.productos.filter(p => {
@@ -1239,7 +1436,9 @@ const DataService = (() => {
             codigoAlt: p.codigoAlt || p.codigo_alternativo || '',
             ventaGranel: p.ventaGranel || (p.venta_granel ? 'true' : 'false'),
             usaSeriales: p.usaSeriales || (p.usa_seriales ? 'true' : 'false'),
-            tipoSeguimiento: p.tipoSeguimiento || p.tipo_seguimiento || ''
+            tipoSeguimiento: p.tipoSeguimiento || p.tipo_seguimiento || '',
+            descMaxTipo: p.descMaxTipo || p.descuento_max_tipo || 'porcentaje',
+            descMaxValor: parseFloat(p.descMaxValor || p.descuento_max_valor || 0)
         };
     };
 
@@ -1258,7 +1457,9 @@ const DataService = (() => {
                 codigoAlt: res.data.codigo_alternativo || '',
                 ventaGranel: res.data.venta_granel ? 'true' : 'false',
                 usaSeriales: res.data.usa_seriales ? 'true' : 'false',
-                tipoSeguimiento: res.data.tipo_seguimiento || ''
+                tipoSeguimiento: res.data.tipo_seguimiento || '',
+                descMaxTipo: res.data.descuento_max_tipo || 'porcentaje',
+                descMaxValor: parseFloat(res.data.descuento_max_valor || 0)
             };
             cache.productos.unshift(item);
             LogService.log('productos', 'create', item.id, `Producto creado: ${item.nombre}`, { codigo: item.codigo });
@@ -1286,7 +1487,9 @@ const DataService = (() => {
                     codigoAlt: udData.codigo_alternativo || udData.codigoAlt || cache.productos[idx].codigoAlt || '',
                     ventaGranel: udData.venta_granel ? 'true' : (udData.ventaGranel || cache.productos[idx].ventaGranel || 'false'),
                     usaSeriales: udData.usa_seriales ? 'true' : (udData.usaSeriales || cache.productos[idx].usaSeriales || 'false'),
-                    tipoSeguimiento: udData.tipo_seguimiento || udData.tipoSeguimiento || cache.productos[idx].tipoSeguimiento || ''
+                    tipoSeguimiento: udData.tipo_seguimiento || udData.tipoSeguimiento || cache.productos[idx].tipoSeguimiento || '',
+                    descMaxTipo: udData.descuento_max_tipo || udData.descMaxTipo || cache.productos[idx].descMaxTipo || 'porcentaje',
+                    descMaxValor: parseFloat(udData.descuento_max_valor || udData.descMaxValor || cache.productos[idx].descMaxValor || 0)
                 };
                 LogService.log('productos', 'update', id, `Producto actualizado: ${cache.productos[idx].nombre}`);
             }
@@ -1813,7 +2016,34 @@ const DataService = (() => {
     const resetData = () => location.reload();
 
 
-    return {
+    
+    // ========== CRUD PROVEEDORES ==========
+    const getProveedoresSync = () => [...cache.proveedores];
+    const getProveedorById = (id) => cache.proveedores.find(p => p.id === id);
+    const createProveedor = async (prov) => {
+        const created = await SupabaseDataService.createProveedor(prov);
+        const norm = normalizeSupabaseData('proveedores', created);
+        cache.proveedores.push(norm);
+        notifySubscribers();
+        return norm;
+    };
+    const updateProveedor = async (id, prov) => {
+        const updated = await SupabaseDataService.updateProveedor(id, prov);
+        const norm = normalizeSupabaseData('proveedores', updated);
+        const idx = cache.proveedores.findIndex(p => p.id === id);
+        if (idx !== -1) {
+            cache.proveedores[idx] = { ...cache.proveedores[idx], ...norm };
+            notifySubscribers();
+        }
+        return norm;
+    };
+    const deleteProveedor = async (id) => {
+        await SupabaseDataService.deleteProveedor(id);
+        cache.proveedores = cache.proveedores.filter(p => p.id !== id);
+        notifySubscribers();
+        return true;
+    };
+return {
 
         init,
         refreshData,
@@ -1846,7 +2076,14 @@ const DataService = (() => {
 
         // Placeholders
         getReparacionesByEquipo, getReparacionById, createReparacion, updateReparacion, deleteReparacion,
-        getProductosSync, getProductosFiltered, getProductoById, createProducto, updateProducto, deleteProducto,
+        getProductosSync, getProductosFiltered, getProductoById,
+        getProductoByCodigoAndEmpresa: async (codigo, codigoAlt, empresaId, nombre = null) => {
+            if (typeof SupabaseDataService !== 'undefined' && SupabaseDataService.getProductoByCodigoAndEmpresa) {
+                return await SupabaseDataService.getProductoByCodigoAndEmpresa(codigo, codigoAlt, empresaId, nombre);
+            }
+            return null;
+        },
+        createProducto, updateProducto, deleteProducto,
         getSoftwareFiltered, getSoftwareById, getSoftwareByRegistro, getSoftwareUniqueRegistros, createSoftware, updateSoftware, deleteSoftware,
         getProformasSync, getProformasFiltered, getProformaById, getProformasByCliente, getProformasByRango, getNextProformaNumber, createProforma, updateProforma, deleteProforma, getProformasStats,
 
@@ -2109,7 +2346,1222 @@ const DataService = (() => {
                 return await SupabaseDataService.uploadImage(bucket, file);
             }
             throw new Error('Supabase no disponible para subir imagenes');
-        }
+        },
+
+        // Empresas y Bodegas
+        getEmpresasSync: () => [...(cache.empresas || [])],
+        getBodegasSync: () => [...(cache.bodegas || [])],
+        createEmpresa: async (data) => {
+            const res = await SupabaseDataService.createEmpresa(data);
+            if (res.success) { cache.empresas.push(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        createBodega: async (data) => {
+            const res = await SupabaseDataService.createBodega(data);
+            if (res.success) { cache.bodegas.push(res.data); return res.data; }
+            throw new Error(res.error);
+        },
+        updateEmpresa: async (id, dataObj) => {
+            const res = await SupabaseDataService.updateEmpresa(id, dataObj);
+            if (res.success) {
+                const idx = cache.empresas.findIndex(e => e.id === id);
+                if (idx >= 0) cache.empresas[idx] = { ...cache.empresas[idx], ...dataObj };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        updateBodega: async (id, dataObj) => {
+            const res = await SupabaseDataService.updateBodega(id, dataObj);
+            if (res.success) {
+                const idx = cache.bodegas.findIndex(b => b.id === id);
+                if (idx >= 0) cache.bodegas[idx] = { ...cache.bodegas[idx], ...dataObj };
+                return res.data;
+            }
+            throw new Error(res.error);
+        },
+        deleteBodega: async (id) => {
+            const res = await SupabaseDataService.deleteBodega(id);
+            if (res.success) {
+                cache.bodegas = cache.bodegas.filter(b => b.id !== id);
+                return true;
+            }
+            throw new Error(res.error);
+        },
+
+        // Multi-Empresa Helper
+        getActiveEmpresaId: () => {
+            if (typeof SupabaseDataService !== 'undefined' && SupabaseDataService.getActiveEmpresaId) {
+                return SupabaseDataService.getActiveEmpresaId();
+            }
+            if (typeof State !== 'undefined' && State.getCurrentUser) {
+                return State.getCurrentUser()?.empresa_id || null;
+            }
+            return null;
+        },
+
+        // ========== EXPORTACIÓN PDF/EXCEL ==========
+        exportToExcel: (data, filename, sheetName = 'Datos') => {
+            try {
+                // Convert data to worksheet
+                const headers = Object.keys(data[0] || {});
+                const csvContent = [
+                    headers.join(','),
+                    ...data.map(row => headers.map(h => {
+                        let val = row[h];
+                        if (val === null || val === undefined) val = '';
+                        if (typeof val === 'string' && val.includes(',')) val = `"${val}"`;
+                        return val;
+                    }).join(','))
+                ].join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+                link.click();
+                return { success: true };
+            } catch (error) {
+                console.error('Error exportando Excel:', error);
+                return { success: false, error: error.message };
+            }
+        },
+
+        exportReportToPDF: async (reportType, filters = {}) => {
+            try {
+                const stats = DataService.getReportesStats(filters);
+                const user = State.get('user');
+                const fecha = new Date().toLocaleDateString('es-NI');
+
+                let htmlContent = `
+                    <html>
+                    <head>
+                        <title>Reporte ${reportType} - ALLTECH</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; padding: 20px; }
+                            h1 { color: #1a73e8; }
+                            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                            th { background: #1a73e8; color: white; }
+                            .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 20px 0; }
+                            .stat-box { border: 1px solid #ddd; padding: 15px; text-align: center; border-radius: 8px; }
+                            .stat-value { font-size: 24px; font-weight: bold; }
+                            .stat-label { color: #666; font-size: 12px; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>ALLTECH - Reporte de ${reportType}</h1>
+                        <p>Fecha: ${fecha} | Usuario: ${user?.name || user?.username || 'N/A'}</p>
+                        <div class="stat-grid">
+                            <div class="stat-box"><div class="stat-value">${stats.totalClientes}</div><div class="stat-label">Total Clientes</div></div>
+                            <div class="stat-box"><div class="stat-value">${stats.totalServicios}</div><div class="stat-label">Servicios</div></div>
+                            <div class="stat-box"><div class="stat-value">$${stats.ingresosTotales?.toFixed(2) || 0}</div><div class="stat-label">Ingresos</div></div>
+                            <div class="stat-box"><div class="stat-value">${stats.contratosActivos}</div><div class="stat-label">Contratos Activos</div></div>
+                        </div>
+                        <h2>Servicios por Técnico</h2>
+                        <table>
+                            <tr><th>Técnico</th><th>Servicios</th></tr>
+                            ${(stats.serviciosPorTecnico || []).map(t => `<tr><td>${t.tecnico}</td><td>${t.count}</td></tr>`).join('')}
+                        </table>
+                    </body>
+                    </html>
+                `;
+
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+                printWindow.print();
+                return { success: true };
+            } catch (error) {
+                console.error('Error exportando PDF:', error);
+                return { success: false, error: error.message };
+            }
+        },
+
+        // ========== RESUMEN SEMANAL ==========
+        getWeeklySummary: () => {
+            const today = new Date();
+            const weekStart = new Date(today);
+            weekStart.setDate(today.getDate() - today.getDay());
+            weekStart.setHours(0, 0, 0, 0);
+
+            const lastWeekStart = new Date(weekStart);
+            lastWeekStart.setDate(weekStart.getDate() - 7);
+
+            const thisWeekVisitas = cache.visitas.filter(v => {
+                const date = new Date(v.fechaInicio || v.fecha);
+                return date >= weekStart;
+            });
+
+            const lastWeekVisitas = cache.visitas.filter(v => {
+                const date = new Date(v.fechaInicio || v.fecha);
+                return date >= lastWeekStart && date < weekStart;
+            });
+
+            const thisWeekIngresos = thisWeekVisitas.reduce((sum, v) => sum + (parseFloat(v.costoServicio || v.costo || 0)), 0);
+            const lastWeekIngresos = lastWeekVisitas.reduce((sum, v) => sum + (parseFloat(v.costoServicio || v.costo || 0)), 0);
+
+            return {
+                servicios: {
+                    actual: thisWeekVisitas.length,
+                    anterior: lastWeekVisitas.length,
+                    cambio: lastWeekVisitas.length > 0 ? Math.round(((thisWeekVisitas.length - lastWeekVisitas.length) / lastWeekVisitas.length) * 100) : 0
+                },
+                ingresos: {
+                    actual: thisWeekIngresos,
+                    anterior: lastWeekIngresos,
+                    cambio: lastWeekIngresos > 0 ? Math.round(((thisWeekIngresos - lastWeekIngresos) / lastWeekIngresos) * 100) : 0
+                },
+                periodo: {
+                    inicio: weekStart.toLocaleDateString('es-NI'),
+                    fin: today.toLocaleDateString('es-NI')
+                }
+            };
+        },
+
+        // ========== AUDIT LOG ==========
+        addAuditLog: (action, tableName, recordId, oldData = null, newData = null, description = '') => {
+            const user = State.get('user');
+            const logEntry = {
+                id: crypto.randomUUID(),
+                action: action, // CREATE, UPDATE, DELETE
+                tableName: tableName,
+                recordId: recordId,
+                oldData: oldData ? JSON.stringify(oldData) : null,
+                newData: newData ? JSON.stringify(newData) : null,
+                description: description,
+                userId: user?.id || null,
+                userName: user?.name || user?.username || 'Sistema',
+                timestamp: new Date().toISOString()
+            };
+
+            if (!cache.auditLog) cache.auditLog = [];
+            cache.auditLog.unshift(logEntry);
+            if (cache.auditLog.length > 500) cache.auditLog = cache.auditLog.slice(0, 500);
+
+            console.log('📋 Audit Log:', logEntry);
+            return logEntry;
+        },
+
+        getAuditLog: (filters = {}) => {
+            let logs = cache.auditLog || [];
+
+            if (filters.tableName) {
+                logs = logs.filter(l => l.tableName === filters.tableName);
+            }
+            if (filters.action) {
+                logs = logs.filter(l => l.action === filters.action);
+            }
+            if (filters.userId) {
+                logs = logs.filter(l => l.userId === filters.userId);
+            }
+            if (filters.fechaInicio) {
+                const start = new Date(filters.fechaInicio);
+                logs = logs.filter(l => new Date(l.timestamp) >= start);
+            }
+            if (filters.fechaFin) {
+                const end = new Date(filters.fechaFin);
+                end.setHours(23, 59, 59);
+                logs = logs.filter(l => new Date(l.timestamp) <= end);
+            }
+
+            return logs.slice(0, filters.limit || 100);
+        },
+
+        // ========== BACKUP MANUAL ==========
+        createManualBackup: () => {
+            const backupData = {
+                version: '1.0',
+                timestamp: new Date().toISOString(),
+                user: State.get('user')?.username || 'unknown',
+                data: {
+                    clientes: cache.clientes,
+                    contratos: cache.contratos,
+                    visitas: cache.visitas,
+                    equipos: cache.equipos,
+                    productos: cache.productos,
+                    proformas: cache.proformas,
+                    pedidos: cache.pedidos,
+                    empleados: cache.empleados,
+                    recepciones: cache.recepciones,
+                    software: cache.software,
+                    config: cache.config,
+                    auditLog: cache.auditLog || []
+                }
+            };
+
+            const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `alltech_backup_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            link.click();
+
+            DataService.addAuditLog('BACKUP', 'system', 'manual', null, { filename: link.download }, 'Creación de backup manual');
+            return { success: true, filename: link.download };
+        },
+
+        // ========== LIMPIEZA DE DATOS ==========
+        findDuplicateRecords: (tableName) => {
+            const data = cache[tableName] || [];
+            const duplicates = [];
+            const seen = new Map();
+
+            const keyFields = {
+                clientes: 'correo',
+                contratos: ['clienteId', 'fechaInicio'],
+                equipos: ['serie', 'clienteId'],
+                productos: 'codigo',
+                visitas: ['clienteId', 'fechaInicio']
+            };
+
+            const keys = keyFields[tableName] || ['id'];
+            const isArray = Array.isArray(keys);
+
+            data.forEach((record, index) => {
+                const key = isArray ? keys.map(k => record[k]).join('|') : record[keys];
+                if (!key) return;
+
+                if (seen.has(key)) {
+                    duplicates.push({
+                        originalIndex: seen.get(key),
+                        duplicateIndex: index,
+                        record: record,
+                        key: key
+                    });
+                } else {
+                    seen.set(key, index);
+                }
+            });
+
+            return duplicates;
+        },
+
+        findOrphanRecords: () => {
+            const orphans = {
+                visitas: [],
+                equipos: [],
+                contratos: []
+            };
+
+            // Visitas sin cliente
+            cache.visitas?.forEach(v => {
+                if (!v.clienteId && !v.cliente_id) {
+                    orphans.visitas.push({ ...v, reason: 'Sin cliente asignado' });
+                }
+            });
+
+            // Equipos sin cliente
+            cache.equipos?.forEach(e => {
+                if (!e.clienteId && !e.cliente_id) {
+                    orphans.equipos.push({ ...e, reason: 'Sin cliente asignado' });
+                }
+            });
+
+            // Contratos sin cliente
+            cache.contratos?.forEach(c => {
+                if (!c.clienteId && !c.cliente_id) {
+                    orphans.contratos.push({ ...c, reason: 'Sin cliente asignado' });
+                }
+            });
+
+            return orphans;
+        },
+
+        cleanOrphanRecords: (tableName, recordIds) => {
+            const originalLength = cache[tableName]?.length || 0;
+            cache[tableName] = cache[tableName].filter(r => !recordIds.includes(r.id));
+
+            DataService.addAuditLog('CLEAN', tableName, 'batch', { deleted: originalLength - cache[tableName].length }, null, `Eliminados ${originalLength - cache[tableName].length} registros huérfanos`);
+
+            return {
+                success: true,
+                deleted: originalLength - cache[tableName].length,
+                remaining: cache[tableName].length
+            };
+        },
+
+        // ========== KPIs PRODUCTIVIDAD TÉCNICOS ==========
+        getTecnicoProductividad: (periodo = 'month') => {
+            const today = new Date();
+            let startDate = new Date();
+
+            if (periodo === 'week') startDate.setDate(today.getDate() - 7);
+            else if (periodo === 'month') startDate.setMonth(today.getMonth() - 1);
+            else if (periodo === 'quarter') startDate.setMonth(today.getMonth() - 3);
+            else startDate.setFullYear(today.getFullYear() - 1);
+
+            const tecnicosMap = {};
+
+            cache.users?.forEach(u => {
+                if (u.role === 'Tecnico' || u.role === 'Técnico') {
+                    tecnicosMap[u.id] = {
+                        id: u.id,
+                        nombre: u.name || u.username,
+                        servicios: 0,
+                        ingresos: 0,
+                        horasPromedio: 0,
+                        rating: 0
+                    };
+                }
+            });
+
+            const filteredVisitas = cache.visitas.filter(v => {
+                const date = new Date(v.fechaInicio || v.fecha);
+                return date >= startDate && v.usuarioSoporte;
+            });
+
+            filteredVisitas.forEach(v => {
+                const tecnicoId = v.usuarioSoporte;
+                if (tecnicosMap[tecnicoId]) {
+                    tecnicosMap[tecnicoId].servicios++;
+                    tecnicosMap[tecnicoId].ingresos += parseFloat(v.costoServicio || v.costo || 0);
+                }
+            });
+
+            const tecnicos = Object.values(tecnicosMap);
+            const maxServicios = Math.max(...tecnicos.map(t => t.servicios), 1);
+
+            return tecnicos.map(t => ({
+                ...t,
+                productividad: Math.round((t.servicios / maxServicios) * 100),
+                ingresosPromedio: t.servicios > 0 ? Math.round(t.ingresos / t.servicios) : 0
+            })).sort((a, b) => b.servicios - a.servicios);
+        },
+
+        // ========== CONTRATOS POR VENCER ==========
+        getContratosPorVencer: (dias = 30) => {
+            const today = new Date();
+            const fechaLimite = new Date();
+            fechaLimite.setDate(today.getDate() + dias);
+
+            return cache.contratos.filter(c => {
+                const estado = (c.estadoContrato || c.estado_contrato || '').toUpperCase();
+                if (estado !== 'ACTIVO') return false;
+
+                const fechaFin = new Date(c.fechaFin || c.fecha_fin);
+                return fechaFin >= today && fechaFin <= fechaLimite;
+            }).map(c => {
+                const fechaFin = new Date(c.fechaFin || c.fecha_fin);
+                const diasRestantes = Math.ceil((fechaFin - today) / (1000 * 60 * 60 * 24));
+                const cliente = cache.clientes.find(cl => cl.id === c.clienteId);
+
+                return {
+                    ...c,
+                    clienteNombre: cliente?.nombreCliente || cliente?.empresa || 'N/A',
+                    diasRestantes,
+                    urgencia: diasRestantes <= 7 ? 'critica' : diasRestantes <= 15 ? 'alta' : 'normal'
+                };
+            }).sort((a, b) => a.diasRestantes - b.diasRestantes);
+        },
+
+        // ============================================================
+        // GESTIÓN FINANCIERA - QUICKBOOKS STYLE
+        // ============================================================
+
+        // ---- Métricas financieras completas ----
+        getFinMetrics: (periodo = 'month') => {
+            const today = new Date();
+            let startDate = new Date();
+            let yearStart = new Date(today.getFullYear(), 0, 1);
+            
+            if (periodo === 'week') startDate.setDate(today.getDate() - 7);
+            else if (periodo === 'month') startDate.setMonth(today.getMonth() - 1);
+            else if (periodo === 'quarter') startDate.setMonth(today.getMonth() - 3);
+            else if (periodo === 'year') startDate.setFullYear(today.getFullYear() - 1);
+            else startDate.setMonth(today.getMonth() - 1);
+
+            // Ingresos de caché financiero
+            const ingresos = (cache.finIngresos || []).filter(i => {
+                const d = new Date(i.fecha);
+                return d >= startDate;
+            });
+            
+            const gastos = (cache.finGastos || []).filter(g => {
+                const d = new Date(g.fecha);
+                return d >= startDate;
+            });
+
+            // Métricas básicas
+            const ingresosMes = ingresos.reduce((s, i) => s + (parseFloat(i.monto) || 0), 0);
+            const gastosMes = gastos.reduce((s, g) => s + (parseFloat(g.monto) || 0), 0);
+            
+            // IVA
+            const ivaVentas = ingresos.reduce((s, i) => s + (parseFloat(i.iva) || 0), 0);
+            const ivaCompras = gastos.filter(g => g.iva_credito).reduce((s, g) => s + (parseFloat(g.iva_credito) || 0), 0);
+            
+            // Cuentas por cobrar/pagar
+            const cxc = (cache.finCuentasCobrar || []).filter(c => c.estado === 'pendiente');
+            const cxp = (cache.finCuentasPagar || []).filter(c => c.estado === 'pendiente');
+            
+            // Bancos
+            const bancos = (cache.finBancos || []).reduce((s, b) => s + (parseFloat(b.saldo_actual) || 0), 0);
+
+            // Anual
+            const ingresosAnio = (cache.finIngresos || []).filter(i => new Date(i.fecha) >= yearStart).reduce((s, i) => s + (parseFloat(i.monto) || 0), 0);
+            const gastosAnio = (cache.finGastos || []).filter(g => new Date(g.fecha) >= yearStart).reduce((s, g) => s + (parseFloat(g.monto) || 0), 0);
+
+            // Período anterior para tendencias
+            const prevStart = new Date(startDate);
+            const prevEnd = new Date(today);
+            prevStart.setTime(startDate.getTime() - (today.getTime() - startDate.getTime()));
+            
+            const prevIngresos = (cache.finIngresos || []).filter(i => {
+                const d = new Date(i.fecha);
+                return d >= prevStart && d < startDate;
+            }).reduce((s, i) => s + (parseFloat(i.monto) || 0), 0);
+            
+            const prevGastos = (cache.finGastos || []).filter(g => {
+                const d = new Date(g.fecha);
+                return d >= prevStart && d < startDate;
+            }).reduce((s, g) => s + (parseFloat(g.monto) || 0), 0);
+
+            const calcTrend = (curr, prev) => prev > 0 ? Math.round(((curr - prev) / prev) * 100 * 10) / 10 : 0;
+
+            return {
+                // Período actual
+                ingresos: ingresosMes,
+                gastos: gastosMes,
+                utilidad: ingresosMes - gastosMes,
+                margen: ingresosMes > 0 ? ((ingresosMes - gastosMes) / ingresosMes) * 100 : 0,
+                ivaPorPagar: ivaVentas - ivaCompras,
+                ivaVentas,
+                ivaCompras,
+                // Cuentas
+                cuentasCobrar: { total: cxc.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0), count: cxc.length },
+                cuentasPagar: { total: cxp.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0), count: cxp.length },
+                bancos,
+                // Anual
+                ingresosAnio,
+                gastosAnio,
+                utilidadAnio: ingresosAnio - gastosAnio,
+                // Tendencias
+                tendencias: {
+                    ingresos: { actual: ingresosMes, anterior: prevIngresos, cambio: calcTrend(ingresosMes, prevIngresos) },
+                    gastos: { actual: gastosMes, anterior: prevGastos, cambio: calcTrend(gastosMes, prevGastos) }
+                }
+            };
+        },
+
+        // ---- Obtener ingresos vinculados a otros módulos ----
+        getFinIngresosFromModules: () => {
+            const ingresos = [];
+            const iva = cache.config.ivaRate || 0.15;
+
+            // De contratos activos
+            cache.contratos?.forEach(c => {
+                if ((c.estadoContrato || '').toUpperCase() === 'ACTIVO') {
+                    const cliente = cache.clientes.find(cl => cl.id === c.clienteId);
+                    ingresos.push({
+                        fuente: 'contrato',
+                        fuenteId: c.id,
+                        fecha: c.fechaInicio || c.fecha_creacion || new Date().toISOString(),
+                        categoria: 'Contratos de Mantenimiento',
+                        descripcion: `Contrato: ${cliente?.empresa || cliente?.nombreCliente || 'N/A'}`,
+                        cliente: cliente?.empresa || cliente?.nombreCliente || 'N/A',
+                        subtotal: parseFloat(c.valorContrato || c.valor || 0),
+                        iva: parseFloat(c.valorContrato || c.valor || 0) * iva,
+                        monto: parseFloat(c.valorContrato || c.valor || 0) * (1 + iva),
+                        metodo_pago: 'Transferencia'
+                    });
+                }
+            });
+
+            // De ventas (tomar últimas 50)
+            (cache.proformas || []).filter(p => p.estado === 'Aprobada').slice(0, 50).forEach(p => {
+                const cliente = cache.clientes.find(cl => cl.id === p.clienteId);
+                const total = parseFloat(p.total || p.monto || 0);
+                ingresos.push({
+                    fuente: 'venta',
+                    fuenteId: p.id,
+                    fecha: p.fechaAprobacion || p.fecha_creacion || new Date().toISOString(),
+                    categoria: 'Ventas de Productos',
+                    descripcion: `Proforma #${p.numero || p.id}`,
+                    cliente: cliente?.empresa || cliente?.nombreCliente || 'N/A',
+                    subtotal: total / 1.15,
+                    iva: total - (total / 1.15),
+                    monto: total,
+                    metodo_pago: p.metodo_pago || 'Efectivo'
+                });
+            });
+
+            return ingresos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        },
+
+        // ---- Obtener gastos vinculados a otros módulos ----
+        getFinGastosFromModules: () => {
+            const gastos = [];
+
+            // De nóminas/empleados
+            (cache.nominas || []).forEach(n => {
+                const empleado = cache.empleados?.find(e => e.id === n.empleadoId);
+                gastos.push({
+                    fuente: 'nomina',
+                    fuenteId: n.id,
+                    fecha: n.fecha_pago || n.fecha_creacion || new Date().toISOString(),
+                    categoria: 'Salarios',
+                    descripcion: `Nómina: ${empleado?.nombre || 'Empleado'}`,
+                    proveedor: 'Nómina de Empleados',
+                    monto: parseFloat(n.monto_neto || n.total || 0),
+                    subtotal: parseFloat(n.monto_neto || n.total || 0),
+                    iva_credito: 0,
+                    comprobante: n.numero || n.id
+                });
+            });
+
+            // De pedidos (compras a proveedores)
+            (cache.pedidos || []).filter(p => p.estado === 'Recibido' || p.estado === 'completado').forEach(p => {
+                const proveedor = cache.proveedores?.find(pr => pr.id === p.proveedorId);
+                const total = parseFloat(p.total || p.monto || 0);
+                gastos.push({
+                    fuente: 'pedido',
+                    fuenteId: p.id,
+                    fecha: p.fecha_recibido || p.fecha_creacion || new Date().toISOString(),
+                    categoria: 'Compra de Inventario',
+                    descripcion: `Pedido #${p.numero || p.id}`,
+                    proveedor: proveedor?.nombre || 'Proveedor',
+                    monto: total,
+                    subtotal: total / 1.15,
+                    iva_credito: total - (total / 1.15),
+                    comprobante: p.numero || p.id
+                });
+            });
+
+            return gastos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        },
+
+        // ---- Importar desde otros módulos ----
+        syncFinFromModules: () => {
+            // Obtener ingresos de contratos
+            const ingresosContratos = DataService.getFinIngresosFromModules();
+            
+            // Marcar como importados
+            ingresosContratos.forEach(i => {
+                const existe = (cache.finIngresos || []).some(fi => fi.fuente === i.fuente && fi.fuenteId === i.fuenteId);
+                if (!existe && cache.finIngresos) {
+                    cache.finIngresos.push({ ...i, imported_at: new Date().toISOString() });
+                }
+            });
+
+            // Obtener gastos de nóminas y pedidos
+            const gastosModules = DataService.getFinGastosFromModules();
+            gastosModules.forEach(g => {
+                const existe = (cache.finGastos || []).some(fg => fg.fuente === g.fuente && fg.fuenteId === g.fuenteId);
+                if (!existe && cache.finGastos) {
+                    cache.finGastos.push({ ...g, imported_at: new Date().toISOString() });
+                }
+            });
+
+            return {
+                ingresosImportados: ingresosContratos.length,
+                gastosImportados: gastosModules.length
+            };
+        },
+
+        // ---- Estados Financieros ----
+        getEstadoResultados: (periodo = 'month') => {
+            const today = new Date();
+            let startDate = new Date();
+            if (periodo === 'month') startDate.setMonth(today.getMonth() - 1);
+            else if (periodo === 'quarter') startDate.setMonth(today.getMonth() - 3);
+            else startDate.setFullYear(today.getFullYear() - 1);
+
+            const ingresos = (cache.finIngresos || []).filter(i => new Date(i.fecha) >= startDate);
+            const gastos = (cache.finGastos || []).filter(g => new Date(g.fecha) >= startDate);
+
+            // Agrupar por categoría
+            const ingresosPorCategoria = {};
+            ingresos.forEach(i => {
+                const cat = i.categoria || 'Otros';
+                if (!ingresosPorCategoria[cat]) ingresosPorCategoria[cat] = 0;
+                ingresosPorCategoria[cat] += parseFloat(i.monto || 0);
+            });
+
+            const gastosPorCategoria = {};
+            gastos.forEach(g => {
+                const cat = g.categoria || 'Otros';
+                if (!gastosPorCategoria[cat]) gastosPorCategoria[cat] = 0;
+                gastosPorCategoria[cat] += parseFloat(g.monto || 0);
+            });
+
+            const totalIngresos = Object.values(ingresosPorCategoria).reduce((s, v) => s + v, 0);
+            const totalGastos = Object.values(gastosPorCategoria).reduce((s, v) => s + v, 0);
+            const iva = ingresos.reduce((s, i) => s + (parseFloat(i.iva) || 0), 0);
+
+            return {
+                periodo: periodo,
+                ingresos: ingresosPorCategoria,
+                gastos: gastosPorCategoria,
+                totalIngresos,
+                totalGastos,
+                utilidadBruta: totalIngresos - totalGastos,
+                iva,
+                utilidadNeta: totalIngresos - totalGastos - iva,
+                margenNeto: totalIngresos > 0 ? ((totalIngresos - totalGastos - iva) / totalIngresos) * 100 : 0
+            };
+        },
+
+        getBalanceGeneral: () => {
+            // Activos
+            const bancos = (cache.finBancos || []).reduce((s, b) => s + (parseFloat(b.saldo_actual) || 0), 0);
+            const cxc = (cache.finCuentasCobrar || []).filter(c => c.estado === 'pendiente').reduce((s, c) => s + (parseFloat(c.monto) || 0), 0);
+            
+            // Pasivos
+            const cxp = (cache.finCuentasPagar || []).filter(c => c.estado === 'pendiente').reduce((s, c) => s + (parseFloat(c.monto) || 0), 0);
+            
+            // Patrimonio
+            const ingresosAnio = (cache.finIngresos || []).reduce((s, i) => s + (parseFloat(i.monto) || 0), 0);
+            const gastosAnio = (cache.finGastos || []).reduce((s, g) => s + (parseFloat(g.monto) || 0), 0);
+            const utilidad = ingresosAnio - gastosAnio;
+
+            return {
+                activos: {
+                    bancos,
+                    cuentasCobrar: cxc,
+                    total: bancos + cxc
+                },
+                pasivos: {
+                    cuentasPagar: cxp,
+                    total: cxp
+                },
+                patrimonio: {
+                    capital: 0,
+                    utilidadAcumulada: utilidad,
+                    total: utilidad
+                }
+            };
+        },
+
+        // ---- Proyección de flujo de caja ----
+        getProyeccionFlujo: (meses = 3) => {
+            const today = new Date();
+            const projection = [];
+
+            for (let i = 0; i < meses; i++) {
+                const monthDate = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                const monthEnd = new Date(today.getFullYear(), today.getMonth() + i + 1, 0);
+                
+                const ingresos = (cache.finIngresos || []).filter(x => {
+                    const d = new Date(x.fecha);
+                    return d >= monthDate && d <= monthEnd;
+                }).reduce((s, x) => s + (parseFloat(x.monto) || 0), 0);
+
+                const gastos = (cache.finGastos || []).filter(x => {
+                    const d = new Date(x.fecha);
+                    return d >= monthDate && d <= monthEnd;
+                }).reduce((s, x) => s + (parseFloat(x.monto) || 0), 0);
+
+                // Contratos que vencen este mes (ingresos esperados)
+                const contratosVencen = (cache.contratos || []).filter(c => {
+                    const fc = new Date(c.fechaFin);
+                    return fc.getMonth() === monthDate.getMonth() && fc.getFullYear() === monthDate.getFullYear();
+                }).reduce((s, c) => s + (parseFloat(c.valorContrato || c.valor || 0) * 1.15), 0);
+
+                projection.push({
+                    mes: monthDate.toLocaleDateString('es', { month: 'long', year: 'numeric' }),
+                    ingresos,
+                    gastos,
+                    neto: ingresos - gastos,
+                    ingresosEsperados: contratosVencen,
+                    flujoProyectado: ingresos + contratosVencen - gastos
+                });
+            }
+
+            return projection;
+        },
+
+        // ---- Alertas financieras ----
+        getFinAlertas: () => {
+            const alertas = [];
+            const metrics = DataService.getFinMetrics('month');
+
+            // Alerta de flujo negativo
+            if (metrics.utilidad < 0) {
+                alertas.push({
+                    tipo: 'danger',
+                    titulo: 'Utilidad Negativa',
+                    mensaje: `El período actual tiene pérdida de C$${Math.abs(metrics.utilidad).toFixed(2)}`
+                });
+            }
+
+            // Alerta de cuentas por cobrar vencidas
+            const cxcVencidas = (cache.finCuentasCobrar || []).filter(c => {
+                return c.estado === 'pendiente' && new Date(c.fecha_vencimiento) < new Date();
+            });
+            if (cxcVencidas.length > 0) {
+                const total = cxcVencidas.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0);
+                alertas.push({
+                    tipo: 'warning',
+                    titulo: 'Cuentas por Cobrar Vencidas',
+                    mensaje: `${cxcVencidas.length} facturas vencidas por C$${total.toFixed(2)}`
+                });
+            }
+
+            // Alerta de cuentas por pagar próximas
+            const cxpProximas = (cache.finCuentasPagar || []).filter(c => {
+                if (c.estado !== 'pendiente') return false;
+                const v = new Date(c.fecha_vencimiento);
+                const dias = Math.ceil((v - new Date()) / (1000 * 60 * 60 * 24));
+                return dias <= 7 && dias > 0;
+            });
+            if (cxpProximas.length > 0) {
+                const total = cxpProximas.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0);
+                alertas.push({
+                    tipo: 'warning',
+                    titulo: 'Pagos Próximos',
+                    mensaje: `${cxpProximas.length} pagos por C$${total.toFixed(2)} vencen en 7 días`
+                });
+            }
+
+            // Alerta de bajo saldo en bancos
+            const bancos = (cache.finBancos || []).filter(b => (parseFloat(b.saldo_actual) || 0) < 1000);
+            if (bancos.length > 0) {
+                alertas.push({
+                    tipo: 'warning',
+                    titulo: 'Saldo Bajo en Bancos',
+                    mensaje: `${bancos.length} cuenta(s) con saldo menor a C$1,000`
+                });
+            }
+
+            // Alerta de presupuesto excedido
+            (cache.finPresupuestos || []).forEach(p => {
+                const gastado = (cache.finGastos || []).filter(g => 
+                    g.categoria === p.categoria && new Date(g.fecha) >= new Date(p.fecha_inicio || new Date().getFullYear() + '-01-01')
+                ).reduce((s, g) => s + (parseFloat(g.monto) || 0), 0);
+                
+                if (gastado > parseFloat(p.monto)) {
+                    alertas.push({
+                        tipo: 'danger',
+                        titulo: 'Presupuesto Excedido',
+                        mensaje: `${p.categoria}: gastado C$${gastado.toFixed(2)} de C$${parseFloat(p.monto).toFixed(2)}`
+                    });
+                }
+            });
+
+            return alertas;
+        },
+
+        // ---- Centros de costo ----
+        getCentrosCosto: () => {
+            const centros = {};
+            
+            // Por cliente
+            cache.clientes?.forEach(c => {
+                const key = c.empresa || c.nombreCliente || 'Sin cliente';
+                const visitas = (cache.visitas || []).filter(v => v.clienteId === c.id);
+                const ingresos = visitas.reduce((s, v) => s + (parseFloat(v.costoServicio) || 0), 0);
+                
+                if (!centros[key]) centros[key] = { nombre: key, servicios: 0, ingresos: 0, costos: 0 };
+                centros[key].servicios += visitas.length;
+                centros[key].ingresos += ingresos;
+            });
+
+            // Por tipo de servicio
+            (cache.visitas || []).forEach(v => {
+                const tipo = v.tipoVisita || 'Otro';
+                if (!centros[tipo]) centros[tipo] = { nombre: tipo, servicios: 0, ingresos: 0, costos: 0 };
+                centros[tipo].servicios++;
+                centros[tipo].ingresos += parseFloat(v.costoServicio) || 0;
+            });
+
+            return Object.values(centros).map(c => ({
+                ...c,
+                rentabilidad: c.ingresos > 0 ? ((c.ingresos - c.costos) / c.ingresos) * 100 : 0
+            })).sort((a, b) => b.ingresos - a.ingresos);
+        },
+
+        // ---- CRUD básico financiero ----
+        addFinIngreso: (data) => {
+            const ingreso = {
+                id: crypto.randomUUID(),
+                ...data,
+                iva: data.subtotal ? data.subtotal * (cache.config.ivaRate || 0.15) : 0,
+                monto: data.subtotal ? data.subtotal * 1.15 : 0,
+                created_at: new Date().toISOString()
+            };
+            cache.finIngresos = cache.finIngresos || [];
+            cache.finIngresos.unshift(ingreso);
+            DataService.addAuditLog('CREATE', 'finIngresos', ingreso.id, null, ingreso, 'Ingreso registrado');
+            return ingreso;
+        },
+
+        addFinGasto: (data) => {
+            const gasto = {
+                id: crypto.randomUUID(),
+                ...data,
+                iva_credito: data.subtotal ? data.subtotal * (cache.config.ivaRate || 0.15) : 0,
+                monto: data.subtotal ? data.subtotal * 1.15 : data.monto || 0,
+                created_at: new Date().toISOString()
+            };
+            cache.finGastos = cache.finGastos || [];
+            cache.finGastos.unshift(gasto);
+            DataService.addAuditLog('CREATE', 'finGastos', gasto.id, null, gasto, 'Gasto registrado');
+            return gasto;
+        },
+
+        getFinIngresos: () => cache.finIngresos || [],
+        getFinGastos: () => cache.finGastos || [],
+        getFinCategorias: () => cache.finCategorias || [],
+        
+        // ---- Exportar reportes financieros ----
+        exportReporteFinanciero: (tipo, formato = 'csv') => {
+            let data = [];
+            let filename = '';
+
+            if (tipo === 'estado_resultados') {
+                const er = DataService.getEstadoResultados('month');
+                data = [
+                    { concepto: 'Ingresos', monto: er.totalIngresos },
+                    ...Object.entries(er.ingresos).map(([k, v]) => ({ concepto: k, monto: v })),
+                    { concepto: '', monto: '' },
+                    { concepto: 'Gastos', monto: er.totalGastos },
+                    ...Object.entries(er.gastos).map(([k, v]) => ({ concepto: k, monto: v })),
+                    { concepto: '', monto: '' },
+                    { concepto: 'IVA', monto: er.iva },
+                    { concepto: 'UTILIDAD NETA', monto: er.utilidadNeta }
+                ];
+                filename = 'estado_resultados';
+            } else if (tipo === 'balance') {
+                const bg = DataService.getBalanceGeneral();
+                data = [
+                    { concepto: 'ACTIVOS', monto: bg.activos.total },
+                    { concepto: 'Bancos', monto: bg.activos.bancos },
+                    { concepto: 'Cuentas por Cobrar', monto: bg.activos.cuentasCobrar },
+                    { concepto: '', monto: '' },
+                    { concepto: 'PASIVOS', monto: bg.pasivos.total },
+                    { concepto: 'Cuentas por Pagar', monto: bg.pasivos.cuentasPagar },
+                    { concepto: '', monto: '' },
+                    { concepto: 'PATRIMONIO', monto: bg.patrimonio.total },
+                    { concepto: 'Utilidad Acumulada', monto: bg.patrimonio.utilidadAcumulada }
+                ];
+                filename = 'balance_general';
+            } else if (tipo === 'flujo') {
+                const flujo = DataService.getProyeccionFlujo(6);
+                data = flujo;
+                filename = 'flujo_caja';
+            }
+
+            // Exportar a CSV
+            const headers = Object.keys(data[0] || {});
+            const csv = [
+                headers.join(','),
+                ...data.map(row => headers.map(h => row[h]).join(','))
+            ].join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+
+            return { success: true, filename };
+        },
+
+        // ============================================================
+        // ANÁLISIS DE PRODUCTOS Y PEDIDOS
+        // ============================================================
+
+        // ---- Productos en inventario mínimo ----
+        getProductosInventarioMinimo: () => {
+            const productos = DataService.getProductosSync();
+            return productos.filter(p => {
+                const stock = parseFloat(p.stock || p.inventario || 0);
+                const minimo = parseFloat(p.inventarioMinimo || p.stock_minimo || 0);
+                return minimo > 0 && stock <= minimo;
+            }).map(p => ({
+                ...p,
+                stockActual: parseFloat(p.stock || p.inventario || 0),
+                stockMinimo: parseFloat(p.inventarioMinimo || p.stock_minimo || 0),
+                deficit: Math.max(0, parseFloat(p.inventarioMinimo || p.stock_minimo || 0) - (parseFloat(p.stock || p.inventario || 0)))
+            })).sort((a, b) => a.stockActual - b.stockActual);
+        },
+
+        // ---- Productos de alta rotación (más vendidos) ----
+        getProductosMasVendidos: (limite = 20, periodo = 'month') => {
+            const today = new Date();
+            let startDate = new Date();
+            if (periodo === 'week') startDate.setDate(today.getDate() - 7);
+            else if (periodo === 'month') startDate.setMonth(today.getMonth() - 1);
+            else if (periodo === 'quarter') startDate.setMonth(today.getMonth() - 3);
+            else startDate.setFullYear(today.getFullYear() - 1);
+
+            const ventasMap = {};
+
+            // De ventas (proformas aprobadas)
+            (cache.proformas || []).filter(p => {
+                if (p.estado !== 'Aprobada' && p.estado !== 'aprobada') return false;
+                const fecha = new Date(p.fechaAprobacion || p.fecha_creacion || p.created_at);
+                return fecha >= startDate;
+            }).forEach(p => {
+                (p.items || []).forEach(item => {
+                    const prodId = item.productoId || item.product_id || item.id;
+                    if (!ventasMap[prodId]) {
+                        ventasMap[prodId] = { 
+                            productoId: prodId, 
+                            nombre: item.nombre || item.name || 'Producto',
+                            cantidad: 0, 
+                            ingresos: 0 
+                        };
+                    }
+                    ventasMap[prodId].cantidad += parseFloat(item.cantidad || 1);
+                    ventasMap[prodId].ingresos += parseFloat(item.precio || item.subtotal || 0) * (item.cantidad || 1);
+                });
+            });
+
+            // De pedidos
+            (cache.pedidos || []).filter(p => {
+                const fecha = new Date(p.fecha || p.fecha_creacion || p.created_at);
+                return fecha >= startDate;
+            }).forEach(p => {
+                (p.items || []).forEach(item => {
+                    const prodId = item.productoId || item.product_id || item.id;
+                    if (!ventasMap[prodId]) {
+                        ventasMap[prodId] = { 
+                            productoId: prodId, 
+                            nombre: item.nombre || item.name || 'Producto',
+                            cantidad: 0, 
+                            ingresos: 0 
+                        };
+                    }
+                    ventasMap[prodId].cantidad += parseFloat(item.cantidad || 1);
+                    ventasMap[prodId].ingresos += parseFloat(item.precio || item.subtotal || 0) * (item.cantidad || 1);
+                });
+            });
+
+            return Object.values(ventasMap)
+                .sort((a, b) => b.cantidad - a.cantidad)
+                .slice(0, limite);
+        },
+
+        // ---- Productos de baja rotación (menos vendidos) ----
+        getProductosMenosVendidos: (limite = 20, periodo = 'year') => {
+            const masVendidos = DataService.getProductosMasVendidos(100, periodo);
+            const productos = DataService.getProductosSync();
+            
+            // Productos que no están en los más vendidos o tienen ventas muy bajas
+            const productoIdsConVentas = new Set(masVendidos.map(p => p.productoId));
+            
+            return productos
+                .filter(p => !productoIdsConVentas.has(p.id))
+                .map(p => ({
+                    ...p,
+                    cantidadVendida: 0,
+                    ingresosGenerados: 0,
+                    ultimaVenta: null
+                }))
+                .slice(0, limite);
+        },
+
+        // ---- Sugerencias de compra basadas en rotación ----
+        getSugerenciasCompra: () => {
+            const inventarioMinimo = DataService.getProductosInventarioMinimo();
+            const masVendidos = DataService.getProductosMasVendidos(30, 'month');
+            const productoIdsAltaRotacion = new Set(masVendidos.map(p => p.productoId));
+
+            const sugerencias = [];
+
+            // Productos en inventario mínimo
+            inventarioMinimo.forEach(p => {
+                sugerencias.push({
+                    producto: p,
+                    tipo: 'inventario_minimo',
+                    prioridad: 'alta',
+                    cantidadSugerida: Math.max(p.deficit, p.stockMinimo * 2),
+                    razon: `Stock actual (${p.stockActual}) está por debajo del mínimo (${p.stockMinimo})`
+                });
+            });
+
+            // Productos de alta rotación no en inventario mínimo
+            masVendidos.slice(0, 10).forEach(p => {
+                const producto = (cache.productos || []).find(pr => pr.id === p.productoId);
+                if (producto && producto.stock <= producto.inventarioMinimo) {
+                    // Ya incluido en inventario mínimo
+                } else if (producto && producto.stock < 10) {
+                    sugerencias.push({
+                        producto: producto || { id: p.productoId, nombre: p.nombre, stock: 0, inventarioMinimo: 5 },
+                        tipo: 'alta_rotacion',
+                        prioridad: 'media',
+                        cantidadSugerida: Math.ceil(p.cantidad * 1.5),
+                        razon: `Alta rotación: ${p.cantidad} unidades vendidas este mes`
+                    });
+                }
+            });
+
+            return sugerencias.sort((a, b) => {
+                const prioridadOrder = { alta: 0, media: 1, baja: 2 };
+                return prioridadOrder[a.prioridad] - prioridadOrder[b.prioridad];
+            });
+        },
+
+        // ---- Análisis de rentabilidad por producto ----
+        getAnalisisRentabilidad: () => {
+            const masVendidos = DataService.getProductosMasVendidos(50, 'month');
+            
+            return masVendidos.map(p => {
+                const producto = (cache.productos || []).find(pr => pr.id === p.productoId);
+                const costo = parseFloat(producto?.precioCompra || producto?.precio_costo || 0);
+                const precioVenta = p.ingresos / p.cantidad;
+                const ganancia = precioVenta - costo;
+                const margen = precioVenta > 0 ? (ganancia / precioVenta) * 100 : 0;
+
+                return {
+                    ...p,
+                    costo,
+                    precioVenta,
+                    ganancia,
+                    margen,
+                    rentabilidad: margen > 30 ? 'alta' : margen > 15 ? 'media' : 'baja'
+                };
+            }).sort((a, b) => b.margen - a.margen);
+        },
+
+        // ---- Pedidos por proveedor ----
+        getPedidosPorProveedor: (proveedorId = null) => {
+            let pedidos = cache.pedidos || [];
+            
+            if (proveedorId) {
+                pedidos = pedidos.filter(p => p.proveedorId === proveedorId);
+            }
+
+            // Agrupar por proveedor
+            const porProveedor = {};
+            pedidos.forEach(p => {
+                const prov = p.proveedor || p.proveedorNombre || 'Sin proveedor';
+                if (!porProveedor[prov]) {
+                    porProveedor[prov] = { nombre: prov, pedidos: [], total: 0 };
+                }
+                porProveedor[prov].pedidos.push(p);
+                porProveedor[prov].total += parseFloat(p.total || p.monto || 0);
+            });
+
+            return Object.values(porProveedor);
+        },
+
+        // ---- Órdenes de compra ----
+        getOrdenesCompra: () => cache.ordenesCompra || [],
+        
+        createOrdenCompra: (data) => {
+            const orden = {
+                id: crypto.randomUUID(),
+                ...data,
+                estado: 'pendiente',
+                created_at: new Date().toISOString()
+            };
+            cache.ordenesCompra = cache.ordenesCompra || [];
+            cache.ordenesCompra.unshift(orden);
+            return orden;
+        },
+
+        updateOrdenCompra: (id, updates) => {
+            const idx = (cache.ordenesCompra || []).findIndex(o => o.id === id);
+            if (idx >= 0) {
+                cache.ordenesCompra[idx] = { ...cache.ordenesCompra[idx], ...updates, updated_at: new Date().toISOString() };
+                return cache.ordenesCompra[idx];
+            }
+            return null;
+        },
+
+        // ---- Cotizador por proveedor ----
+        getCotizacionProveedor: (productoId) => {
+            const producto = (cache.productos || []).find(p => p.id === productoId);
+            if (!producto) return null;
+
+            // Buscar proveedores que tengan el producto
+            const proveedores = cache.proveedores || [];
+            
+            // Simular cotizaciones basadas en datos existentes
+            const cotizaciones = [
+                { proveedor: 'Proveedor Principal', precio: parseFloat(producto.precioCompra || producto.precio_costo || 0), tiempoEntrega: '24-48h', confiable: 95 },
+                { proveedor: 'Proveedor Alternativo 1', precio: (parseFloat(producto.precioCompra || 0) * 1.05), tiempoEntrega: '3-5 días', confiable: 85 },
+                { proveedor: 'Proveedor Alternativo 2', precio: (parseFloat(producto.precioCompra || 0) * 0.95), tiempoEntrega: '7-10 días', confiable: 70 }
+            ].filter(c => c.precio > 0);
+
+            return {
+                producto,
+                cotizaciones: cotizaciones.sort((a, b) => a.precio - b.precio)
+            };
+        },
+
+        // ---- Estadísticas de productos ----
+        getEstadisticasProductos: (periodo = 'month') => {
+            const masVendidos = DataService.getProductosMasVendidos(20, periodo);
+            const menosVendidos = DataService.getProductosMenosVendidos(20, periodo);
+            const inventarioMinimo = DataService.getProductosInventarioMinimo();
+            const sugerencias = DataService.getSugerenciasCompra();
+
+            const totalUnidadesVendidas = masVendidos.reduce((s, p) => s + p.cantidad, 0);
+            const totalIngresos = masVendidos.reduce((s, p) => s + p.ingresos, 0);
+            const promedioVentaDia = totalUnidadesVendidas / 30;
+
+            return {
+                periodo,
+                masVendidos,
+                menosVendidos,
+                inventarioMinimo,
+                sugerencias,
+                totales: {
+                    unidadesVendidas: totalUnidadesVendidas,
+                    ingresosGenerados: totalIngresos,
+                    promedioVentaDia: promedioVentaDia.toFixed(1),
+                    productosEnMinimo: inventarioMinimo.length,
+                    sugerenciasCompra: sugerencias.length
+                }
+            };
+        },
+
+        // ---- Historial de pedidos ----
+        getHistorialPedidos: (filtros = {}) => {
+            let pedidos = [...(cache.pedidos || [])];
+
+            if (filtros.proveedorId) {
+                pedidos = pedidos.filter(p => p.proveedorId === filtros.proveedorId);
+            }
+            if (filtros.estado) {
+                pedidos = pedidos.filter(p => p.estado === filtros.estado);
+            }
+            if (filtros.fechaInicio) {
+                pedidos = pedidos.filter(p => new Date(p.fecha) >= new Date(filtros.fechaInicio));
+            }
+            if (filtros.fechaFin) {
+                pedidos = pedidos.filter(p => new Date(p.fecha) <= new Date(filtros.fechaFin));
+            }
+            if (filtros.buscar) {
+                const busq = filtros.buscar.toLowerCase();
+                pedidos = pedidos.filter(p => 
+                    (p.numero || '').toLowerCase().includes(busq) ||
+                    (p.cliente || '').toLowerCase().includes(busq) ||
+                    (p.proveedor || '').toLowerCase().includes(busq)
+                );
+            }
+
+            return pedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        },
+
+        // ---- Generar orden de compra desde sugerencias ----
+        generarOrdenDesdeSugerencias: (sugerencias) => {
+            const proveedorPrincipal = 'Proveedor Principal'; // Por ahora simulado
+            
+            const items = sugerencias.map(s => ({
+                productoId: s.producto.id,
+                nombre: s.producto.nombre,
+                cantidad: s.cantidadSugerida,
+                precioUnitario: s.producto.precioCompra || s.producto.precio_costo || 0,
+                subtotal: s.cantidadSugerida * (s.producto.precioCompra || s.producto.precio_costo || 0)
+            }));
+
+            const total = items.reduce((s, i) => s + i.subtotal, 0);
+
+            const orden = DataService.createOrdenCompra({
+                proveedor: proveedorPrincipal,
+                items,
+                total,
+                fecha_esperada: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                notas: `Orden generada automáticamente desde sugerencias de inventario`
+            });
+
+            return orden;
+        },
+
+        // ---- Obtener caché interno ----
+        getCache: () => cache
     };
 })();
 

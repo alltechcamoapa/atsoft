@@ -1258,3 +1258,226 @@ textarea,
     font-weight: var(--font-weight-bold);
     color: var(--color-primary-600);
 }
+
+/* ========== STAT CARD TRENDS ========== */
+.stat-card__trend {
+    display: block;
+    font-size: 0.75rem;
+    margin-top: var(--spacing-xs);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: var(--font-weight-medium);
+}
+
+.stat-card__trend--up {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--color-success);
+}
+
+.stat-card__trend--down {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--color-danger);
+}
+
+/* ========== MONTHLY TRENDS CHART ========== */
+.trends-chart {
+    padding: var(--spacing-md) 0;
+}
+
+.trends-chart__bars {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-around;
+    height: 200px;
+    padding: var(--spacing-md) 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.trends-chart__bar-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+}
+
+.trends-chart__bar-wrapper {
+    display: flex;
+    align-items: flex-end;
+    height: 150px;
+    width: 24px;
+}
+
+.trends-chart__bar {
+    width: 100%;
+    min-height: 4px;
+    border-radius: 4px 4px 0 0;
+    transition: height 0.3s ease;
+}
+
+.trends-chart__bar--servicios {
+    background: linear-gradient(180deg, var(--color-primary-500) 0%, var(--color-primary-600) 100%);
+    margin-right: 2px;
+}
+
+.trends-chart__bar--ingresos {
+    background: linear-gradient(180deg, var(--color-success) 0%, var(--color-success-dark, #059669) 100%);
+    margin-left: 2px;
+}
+
+.trends-chart__label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: var(--spacing-xs);
+}
+
+.trends-chart__legend {
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-md);
+}
+
+.trends-chart__legend-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.trends-chart__legend-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+}
+
+.trends-chart__legend-color--servicios {
+    background: var(--color-primary-500);
+}
+
+.trends-chart__legend-color--ingresos {
+    background: var(--color-success);
+}
+
+/* ========== WEEKLY SUMMARY ========== */
+.weekly-summary {
+    display: flex;
+    gap: var(--spacing-lg);
+}
+
+.weekly-summary__item {
+    flex: 1;
+    text-align: center;
+    padding: var(--spacing-md);
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.weekly-summary__label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-bottom: var(--spacing-xs);
+}
+
+.weekly-summary__value {
+    font-size: 1.5rem;
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+
+.weekly-summary__change {
+    display: inline-block;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: var(--spacing-xs);
+}
+
+.weekly-summary__change.positive {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--color-success);
+}
+
+.weekly-summary__change.negative {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--color-danger);
+}
+
+/* ========== CONTRACT ALERTS ========== */
+.contract-alert--critica {
+    border-left: 3px solid var(--color-danger);
+}
+
+.contract-alert--alta {
+    border-left: 3px solid var(--color-warning);
+}
+
+.contract-alert--normal {
+    border-left: 3px solid var(--color-info);
+}
+
+/* ========== BADGES ========== */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    font-weight: var(--font-weight-medium);
+    border-radius: 12px;
+}
+
+.badge--danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--color-danger);
+}
+
+.badge--warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--color-warning);
+}
+
+.badge--info {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--color-info);
+}
+
+.badge--success {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--color-success);
+}
+
+/* ========== INTERACTIVE PIE CHARTS ========== */
+.pie-chart-container {
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.pie-chart-container:hover {
+    transform: scale(1.02);
+}
+
+.pie-chart-container:active {
+    transform: scale(0.98);
+}
+
+.pie-chart-item {
+    cursor: pointer;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.pie-chart-item:hover {
+    background: var(--bg-secondary);
+}
+
+/* ========== PRODUCTIVIDAD TECH ========== */
+.tecnico-productividad .progress {
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.tecnico-productividad .progress-bar {
+    transition: width 0.5s ease;
+}

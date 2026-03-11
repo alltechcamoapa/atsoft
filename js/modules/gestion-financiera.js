@@ -1,25 +1,47 @@
 /**
  * ALLTECH - Gestión Financiera Module
- * Módulo completo de finanzas para Nicaragua (DGI, IVA 15%)
+ * Módulo completo de finanzas estilo QuickBooks para Nicaragua (DGI, IVA 15%)
  */
 const GestionFinancieraModule = (() => {
     const IVA_RATE = 0.15;
     let currentView = 'dashboard';
     let selectedPeriod = 'mes';
 
-    // ========== DATA LAYER (localStorage) ==========
+    // Usar DataService si está disponible, si no usar localStorage
+    const useDataService = typeof DataService !== 'undefined';
+
+    // ========== DATA LAYER (localStorage fallback) ==========
     const STORAGE_KEYS = {
         ingresos: 'fin_ingresos', gastos: 'fin_gastos', categorias: 'fin_categorias',
         facturas: 'fin_facturas', cuentasCobrar: 'fin_cuentas_cobrar', cuentasPagar: 'fin_cuentas_pagar',
         presupuestos: 'fin_presupuestos', impuestos: 'fin_impuestos'
     };
 
-    const getData = (key) => { try { return JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]'); } catch { return []; } };
-    const setData = (key, data) => localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(data));
+    const getData = (key) => { 
+        if (useDataService) {
+            const map = { ingresos: 'finIngresos', gastos: 'finGastos', categorias: 'finCategorias', facturas: 'finFacturas', cuentasCobrar: 'finCuentasCobrar', cuentasPagar: 'finCuentasPagar', presupuestos: 'finPresupuestos' };
+            const cacheKey = map[key];
+            return cacheKey ? DataService.getCache()[cacheKey] || [] : [];
+        }
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEYS[key]) || '[]'); } catch { return []; } 
+    };
+    const setData = (key, data) => {
+        if (!useDataService) localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(data));
+    };
     const genId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
 
-    const addRecord = (key, record) => { const d = getData(key); record.id = genId(); record.created_at = new Date().toISOString(); d.unshift(record); setData(key, d); return record; };
-    const updateRecord = (key, id, updates) => { const d = getData(key); const i = d.findIndex(r => r.id === id); if (i !== -1) { d[i] = { ...d[i], ...updates, updated_at: new Date().toISOString() }; setData(key, d); } return d[i]; };
+    const addRecord = (key, record) => { 
+        if (useDataService) {
+            if (key === 'ingresos') DataService.addFinIngreso(record);
+            else if (key === 'gastos') DataService.addFinGasto(record);
+            return record;
+        }
+        const d = getData(key); record.id = genId(); record.created_at = new Date().toISOString(); d.unshift(record); setData(key, d); return record; 
+    };
+    const updateRecord = (key, id, updates) => { 
+        const d = getData(key); const i = d.findIndex(r => r.id === id); 
+        if (i !== -1) { d[i] = { ...d[i], ...updates, updated_at: new Date().toISOString() }; setData(key, d); } return d[i]; 
+    };
     const deleteRecord = (key, id) => { const d = getData(key).filter(r => r.id !== id); setData(key, d); };
 
     // Inicializar categorías por defecto
@@ -51,6 +73,11 @@ const GestionFinancieraModule = (() => {
     const yearStart = () => new Date(now.getFullYear(), 0, 1).toISOString();
 
     const getMetrics = () => {
+        if (useDataService) {
+            return DataService.getFinMetrics(selectedPeriod === 'mes' ? 'month' : selectedPeriod);
+        }
+        
+        // Fallback localStorage
         const ingresos = getData('ingresos');
         const gastos = getData('gastos');
         const ms = monthStart();
@@ -90,6 +117,12 @@ const GestionFinancieraModule = (() => {
         const m = getMetrics();
         const cxcCount = getData('cuentasCobrar').filter(c => c.estado === 'pendiente').length;
         const cxpCount = getData('cuentasPagar').filter(c => c.estado === 'pendiente').length;
+        
+        // Obtener alertas
+        const alertas = useDataService ? GestionFinancieraModule.getAlertas() : [];
+
+        // Obtener tendencias
+        const tendencias = m.tendencias || {};
 
         return `
       <style>
@@ -103,6 +136,9 @@ const GestionFinancieraModule = (() => {
         .fin-kpi__label { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; opacity: .7; margin-bottom: 4px; }
         .fin-kpi__value { font-size: 1.35rem; font-weight: 800; letter-spacing: -.5px; }
         .fin-kpi__sub { font-size: 10px; opacity: .5; margin-top: 2px; }
+        .fin-kpi__trend { font-size: 11px; margin-top: 4px; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+        .fin-kpi__trend--up { background: rgba(52, 211, 153, 0.2); color: #34d399; }
+        .fin-kpi__trend--down { background: rgba(248, 113, 113, 0.2); color: #f87171; }
 
         .fin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--spacing-md); margin-bottom: var(--spacing-xl); }
         @media (max-width: 900px) { .fin-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -115,42 +151,112 @@ const GestionFinancieraModule = (() => {
         .fin-tile__name { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
         .fin-tile__desc { font-size: 11px; color: var(--text-muted); line-height: 1.3; margin-bottom: 8px; }
         .fin-tile__metric { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; display: inline-block; }
+
+        .fin-alerts { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: var(--spacing-md); }
+        .fin-alert { padding: 10px 14px; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+        .fin-alert--danger { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; }
+        .fin-alert--warning { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); color: #f59e0b; }
+        .fin-alert--success { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; }
+
+        .fin-quick-actions { display: flex; gap: 8px; margin-top: var(--spacing-sm); }
+        .fin-quick-btn { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: none; transition: all .2s; }
+        .fin-quick-btn:hover { transform: scale(1.05); }
+        .fin-quick-btn--income { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .fin-quick-btn--expense { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .fin-quick-btn--sync { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
       </style>
 
       <!-- Mini Dashboard Header -->
       <div class="fin-header">
-        <div class="fin-header__title">${Icons.wallet} Gestión Financiera</div>
+        <div class="fin-header__title">
+            ${Icons.wallet} Gestión Financiera
+            <select onchange="selectedPeriod = this.value; App.render();" style="margin-left: auto; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 4px 12px; border-radius: 6px; font-size: 12px;">
+                <option value="semana" ${selectedPeriod === 'semana' ? 'selected' : ''}>Esta Semana</option>
+                <option value="mes" ${selectedPeriod === 'mes' ? 'selected' : ''}>Este Mes</option>
+                <option value="trimestre" ${selectedPeriod === 'trimestre' ? 'selected' : ''}>Este Trimestre</option>
+                <option value="año" ${selectedPeriod === 'año' ? 'selected' : ''}>Este Año</option>
+            </select>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="fin-quick-actions">
+            <button class="fin-quick-btn fin-quick-btn--income" onclick="GestionFinancieraModule.openIncomeForm()">+ Ingreso</button>
+            <button class="fin-quick-btn fin-quick-btn--expense" onclick="GestionFinancieraModule.openExpenseForm()">+ Gasto</button>
+            ${useDataService ? `<button class="fin-quick-btn fin-quick-btn--sync" onclick="GestionFinancieraModule.syncFromModules()">🔄 Sincronizar</button>` : ''}
+        </div>
+
+        <!-- Alertas financieras -->
+        ${alertas.length > 0 ? `
+        <div class="fin-alerts" style="margin-top: 12px;">
+            ${alertas.slice(0, 3).map(a => `<div class="fin-alert fin-alert--${a.tipo}">${a.tipo === 'danger' ? '⚠️' : a.tipo === 'warning' ? '⚡' : '✅'} ${a.titulo}: ${a.mensaje}</div>`).join('')}
+        </div>
+        ` : ''}
+
         <div class="fin-kpis">
           <div class="fin-kpi" style="cursor:pointer;" onclick="GestionFinancieraModule.navigateTo('ingresos')">
-            <div class="fin-kpi__label">Ingresos del Mes</div>
-            <div class="fin-kpi__value" style="color:#34d399;">C$${fmt(m.ingresosMes)}</div>
-            <div class="fin-kpi__sub">${Icons.trendingUp} Entradas</div>
+            <div class="fin-kpi__label">Ingresos</div>
+            <div class="fin-kpi__value" style="color:#34d399;">C$${fmt(m.ingresos)}</div>
+            ${tendencias.ingresos ? `<div class="fin-kpi__trend ${tendencias.ingresos.cambio >= 0 ? 'fin-kpi__trend--up' : 'fin-kpi__trend--down'}">${tendencias.ingresos.cambio >= 0 ? '↑' : '↓'} ${Math.abs(tendencias.ingresos.cambio)}%</div>` : `<div class="fin-kpi__sub">${Icons.trendingUp} Entradas</div>`}
           </div>
           <div class="fin-kpi" style="cursor:pointer;" onclick="GestionFinancieraModule.navigateTo('gastos')">
-            <div class="fin-kpi__label">Gastos del Mes</div>
-            <div class="fin-kpi__value" style="color:#f87171;">C$${fmt(m.gastosMes)}</div>
-            <div class="fin-kpi__sub">${Icons.trendingDown} Egresos</div>
+            <div class="fin-kpi__label">Gastos</div>
+            <div class="fin-kpi__value" style="color:#f87171;">C$${fmt(m.gastos)}</div>
+            ${tendencias.gastos ? `<div class="fin-kpi__trend ${tendencias.gastos.cambio >= 0 ? 'fin-kpi__trend--down' : 'fin-kpi__trend--up'}">${tendencias.gastos.cambio >= 0 ? '↑' : '↓'} ${Math.abs(tendencias.gastos.cambio)}%</div>` : `<div class="fin-kpi__sub">${Icons.trendingDown} Egresos</div>`}
           </div>
           <div class="fin-kpi" style="cursor:pointer;" onclick="GestionFinancieraModule.navigateTo('flujo')">
             <div class="fin-kpi__label">Utilidad Neta</div>
-            <div class="fin-kpi__value" style="color:${m.utilidadMes >= 0 ? '#34d399' : '#f87171'};">C$${fmt(m.utilidadMes)}</div>
-            <div class="fin-kpi__sub">${m.utilidadMes >= 0 ? '✅ Positivo' : '⚠️ Negativo'}</div>
+            <div class="fin-kpi__value" style="color:${m.utilidad >= 0 ? '#34d399' : '#f87171'};">C$${fmt(m.utilidad)}</div>
+            <div class="fin-kpi__sub">${m.utilidad >= 0 ? '✅ Positivo' : '⚠️ Negativo'}</div>
           </div>
           <div class="fin-kpi" style="cursor:pointer;" onclick="GestionFinancieraModule.navigateTo('impuestos')">
             <div class="fin-kpi__label">IVA 15% (DGI)</div>
-            <div class="fin-kpi__value" style="color:#fbbf24;">C$${fmt(m.ivaMes)}</div>
+            <div class="fin-kpi__value" style="color:#fbbf24;">C$${fmt(m.ivaPorPagar || m.ivaMes)}</div>
             <div class="fin-kpi__sub">Declaración mensual</div>
           </div>
           <div class="fin-kpi" style="cursor:pointer;" onclick="GestionFinancieraModule.navigateTo('cxc')">
             <div class="fin-kpi__label">Cuentas x Cobrar</div>
-            <div class="fin-kpi__value" style="color:#a78bfa;">C$${fmt(m.cxc)}</div>
-            <div class="fin-kpi__sub">${cxcCount} pendientes</div>
+            <div class="fin-kpi__value" style="color:#a78bfa;">C$${fmt(m.cuentasCobrar?.total || m.cxc)}</div>
+            <div class="fin-kpi__sub">${m.cuentasCobrar?.count || cxcCount} pendientes</div>
           </div>
           <div class="fin-kpi" style="cursor:pointer;" onclick="GestionFinancieraModule.navigateTo('cxp')">
             <div class="fin-kpi__label">Cuentas x Pagar</div>
-            <div class="fin-kpi__value" style="color:#f472b6;">C$${fmt(m.cxp)}</div>
-            <div class="fin-kpi__sub">${cxpCount} pendientes</div>
+            <div class="fin-kpi__value" style="color:#f472b6;">C$${fmt(m.cuentasPagar?.total || m.cxp)}</div>
+            <div class="fin-kpi__sub">${m.cuentasPagar?.count || cxpCount} pendientes</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Financial Reports Quick Access -->
+      <div class="fin-grid" style="margin-bottom: var(--spacing-lg);">
+        <div class="fin-tile" onclick="GestionFinancieraModule.openEstadoResultados()">
+          <div class="fin-tile__icon" style="background:#eff6ff;color:#3b82f6;">${Icons.barChart}</div>
+          <div class="fin-tile__name">Estado de Resultados</div>
+          <div class="fin-tile__desc">Ganancias y pérdidas</div>
+        </div>
+        <div class="fin-tile" onclick="GestionFinancieraModule.openBalanceGeneral()">
+          <div class="fin-tile__icon" style="background:#f5f3ff;color:#8b5cf6;">${Icons.fileText}</div>
+          <div class="fin-tile__name">Balance General</div>
+          <div class="fin-tile__desc">Activos y pasivos</div>
+        </div>
+        <div class="fin-tile" onclick="GestionFinancieraModule.openProyeccionFlujo()">
+          <div class="fin-tile__icon" style="background:#f0f9ff;color:#0ea5e9;">${Icons.trendingUp}</div>
+          <div class="fin-tile__name">Flujo de Caja</div>
+          <div class="fin-tile__desc">Proyección 6 meses</div>
+        </div>
+        <div class="fin-tile" onclick="GestionFinancieraModule.openCentrosCosto()">
+          <div class="fin-tile__icon" style="background:#f0fdfa;color:#14b8a6;">${Icons.users}</div>
+          <div class="fin-tile__name">Centros de Costo</div>
+          <div class="fin-tile__desc">Rentabilidad por cliente</div>
+        </div>
+        <div class="fin-tile" onclick="GestionFinancieraModule.exportFinanciero('estado_resultados')">
+          <div class="fin-tile__icon" style="background:#fef2f2;color:#ef4444;">${Icons.download}</div>
+          <div class="fin-tile__name">Exportar Reporte</div>
+          <div class="fin-tile__desc">Excel / CSV</div>
+        </div>
+        <div class="fin-tile" onclick="App.setCurrentModule('configuracion')">
+          <div class="fin-tile__icon" style="background:#fffbeb;color:#f59e0b;">${Icons.settings}</div>
+          <div class="fin-tile__name">Configuración</div>
+          <div class="fin-tile__desc">Impuestos y cuentas</div>
         </div>
       </div>
 
@@ -158,11 +264,11 @@ const GestionFinancieraModule = (() => {
       <div class="fin-grid">
         ${renderTile('ingresos', Icons.arrowDownLeft, 'Ingresos', 'Registrar y gestionar entradas', '#10b981', '#ecfdf5', getData('ingresos').length + ' registros')}
         ${renderTile('gastos', Icons.arrowUpRight, 'Gastos', 'Control de egresos operativos', '#ef4444', '#fef2f2', getData('gastos').length + ' registros')}
-        ${renderTile('flujo', Icons.activity, 'Flujo de Caja', 'Balance y movimientos', '#0ea5e9', '#f0f9ff', 'C$' + fmt(m.balance))}
-        ${renderTile('cxc', Icons.users, 'Cuentas por Cobrar', 'Facturas pendientes', '#8b5cf6', '#f5f3ff', cxcCount + ' pendientes')}
-        ${renderTile('cxp', Icons.briefcase, 'Cuentas por Pagar', 'Deudas con proveedores', '#ec4899', '#fdf2f8', cxpCount + ' pendientes')}
+        ${renderTile('flujo', Icons.activity, 'Flujo de Caja', 'Balance y movimientos', '#0ea5e9', '#f0f9ff', 'C$' + fmt(m.balance || m.utilidad))}
+        ${renderTile('cxc', Icons.users, 'Cuentas por Cobrar', 'Facturas pendientes', '#8b5cf6', '#f5f3ff', (m.cuentasCobrar?.count || cxcCount) + ' pendientes')}
+        ${renderTile('cxp', Icons.briefcase, 'Cuentas por Pagar', 'Deudas con proveedores', '#ec4899', '#fdf2f8', (m.cuentasPagar?.count || cxpCount) + ' pendientes')}
         ${renderTile('facturacion', Icons.fileText, 'Facturación', 'Facturas formato DGI', '#3b82f6', '#eff6ff', getData('facturas').length + ' facturas')}
-        ${renderTile('impuestos', Icons.calculator, 'Impuestos', 'IVA e IR — DGI Nicaragua', '#f59e0b', '#fffbeb', 'C$' + fmt(m.ivaMes))}
+        ${renderTile('impuestos', Icons.calculator, 'Impuestos', 'IVA e IR — DGI Nicaragua', '#f59e0b', '#fffbeb', 'C$' + fmt(m.ivaPorPagar || m.ivaMes))}
         ${renderTile('reportes', Icons.barChart, 'Reportes', 'Estados financieros', '#6366f1', '#eef2ff', 'PDF / Excel')}
         ${renderTile('presupuestos', Icons.piggyBank, 'Presupuestos', 'Planificación y control', '#14b8a6', '#f0fdfa', getData('presupuestos').length + ' activos')}
       </div>
@@ -536,7 +642,135 @@ const GestionFinancieraModule = (() => {
         deleteInvoice: (id) => confirmDelete('facturas', id),
         deleteBudget: (id) => confirmDelete('presupuestos', id),
         markCxcPaid: (id) => { updateRecord('cuentasCobrar', id, { estado: 'pagada' }); App.render(); },
-        markCxpPaid: (id) => { updateRecord('cuentasPagar', id, { estado: 'pagada' }); App.render(); }
+        markCxpPaid: (id) => { updateRecord('cuentasPagar', id, { estado: 'pagada' }); App.render(); },
+        
+        // ---- NUEVAS FUNCIONES QUICKBOOKS STYLE ----
+        
+        // Sincronizar datos desde otros módulos
+        syncFromModules: () => {
+            if (typeof DataService !== 'undefined') {
+                const result = DataService.syncFinFromModules();
+                alert(`Sincronizado: ${result.ingresosImportados} ingresos, ${result.gastosImportados} gastos`);
+                App.render();
+            }
+        },
+
+        // Obtener métricas financieras
+        getMetrics: () => {
+            if (typeof DataService !== 'undefined') {
+                return DataService.getFinMetrics(selectedPeriod);
+            }
+            return getMetrics();
+        },
+
+        // Estado de resultados
+        openEstadoResultados: () => {
+            if (typeof DataService !== 'undefined') {
+                const er = DataService.getEstadoResultados(selectedPeriod);
+                const content = `
+                    <div style="max-height: 70vh; overflow-y: auto;">
+                        <h3 style="color: var(--color-primary-600); margin-bottom: 1rem;">📊 Estado de Resultados</h3>
+                        <table class="data-table">
+                            <thead><tr><th>Concepto</th><th style="text-align:right;">Monto</th></tr></thead>
+                            <tbody>
+                                <tr style="background: rgba(16,185,129,0.1);"><td><strong>INGRESOS</strong></td><td style="text-align:right;"><strong>C$${er.totalIngresos.toFixed(2)}</strong></td></tr>
+                                ${Object.entries(er.ingresos).map(([cat, monto]) => `<tr><td style="padding-left: 20px;">${cat}</td><td style="text-align:right;">C$${monto.toFixed(2)}</td></tr>`).join('')}
+                                <tr style="background: rgba(239,68,68,0.1);"><td><strong>GASTOS</strong></td><td style="text-align:right;"><strong>C$${er.totalGastos.toFixed(2)}</strong></td></tr>
+                                ${Object.entries(er.gastos).map(([cat, monto]) => `<tr><td style="padding-left: 20px;">${cat}</td><td style="text-align:right;">C$${monto.toFixed(2)}</td></tr>`).join('')}
+                                <tr style="background: rgba(245,158,11,0.1);"><td><strong>IVA</strong></td><td style="text-align:right;">C$${er.iva.toFixed(2)}</td></tr>
+                                <tr style="background: rgba(99,102,241,0.2); font-size: 1.1rem;"><td><strong>UTILIDAD NETA</strong></td><td style="text-align:right;"><strong>C$${er.utilidadNeta.toFixed(2)}</strong></td></tr>
+                            </tbody>
+                        </table>
+                        <div style="margin-top: 1rem; text-align: center;">
+                            <span class="badge badge--${er.margenNeto > 0 ? 'success' : 'danger'}">Margen: ${er.margenNeto.toFixed(1)}%</span>
+                        </div>
+                    </div>
+                `;
+                alert(content.replace(/<[^>]*>/g, ''));
+            }
+        },
+
+        // Balance general
+        openBalanceGeneral: () => {
+            if (typeof DataService !== 'undefined') {
+                const bg = DataService.getBalanceGeneral();
+                const content = `
+                    <div style="max-height: 70vh; overflow-y: auto;">
+                        <h3 style="color: var(--color-primary-600); margin-bottom: 1rem;">📋 Balance General</h3>
+                        <table class="data-table">
+                            <thead><tr><th>Concepto</th><th style="text-align:right;">Monto</th></tr></thead>
+                            <tbody>
+                                <tr style="background: rgba(16,185,129,0.1);"><td><strong>ACTIVOS</strong></td><td style="text-align:right;"><strong>C$${bg.activos.total.toFixed(2)}</strong></td></tr>
+                                <tr><td style="padding-left: 20px;">Bancos</td><td style="text-align:right;">C$${bg.activos.bancos.toFixed(2)}</td></tr>
+                                <tr><td style="padding-left: 20px;">Cuentas por Cobrar</td><td style="text-align:right;">C$${bg.activos.cuentasCobrar.toFixed(2)}</td></tr>
+                                <tr style="background: rgba(239,68,68,0.1);"><td><strong>PASIVOS</strong></td><td style="text-align:right;"><strong>C$${bg.pasivos.total.toFixed(2)}</strong></td></tr>
+                                <tr><td style="padding-left: 20px;">Cuentas por Pagar</td><td style="text-align:right;">C$${bg.pasivos.cuentasPagar.toFixed(2)}</td></tr>
+                                <tr style="background: rgba(59,130,246,0.1);"><td><strong>PATRIMONIO</strong></td><td style="text-align:right;"><strong>C$${bg.patrimonio.total.toFixed(2)}</strong></td></tr>
+                                <tr><td style="padding-left: 20px;">Utilidad Acumulada</td><td style="text-align:right;">C$${bg.patrimonio.utilidadAcumulada.toFixed(2)}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                alert(content.replace(/<[^>]*>/g, ''));
+            }
+        },
+
+        // Proyección de flujo de caja
+        openProyeccionFlujo: () => {
+            if (typeof DataService !== 'undefined') {
+                const proy = DataService.getProyeccionFlujo(6);
+                let html = '<div style="max-height: 70vh; overflow-y: auto;"><h3>📈 Proyección de Flujo de Caja</h3><table class="data-table"><thead><tr><th>Mes</th><th style="text-align:right;">Ingresos</th><th style="text-align:right;">Gastos</th><th style="text-align:right;">Neto</th></tr></thead><tbody>';
+                proy.forEach(p => {
+                    html += `<tr><td>${p.mes}</td><td style="text-align:right;color:var(--color-success);">C$${p.ingresos.toFixed(2)}</td><td style="text-align:right;color:var(--color-danger);">C$${p.gastos.toFixed(2)}</td><td style="text-align:right;font-weight:bold;color:${p.neto >= 0 ? 'var(--color-success)' : 'var(--color-danger)'};">C$${p.neto.toFixed(2)}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+                alert(html.replace(/<[^>]*>/g, ''));
+            }
+        },
+
+        // Centros de costo
+        openCentrosCosto: () => {
+            if (typeof DataService !== 'undefined') {
+                const centros = DataService.getCentrosCosto();
+                let html = '<div style="max-height: 70vh; overflow-y: auto;"><h3>🏢 Centros de Costo y Rentabilidad</h3><table class="data-table"><thead><tr><th>Centro</th><th style="text-align:right;">Servicios</th><th style="text-align:right;">Ingresos</th><th style="text-align:right;">Rentabilidad</th></tr></thead><tbody>';
+                centros.slice(0, 10).forEach(c => {
+                    html += `<tr><td>${c.nombre}</td><td style="text-align:right;">${c.servicios}</td><td style="text-align:right;">C$${c.ingresos.toFixed(2)}</td><td style="text-align:right;color:${c.rentabilidad >= 0 ? 'var(--color-success)' : 'var(--color-danger)'};">${c.rentabilidad.toFixed(1)}%</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+                alert(html.replace(/<[^>]*>/g, ''));
+            }
+        },
+
+        // Exportar reportes
+        exportFinanciero: (tipo) => {
+            if (typeof DataService !== 'undefined') {
+                DataService.exportReporteFinanciero(tipo);
+            }
+        },
+
+        // Ver alertas
+        getAlertas: () => {
+            if (typeof DataService !== 'undefined') {
+                return DataService.getFinAlertas();
+            }
+            return [];
+        },
+
+        // Agregar ingreso rápido desde DataService
+        addIngreso: (data) => {
+            if (typeof DataService !== 'undefined') {
+                DataService.addFinIngreso(data);
+                App.render();
+            }
+        },
+
+        // Agregar gasto rápido desde DataService
+        addGasto: (data) => {
+            if (typeof DataService !== 'undefined') {
+                DataService.addFinGasto(data);
+                App.render();
+            }
+        }
     };
 })();
 

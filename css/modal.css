@@ -49,6 +49,11 @@
     max-width: 800px;
 }
 
+.modal--xlg {
+    max-width: 1000px;
+    width: 95%;
+}
+
 .modal--xl {
     max-width: 1000px;
 }

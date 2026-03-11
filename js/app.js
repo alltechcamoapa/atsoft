@@ -13,7 +13,7 @@ const App = (() => {
     const menuItems = [
       { id: 'dashboard', label: 'Inicio', icon: Icons.home },
       { id: 'ventas', label: 'Gestión de Ventas', icon: Icons.shoppingBag },
-      { id: 'clientes', label: 'Clientes', icon: Icons.users },
+
       { id: 'pedidos', label: 'Pedidos', icon: Icons.shoppingCart },
       { id: 'productos', label: 'Gestión de Compras', icon: Icons.package },
       { id: 'recepciones', label: 'Recepción de Equipos', icon: Icons.inbox },
@@ -147,6 +147,9 @@ const App = (() => {
         </nav>
         
         <div class="sidebar__footer">
+          <div style="text-align:center;padding:4px 12px 8px;border-top:1px solid rgba(255,255,255,0.1);">
+            <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.85);text-transform:uppercase;letter-spacing:0.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${companyConfig.name || 'Sin Empresa'}">🏢 ${companyConfig.name || 'Sin Empresa'}</div>
+          </div>
           <div class="sidebar__user">
             <img src="https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=1a73e8&color=fff" 
                  alt="${user?.name || 'User'}" 
@@ -1160,9 +1163,68 @@ const App = (() => {
 
   // ========== INITIALIZATION ==========
 
+  // Mobile Touch Enhancements
+  const initMobileTouch = () => {
+    if (window.innerWidth > 768) return;
+
+    // Sidebar swipe to open/close on mobile
+    let touchStartX = 0;
+    let touchEndX = 0;
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.querySelector('.sidebar-overlay');
+
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    }, { passive: true });
+
+    document.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      const swipeDistance = touchEndX - touchStartX;
+
+      // Swipe right to open sidebar (from left edge)
+      if (swipeDistance > 80 && touchStartX < 30) {
+        if (sidebar && !sidebar.classList.contains('active')) {
+          sidebar.classList.add('active');
+          if (overlay) overlay.classList.add('active');
+        }
+      }
+
+      // Swipe left to close sidebar
+      if (swipeDistance < -80 && sidebar && sidebar.classList.contains('active')) {
+        sidebar.classList.remove('active');
+        if (overlay) overlay.classList.remove('active');
+      }
+    }, { passive: true });
+
+    // Close sidebar when tapping outside on mobile
+    if (overlay) {
+      overlay.addEventListener('touchend', (e) => {
+        sidebar.classList.remove('active');
+        overlay.classList.remove('active');
+      }, { passive: true });
+    }
+
+    // Double tap to scroll to top
+    let lastTap = 0;
+    document.querySelector('.content')?.addEventListener('touchend', (e) => {
+      const currentTime = new Date().getTime();
+      const tapLength = currentTime - lastTap;
+      if (tapLength < 300 && tapLength > 0) {
+        e.preventDefault();
+        document.querySelector('.content')?.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      lastTap = currentTime;
+    }, { passive: false });
+
+    console.log('📱 Mobile touch gestures initialized');
+  };
+
   const init = () => {
     // Initialize state
     State.init();
+
+    // Initialize mobile touch enhancements
+    initMobileTouch();
 
     // Check initial hash
     const initialModule = window.location.hash.slice(1) || 'dashboard';
