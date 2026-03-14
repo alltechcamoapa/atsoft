@@ -1,0 +1,13 @@
+1621: <button class="btn btn--primary btn--sm" onclick="PrestacionesModule.generarAguinaldoReporte()">
+1835: const submitBtn = document.getElementById('btnGenerarRecibo');
+1859: // Detailed check in generarRecibos, here just a hint?
+1890: <h3 class="card__title">${Icons.fileText} Generar Recibo de Pago Individual</h3>
+1896: <form onsubmit="PrestacionesModule.generarRecibos(event)" class="form">
+1988: <button type="submit" id="btnGenerarRecibo" class="btn btn--primary">
+1990: ${Icons.fileText} Generar Recibo
+2435: App.showNotification?.('Error al generar recibo', 'error');
+3899: const generarAguinaldoReporte = () => {
+4240: const generarRecibos = async (event) => {
+4464: App.showNotification?.('Error al generar recibo: ' + msg, 'error') || alert('Error al generar recibo: ' + msg);
+6166: generarAguinaldoReporte,
+6174: generarRecibos,
