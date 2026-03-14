@@ -1070,6 +1070,18 @@ const PrestacionesModule = (() => {
       const payload = { ...data };
       if (!payload.id) {
         await DataService[`create${type}`](payload);
+        
+        // Integración Gestión Financiera: Registrar Gasto automático para Adelantos
+        if (key === 'adelantos' && DataService.addFinGasto) {
+            const emp = DataService.getEmpleadoById(payload.empleadoId);
+            DataService.addFinGasto({
+                categoria: 'Adelantos de Salario',
+                concepto: `Adelanto de Salario - ${emp ? emp.nombre : 'Empleado'}`,
+                monto: parseFloat(payload.monto) || 0,
+                fecha: payload.fecha || new Date().toISOString(),
+                origen: 'prestaciones_adelanto'
+            });
+        }
       } else {
         const id = payload.id;
         delete payload.id;
@@ -3995,8 +4007,20 @@ const PrestacionesModule = (() => {
         fechaPago: new Date().toISOString(),
 
         observaciones: 'Pago generado desde sistema'
-
       });
+
+      // Integración Gestión Financiera: Registrar Gasto de Aguinaldo
+      if (DataService.addFinGasto) {
+          DataService.addFinGasto({
+              categoria: 'Nómina y Salarios',
+              concepto: `Pago de Aguinaldo ${new Date().getFullYear()} - ${emp.nombre}`,
+              monto: parseFloat(calculo.monto) || 0,
+              fecha: new Date().toISOString(),
+              origen: 'prestaciones_aguinaldo'
+          });
+      }
+
+      await DataService.updateEmpleado(empleadoId, { aguinaldoPagado: true });
 
       App.refreshCurrentModule();
 
@@ -4739,7 +4763,7 @@ const PrestacionesModule = (() => {
 
                         </button>
 
-                        <button class="btn btn--ghost btn--sm text-error" onclick="PrestacionesModule.darDeBajaEmpleado('${emp.id}', '${fSalidaStr}')">
+                        <button class="btn btn--ghost btn--sm text-error" onclick="PrestacionesModule.darDeBajaEmpleado('${emp.id}', '${fSalidaStr}', ${granTotal})">
 
                             Registrar Baja
 
@@ -5085,7 +5109,7 @@ const PrestacionesModule = (() => {
 
   };
 
-  const darDeBajaEmpleado = async (id, fechaSalida) => {
+  const darDeBajaEmpleado = async (id, fechaSalida, montoLiquidacion = 0) => {
 
     if (!confirm('¿Está seguro de dar de baja a este empleado? Pasará a estado Inactivo.')) return;
 

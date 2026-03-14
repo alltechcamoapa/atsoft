@@ -97,6 +97,7 @@ const GestionFinancieraModule = (() => {
     // ========== MAIN RENDER ==========
     const render = () => {
         initCategories();
+        if (currentView === 'vehiculos' && typeof GestionVehiculosModule !== 'undefined') return GestionVehiculosModule.render();
         if (currentView === 'dashboard') return renderDashboard();
         if (currentView === 'ingresos') return renderIngresos();
         if (currentView === 'gastos') return renderGastos();
@@ -240,7 +241,7 @@ const GestionFinancieraModule = (() => {
         </div>
         <div class="fin-tile" onclick="GestionFinancieraModule.openProyeccionFlujo()">
           <div class="fin-tile__icon" style="background:#f0f9ff;color:#0ea5e9;">${Icons.trendingUp}</div>
-          <div class="fin-tile__name">Flujo de Caja</div>
+          <div class="fin-tile__name">Flujo de Efectivo</div>
           <div class="fin-tile__desc">Proyección 6 meses</div>
         </div>
         <div class="fin-tile" onclick="GestionFinancieraModule.openCentrosCosto()">
@@ -264,13 +265,14 @@ const GestionFinancieraModule = (() => {
       <div class="fin-grid">
         ${renderTile('ingresos', Icons.arrowDownLeft, 'Ingresos', 'Registrar y gestionar entradas', '#10b981', '#ecfdf5', getData('ingresos').length + ' registros')}
         ${renderTile('gastos', Icons.arrowUpRight, 'Gastos', 'Control de egresos operativos', '#ef4444', '#fef2f2', getData('gastos').length + ' registros')}
-        ${renderTile('flujo', Icons.activity, 'Flujo de Caja', 'Balance y movimientos', '#0ea5e9', '#f0f9ff', 'C$' + fmt(m.balance || m.utilidad))}
+        ${renderTile('flujo', Icons.activity, 'Flujo de Efectivo', 'Balance y movimientos', '#0ea5e9', '#f0f9ff', 'C$' + fmt(m.balance || m.utilidad))}
         ${renderTile('cxc', Icons.users, 'Cuentas por Cobrar', 'Facturas pendientes', '#8b5cf6', '#f5f3ff', (m.cuentasCobrar?.count || cxcCount) + ' pendientes')}
         ${renderTile('cxp', Icons.briefcase, 'Cuentas por Pagar', 'Deudas con proveedores', '#ec4899', '#fdf2f8', (m.cuentasPagar?.count || cxpCount) + ' pendientes')}
         ${renderTile('facturacion', Icons.fileText, 'Facturación', 'Facturas formato DGI', '#3b82f6', '#eff6ff', getData('facturas').length + ' facturas')}
         ${renderTile('impuestos', Icons.calculator, 'Impuestos', 'IVA e IR — DGI Nicaragua', '#f59e0b', '#fffbeb', 'C$' + fmt(m.ivaPorPagar || m.ivaMes))}
         ${renderTile('reportes', Icons.barChart, 'Reportes', 'Estados financieros', '#6366f1', '#eef2ff', 'PDF / Excel')}
         ${renderTile('presupuestos', Icons.piggyBank, 'Presupuestos', 'Planificación y control', '#14b8a6', '#f0fdfa', getData('presupuestos').length + ' activos')}
+        ${renderTile('vehiculos', '🚗', 'Vehículos', 'Control de flota vehicular', '#f97316', '#fff7ed', 'Gestionar')}
       </div>
 
       <!-- Quick Transactions -->
@@ -335,30 +337,97 @@ const GestionFinancieraModule = (() => {
       </div>`;
     };
 
-    // ========== FLUJO DE CAJA ==========
+        // ========== FLUJO DE EFECTIVO DETALLADO ==========
     const renderFlujo = () => {
-        const ingresos = getData('ingresos');
-        const gastos = getData('gastos');
-        const months = [];
-        for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const ms = d.toISOString();
-            const me = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString();
-            const ing = ingresos.filter(x => x.fecha >= ms && x.fecha <= me).reduce((s, x) => s + parseFloat(x.monto || 0), 0);
-            const gas = gastos.filter(x => x.fecha >= ms && x.fecha <= me).reduce((s, x) => s + parseFloat(x.monto || 0), 0);
-            months.push({ label: d.toLocaleDateString('es-NI', { month: 'short' }), ingresos: ing, gastos: gas, neto: ing - gas });
-        }
+        const ingresos = getData('ingresos').map(i => ({...i, _tipo: 'ingreso'}));
+        const gastos = getData('gastos').map(g => ({...g, _tipo: 'gasto'}));
+        
+        // Unificar histórico
+        let historico = [...ingresos, ...gastos].sort((a, b) => new Date(a.fecha) - new Date(b.fecha)); // Orden cronológico antiguo a nuevo
+        
+        let saldoAcumulado = 0;
+        historico = historico.map(t => {
+            const monto = parseFloat(t.monto || 0);
+            if (t._tipo === 'ingreso') {
+                saldoAcumulado += monto;
+            } else {
+                saldoAcumulado -= monto;
+            }
+            return { ...t, saldoAcumulado };
+        });
+
+        // Invertir para mostrar los más recientes arriba
+        historico.reverse();
+
         return `${backBtn()}
       <div class="module-header" style="margin-bottom:var(--spacing-lg);">
-        <div class="module-header__main"><h2 class="module-header__title" style="color:#0ea5e9;">${Icons.activity} Flujo de Caja</h2></div>
+        <div class="module-header__main">
+            <h2 class="module-header__title" style="color:#0ea5e9;">${Icons.activity} Flujo de Efectivo</h2>
+            <p class="module-header__subtitle">Histórico detallado de movimientos e ingresos vs gastos</p>
+        </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--spacing-md);margin-bottom:var(--spacing-lg);">
-        ${months.map(m => `<div class="card"><div class="card__body" style="text-align:center;">
-          <div style="font-weight:700;text-transform:uppercase;font-size:12px;color:var(--text-muted);margin-bottom:8px;">${m.label}</div>
-          <div style="font-size:12px;color:var(--color-success);">↑ C$${fmt(m.ingresos)}</div>
-          <div style="font-size:12px;color:var(--color-danger);">↓ C$${fmt(m.gastos)}</div>
-          <div style="font-size:1.1rem;font-weight:800;color:${m.neto >= 0 ? 'var(--color-success)' : 'var(--color-danger)'};margin-top:6px;">C$${fmt(m.neto)}</div>
-        </div></div>`).join('')}
+      
+      <div class="fin-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: var(--spacing-md);">
+          <div class="card" style="border-left: 4px solid #10b981;">
+              <div class="card__body" style="text-align:center;">
+                  <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;">Total Ingresos</div>
+                  <div style="font-size:1.5rem;font-weight:700;color:#10b981;">C$\${fmt(ingresos.reduce((s,i)=>s+parseFloat(i.monto||0),0))}</div>
+              </div>
+          </div>
+          <div class="card" style="border-left: 4px solid #ef4444;">
+              <div class="card__body" style="text-align:center;">
+                  <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;">Total Gastos</div>
+                  <div style="font-size:1.5rem;font-weight:700;color:#ef4444;">C$\${fmt(gastos.reduce((s,g)=>s+parseFloat(g.monto||0),0))}</div>
+              </div>
+          </div>
+          <div class="card" style="border-left: 4px solid #0ea5e9;">
+              <div class="card__body" style="text-align:center;">
+                  <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;">Saldo Disponible</div>
+                  <div style="font-size:1.5rem;font-weight:700;color:#0ea5e9;">C$\${fmt(ingresos.reduce((s,i)=>s+parseFloat(i.monto||0),0) - gastos.reduce((s,g)=>s+parseFloat(g.monto||0),0))}</div>
+              </div>
+          </div>
+      </div>
+
+      <div class="card card--no-padding">
+        ${historico.length === 0 ? '<div style="padding:3rem;text-align:center;color:var(--text-muted);">No hay movimientos registrados.</div>' : `
+        <div class="table-container">
+            <table class="data-table">
+                <thead class="data-table__head">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Concepto / Proveedor</th>
+                        <th>Categoría</th>
+                        <th>Método</th>
+                        <th style="text-align:right;">Ingreso (+)</th>
+                        <th style="text-align:right;">Gasto (-)</th>
+                        <th style="text-align:right;">Saldo</th>
+                    </tr>
+                </thead>
+                <tbody class="data-table__body">
+                    ${historico.map(t => `
+                    <tr>
+                        <td>${fmtDate(t.fecha)}</td>
+                        <td>
+                            <strong>${t.descripcion || '-'}</strong><br>
+                            <span style="font-size:10px; color:var(--text-muted);">${t.cliente || t.proveedor || ''}</span>
+                        </td>
+                        <td><span class="badge badge--${t._tipo === 'ingreso' ? 'success' : 'danger'}" style="font-size:10px;">${t.categoria || '-'}</span></td>
+                        <td><span style="font-size:11px; background:rgba(0,0,0,0.05); padding:2px 6px; border-radius:4px;">${t.metodo_pago || 'General'}</span></td>
+                        <td style="text-align:right; font-weight:700; color:var(--color-success);">
+                            ${t._tipo === 'ingreso' ? '+ C$' + fmt(t.monto) : ''}
+                        </td>
+                        <td style="text-align:right; font-weight:700; color:var(--color-danger);">
+                            ${t._tipo === 'gasto' ? '- C$' + fmt(t.monto) : ''}
+                        </td>
+                        <td style="text-align:right; font-weight:800; background:rgba(0,0,0,0.02);">
+                            C$\${fmt(t.saldoAcumulado)}
+                        </td>
+                    </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        `}
       </div>`;
     };
 
@@ -631,6 +700,13 @@ const GestionFinancieraModule = (() => {
     // ========== DELETE ACTIONS ==========
     const confirmDelete = (key, id) => { if (confirm('¿Eliminar este registro?')) { deleteRecord(key, id); App.render(); } };
 
+    // ========== REALTIME EVENT ==========
+    window.addEventListener('dataRefreshed', () => {
+        if (typeof App !== 'undefined' && App.currentModule === 'financiera' && currentView === 'dashboard') {
+            App.render();
+        }
+    });
+
     // ========== PUBLIC API ==========
     return {
         render, navigateTo, closeModal,
@@ -686,7 +762,7 @@ const GestionFinancieraModule = (() => {
                         </div>
                     </div>
                 `;
-                alert(content.replace(/<[^>]*>/g, ''));
+                openModal('Detalles', content, () => closeModal()); const saveBtn = document.getElementById('finModalSave'); if(saveBtn) saveBtn.remove();
             }
         },
 
@@ -711,7 +787,7 @@ const GestionFinancieraModule = (() => {
                         </table>
                     </div>
                 `;
-                alert(content.replace(/<[^>]*>/g, ''));
+                openModal('Detalles', content, () => closeModal()); const saveBtn = document.getElementById('finModalSave'); if(saveBtn) saveBtn.remove();
             }
         },
 
@@ -719,12 +795,12 @@ const GestionFinancieraModule = (() => {
         openProyeccionFlujo: () => {
             if (typeof DataService !== 'undefined') {
                 const proy = DataService.getProyeccionFlujo(6);
-                let html = '<div style="max-height: 70vh; overflow-y: auto;"><h3>📈 Proyección de Flujo de Caja</h3><table class="data-table"><thead><tr><th>Mes</th><th style="text-align:right;">Ingresos</th><th style="text-align:right;">Gastos</th><th style="text-align:right;">Neto</th></tr></thead><tbody>';
+                let html = '<div style="max-height: 70vh; overflow-y: auto;"><h3>📈 Proyección de Flujo de Efectivo</h3><table class="data-table"><thead><tr><th>Mes</th><th style="text-align:right;">Ingresos</th><th style="text-align:right;">Gastos</th><th style="text-align:right;">Neto</th></tr></thead><tbody>';
                 proy.forEach(p => {
                     html += `<tr><td>${p.mes}</td><td style="text-align:right;color:var(--color-success);">C$${p.ingresos.toFixed(2)}</td><td style="text-align:right;color:var(--color-danger);">C$${p.gastos.toFixed(2)}</td><td style="text-align:right;font-weight:bold;color:${p.neto >= 0 ? 'var(--color-success)' : 'var(--color-danger)'};">C$${p.neto.toFixed(2)}</td></tr>`;
                 });
                 html += '</tbody></table></div>';
-                alert(html.replace(/<[^>]*>/g, ''));
+                openModal('Detalles', html, () => closeModal()); const saveBtn = document.getElementById('finModalSave'); if(saveBtn) saveBtn.remove();
             }
         },
 
@@ -737,7 +813,7 @@ const GestionFinancieraModule = (() => {
                     html += `<tr><td>${c.nombre}</td><td style="text-align:right;">${c.servicios}</td><td style="text-align:right;">C$${c.ingresos.toFixed(2)}</td><td style="text-align:right;color:${c.rentabilidad >= 0 ? 'var(--color-success)' : 'var(--color-danger)'};">${c.rentabilidad.toFixed(1)}%</td></tr>`;
                 });
                 html += '</tbody></table></div>';
-                alert(html.replace(/<[^>]*>/g, ''));
+                openModal('Detalles', html, () => closeModal()); const saveBtn = document.getElementById('finModalSave'); if(saveBtn) saveBtn.remove();
             }
         },
 

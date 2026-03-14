@@ -22,6 +22,7 @@ const ProductosModule = (() => {
   let compraSearchSelectedIdx = -1;
   let compraSearchResultIds = [];
   let histFiltro = { deuda: 'all', proveedor: 'all', desde: '', hasta: '' };
+  let provSelectedRow = -1;
   
   // Traslados state
   let trasladosCart = [];
@@ -51,13 +52,115 @@ const ProductosModule = (() => {
   let SK = getSK();
   const refreshSK = () => { SK = getSK(); };
 
-  const getData = (k) => { refreshSK(); try { return JSON.parse(localStorage.getItem(SK[k]) || '[]'); } catch { return []; } };
-  const setData = (k, d) => { refreshSK(); localStorage.setItem(SK[k], JSON.stringify(d)); };
-  const genId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-  const addRec = (k, r) => { const d = getData(k); r.id = genId(); r.created_at = new Date().toISOString(); d.unshift(r); setData(k, d); return r; };
+  const getData = (k) => { 
+      refreshSK(); 
+      // Route through DataService/Supabase cache when available
+      if (typeof DataService !== 'undefined') {
+          const cache = DataService.getCache();
+          if (k === 'proveedores') {
+              const cloudProvs = DataService.getProveedoresSync ? DataService.getProveedoresSync() : [];
+              if (cloudProvs && cloudProvs.length > 0) return cloudProvs;
+          }
+          if (k === 'compras' && cache.compras) return [...cache.compras];
+          if (k === 'cxp' && cache.finCuentasPagar) return [...cache.finCuentasPagar];
+          if (k === 'abonos_cxp') return []; // loaded on demand via DataService.getAbonosProveedoresSync
+          if (k === 'prov_tipos') {
+              // Try Supabase first, then fall back
+              const tipos = cache.proveedorTipos || [];
+              if (tipos.length > 0) return tipos;
+          }
+      }
+      try { return JSON.parse(localStorage.getItem(SK[k]) || '[]'); } catch { return []; } 
+  };
+  const setData = (k, d) => { 
+      refreshSK(); 
+      // Keep localStorage as fallback backup, primary writes go through DataService
+      try { localStorage.setItem(SK[k], JSON.stringify(d)); } catch(e) { console.warn('localStorage write failed:', e); }
+  };
+  const genId = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  const addRec = async (k, r) => { 
+      r.id = genId(); 
+      r.created_at = new Date().toISOString();
+      try {
+          if (typeof DataService !== 'undefined') {
+              switch(k) {
+                  case 'compras': {
+                      const result = await DataService.createCompra(r);
+                      if (result) return result;
+                      break;
+                  }
+                  case 'cxp': {
+                      const result = await DataService.createCuentaPagar(r);
+                      if (result) return result;
+                      break;
+                  }
+                  case 'abonos_cxp': {
+                      const result = await DataService.createAbonoProveedor(r);
+                      if (result) return result;
+                      break;
+                  }
+                  case 'prov_tipos': {
+                      const result = await DataService.createProveedorTipo(r);
+                      if (result) return result;
+                      break;
+                  }
+              }
+          }
+      } catch(e) { console.error(`Supabase addRec(${k}) error:`, e); }
+      // Fallback: save to localStorage
+      const d = getData(k); d.unshift(r); setData(k, d); return r; 
+  };
   const fmt = (n) => parseFloat(n || 0).toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtD = (d) => d ? new Date(d).toLocaleDateString('es-NI') : 'N/A';
   const getProducts = () => (typeof DataService !== 'undefined' && DataService.getProductosSync) ? DataService.getProductosSync() : [];
+
+  // Calcular stock total sumando todas las bodegas
+  const getTotalStock = (prodId) => {
+    try {
+      const allBodes = typeof DataService !== 'undefined' ? DataService.getBodegasSync() : [];
+      const empActiva = (typeof State !== 'undefined' && State.getCurrentUser && State.getCurrentUser()?.empresa_id) ? State.getCurrentUser().empresa_id : '';
+      const bodes = empActiva ? allBodes.filter(b => b.empresa_id === empActiva) : allBodes;
+      let total = 0;
+      bodes.forEach(b => {
+        try { total += parseInt(JSON.parse(localStorage.getItem('prod_bodegas_' + b.id + '_' + prodId)) || 0); } catch(e) {}
+      });
+      return total;
+    } catch(e) { return 0; }
+  };
+
+  // SINCRONIZACIÓN DE PROVEEDORES LOCALES A SUPABASE (UNA VEZ)
+  const syncLocalProveedoresToSupabase = async () => {
+    if (typeof DataService === 'undefined' || !DataService.createProveedor || !DataService.getProveedoresSync) return;
+    refreshSK();
+    try {
+        const localProvs = JSON.parse(localStorage.getItem(SK['proveedores']) || '[]');
+        if (localProvs.length === 0) return;
+        
+        const cloudProvs = DataService.getProveedoresSync();
+        const pendingSync = localProvs.filter(lp => !cloudProvs.some(cp => cp.id === lp.id || cp.ruc === lp.ruc && lp.ruc));
+        
+        if (pendingSync.length > 0) {
+            console.log(`Syncing ${pendingSync.length} unsaved local providers to Supabase...`);
+            for (const p of pendingSync) {
+                // Delete id so Supabase generates a new one, or keep if UUID
+                const provData = {
+                    razonSocial: p.razonSocial || p.razon_social,
+                    ruc: p.ruc,
+                    tipoProveedor: p.tipoProveedor || p.tipo_proveedor || p.tipo,
+                    telefono: p.telefono,
+                    ciudad: p.ciudad,
+                    direccion: p.direccion
+                };
+                await DataService.createProveedor(provData);
+            }
+            console.log('Local providers synced successfully.');
+            App.refreshCurrentModule();
+        }
+    } catch(e) { console.error('Error syncing local providers:', e); }
+  };
+  
+  // Ejecutar sincronización al cargar
+  setTimeout(syncLocalProveedoresToSupabase, 2000);
   const getPosData = (k) => {
     const actualKey = k.startsWith('pos_') || k.startsWith('prod_') ? k + getEmpresaSuffix() : k;
     try { return JSON.parse(localStorage.getItem(actualKey) || '[]'); } catch { return []; }
@@ -65,7 +168,7 @@ const ProductosModule = (() => {
   const user = () => State.get('user');
 
   // ========== NAVIGATION ==========
-  const navigateTo = (v) => { currentView = v; selectedRow = -1; currentPage = 0; App.render(); };
+  const navigateTo = (v) => { currentView = v; selectedRow = -1; provSelectedRow = -1; currentPage = 0; App.render(); };
 
   const tile = (id, icon, name, desc, color, bg, badge) => `<div class="ventas-tile" onclick="ProductosModule.navigateTo('${id}')"><div class="ventas-tile__icon" style="background:${bg};color:${color};">${icon}</div><div class="ventas-tile__name">${name}</div><div class="ventas-tile__desc">${desc}</div><div class="ventas-tile__badge" style="background:${bg};color:${color};">${badge}</div></div>`;
   const backBtn = () => `<button class="btn btn--ghost btn--sm" onclick="ProductosModule.navigateTo('dashboard')" style="margin-bottom:var(--spacing-md);">⬅ Volver al Panel</button>`;
@@ -81,20 +184,32 @@ const ProductosModule = (() => {
       traslados: renderTraslados
     };
     const html = (views[currentView] || renderDashboard)();
-    if (currentView === 'productos') setTimeout(() => setupKeyboardNav(), 100);
+    if (currentView === 'productos' || currentView === 'proveedores') setTimeout(() => setupKeyboardNav(), 100);
     if (currentView === 'traslados') setTimeout(() => setupTrasladosInit(), 100);
     return html;
   };
   const setupKeyboardNav = () => {
     if (window._prodKeyNav) return; window._prodKeyNav = true;
     document.addEventListener('keydown', (e) => {
-      if (currentView !== 'productos') return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-      const allProds = getProducts(); const total = allProds.length;
-      if (e.key === 'ArrowDown') { e.preventDefault(); selectedRow = Math.min(selectedRow + 1, total - 1); App.refreshCurrentModule(); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); selectedRow = Math.max(selectedRow - 1, 0); App.refreshCurrentModule(); }
-      else if (e.key === 'Enter' && selectedRow >= 0 && allProds[selectedRow]) { e.preventDefault(); openEditModal(allProds[selectedRow].id); }
-      else if (e.key === 'Delete' && selectedRow >= 0 && allProds[selectedRow]) { e.preventDefault(); deleteItem(allProds[selectedRow].id); }
+      if (currentView === 'productos') {
+        const allProds = getProducts(); const total = allProds.length;
+        if (e.key === 'ArrowDown') { e.preventDefault(); selectedRow = Math.min(selectedRow + 1, total - 1); App.refreshCurrentModule(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); selectedRow = Math.max(selectedRow - 1, 0); App.refreshCurrentModule(); }
+        else if (e.key === 'Enter' && selectedRow >= 0 && allProds[selectedRow]) { e.preventDefault(); openEditModal(allProds[selectedRow].id); }
+        else if (e.key === 'Delete' && selectedRow >= 0 && allProds[selectedRow]) { e.preventDefault(); deleteItem(allProds[selectedRow].id); }
+      } else if (currentView === 'proveedores') {
+        let provs = getData('proveedores');
+        if (provFiltro.tipo !== 'all') provs = provs.filter(p => (p.tipoProveedor || p.tipo_proveedor || p.tipo || '') === provFiltro.tipo);
+        if (provFiltro.search) {
+            const q = provFiltro.search.toLowerCase();
+            provs = provs.filter(p => (p.razonSocial || p.razon_social || '').toLowerCase().includes(q) || (p.ruc || '').toLowerCase().includes(q) || (p.numero_proveedor || '').toLowerCase().includes(q));
+        }
+        const total = provs.length;
+        if (e.key === 'ArrowDown') { e.preventDefault(); provSelectedRow = Math.min(provSelectedRow + 1, total - 1); App.refreshCurrentModule(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); provSelectedRow = Math.max(provSelectedRow - 1, 0); App.refreshCurrentModule(); }
+        else if (e.key === 'Enter' && provSelectedRow >= 0 && provs[provSelectedRow]) { e.preventDefault(); openProveedorModal(provs[provSelectedRow].id); }
+      }
     });
   };
 
@@ -257,7 +372,7 @@ const ProductosModule = (() => {
           return `<tr style="cursor:pointer;${selectedRow === idx ? 'background:rgba(56,189,248,0.15); border-left: 3px solid #38bdf8;' : 'border-left: 3px solid transparent;'}${low ? 'color:#ef4444;' : ''}" onclick="ProductosModule.selectRow(${idx})" ondblclick="ProductosModule.openEditModal('${p.id}')">
                     <td>${idx + 1}</td><td style="font-family:monospace;">${p.codigo || p.sku || '-'}</td><td style="font-family:monospace;font-size:10px;">${p.codigoAlt || '-'}</td>
                     <td style="line-height:1.2;"><strong>${p.nombre || ''}</strong><div style="display:flex;gap:4px;margin-top:2px;">${p.unidad ? `<span style="background:var(--color-primary-100);color:var(--color-primary-700);font-size:8px;padding:2px 4px;border-radius:4px;font-weight:600;">${p.unidad}</span>` : ''}${p.ventaGranel === 'true' ? `<span style="background:#d1fae5;color:#059669;font-size:8px;padding:2px 4px;border-radius:4px;font-weight:600;">⚖ Granel</span>` : ''}${p.usaSeriales === 'true' ? `<span style="background:#e0f2fe;color:#0284c7;font-size:8px;padding:2px 4px;border-radius:4px;font-weight:600;">🔢 Serie/Lote</span>` : ''}</div></td>
-                    <td style="font-weight:700;${low ? 'color:#ef4444;' : ''}">${p.stock ?? p.cantidad ?? '∞'}</td><td>${p.inventarioMinimo ?? '-'}</td>
+                    <td style="font-weight:700;${low ? 'color:#ef4444;' : ''}">${(() => { const ts = getTotalStock(p.id); return ts > 0 ? ts : (p.stock ?? p.cantidad ?? '∞'); })()}</td><td>${p.inventarioMinimo ?? '-'}</td>
                     <td>C${fmt(p.precioCompra || p.costo || 0)}</td><td style="font-weight:700;">C${fmt(p.precioVenta || p.precio || 0)}</td>
                     <td>${p.categoria || p.departamento || '-'}</td><td>${p.proveedor || '-'}</td>
                   </tr>`;
@@ -282,7 +397,10 @@ const ProductosModule = (() => {
 
   // ========== SUB: COMPRAS ==========
   const renderCompras = () => {
-    const provs = getData('proveedores');
+    const provs = getData('proveedores').filter(p => {
+        const t = (p.tipoProveedor || p.tipo_proveedor || p.tipo || '').toLowerCase();
+        return t !== 'servicios' && t !== 'servicio';
+    });
     const transferencias = getPosData('pos_transferencias');
     const subtotal = compraCart.reduce((s, i) => s + (i.precioCompra * i.cantidad), 0);
     const descTotal = compraCart.reduce((s, i) => s + (i.descuento || 0), 0) + compraDescGlobal;
@@ -361,12 +479,225 @@ const ProductosModule = (() => {
   };
   const setHistFiltro = (k, v) => { histFiltro[k] = v; App.refreshCurrentModule(); };
 
-  // ========== SUB: PROVEEDORES ==========
-  const renderProveedores = () => {
+  // ========== SUB: HISTORIAL POR PROVEEDOR ==========
+  const showProveedorHistorial = (provId) => {
     const provs = getData('proveedores');
-    return `${backBtn()}<div class="card"><div class="card__header" style="display:flex;justify-content:space-between;align-items:center;"><h4 class="card__title">${Icons.users} Proveedores</h4><button class="btn btn--primary btn--sm" onclick="ProductosModule.openProveedorModal()">➕ Nuevo Proveedor</button></div><div class="card__body" style="padding:0;">
-      <table class="data-table" style="width:100%;font-size:12px;"><thead class="data-table__head"><tr><th>Tipo</th><th>RUC</th><th>Razón Social</th><th>Teléfono</th><th>Dirección</th><th>Ciudad</th><th>Acc</th></tr></thead>
-      <tbody class="data-table__body">${provs.length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted);">No hay proveedores registrados</td></tr>' : provs.map(p => `<tr><td><span class="badge badge--neutral">${p.tipo || '-'}</span></td><td style="font-family:monospace;">${p.ruc || '-'}</td><td style="font-weight:600;">${p.razonSocial}</td><td>${p.telefono || '-'}</td><td>${p.direccion || '-'}</td><td>${p.ciudad || '-'}</td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ProductosModule.openProveedorModal('${p.id}')">✏️</button><button class="btn btn--ghost btn--icon btn--sm text-danger" onclick="ProductosModule.deleteProveedor('${p.id}')">🗑️</button></td></tr>`).join('')}</tbody></table></div></div><div id="productosModal">${modalContent}</div>`;
+    const prov = provs.find(p => p.id === provId) || provs.find(p => p.razonSocial === provId);
+    if (!prov) return;
+    
+    // Set custom filter object for this modal
+    window._provHistFiltro = window._provHistFiltro || { mes: 'all', data: '' };
+    
+    // Render Modal Overlay
+    const renderContent = () => {
+        let compras = getData('compras').filter(c => c.proveedorId === prov.id || c.proveedor === prov.id);
+        const currentM = window._provHistFiltro.mes;
+        const currentD = window._provHistFiltro.data;
+        
+        if (currentM && currentM !== 'all') {
+            compras = compras.filter(c => {
+                const dateParts = (c.fecha || '').split('-');
+                if (dateParts.length >= 2) return dateParts[1] === currentM;
+                return false;
+            });
+        }
+        if (currentD) {
+            compras = compras.filter(c => (c.fecha || '').includes(currentD));
+        }
+
+        const totalRow = compras.length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted);">No existen facturas con este filtro</td></tr>' :
+            compras.map(c => {
+                const saldo = c.saldoPendiente || 0;
+                return `<tr><td style="font-weight:600;">${c.numFactura}</td><td>${fmtD(c.fecha)}</td><td><span class="badge badge--primary">${c.metodo}</span></td><td style="font-weight:700;">C$${fmt(c.total)}</td><td style="color:${saldo > 0 ? '#ef4444' : '#10b981'};font-weight:700;">${saldo > 0 ? 'C$' + fmt(saldo) : 'Pagado'}</td><td><span class="badge ${saldo > 0 ? 'badge--warning' : 'badge--success'}">${saldo > 0 ? 'Pendiente' : 'Pagada'}</span></td><td><button class="btn btn--ghost btn--icon btn--sm" onclick="ProductosModule.viewCompraDetail('${c.id}')">👁️</button></td></tr>`;
+            }).join('');
+
+        const modal = document.getElementById('productosModal');
+        modal.innerHTML = `<div class="modal-overlay open"><div class="modal modal--lg" onclick="event.stopPropagation()">
+          <div class="modal__header">
+            <h3 class="modal__title">📋 Historial: ${prov.razonSocial || prov.razon_social}</h3>
+            <button class="modal__close" onclick="ProductosModule.closeModal()">${Icons.x}</button>
+          </div>
+          <div class="modal__body" style="padding:16px;">
+             <div style="display:flex;gap:8px;margin-bottom:12px;">
+                 <select class="form-select" id="provFilMsgSel" onchange="window._provHistFiltro.mes=this.value; ProductosModule.showProveedorHistorial('${prov.id}')">
+                     <option value="all">Cualquier Mes</option>
+                     <option value="01" ${currentM==='01'?'selected':''}>Enero</option>
+                     <option value="02" ${currentM==='02'?'selected':''}>Febrero</option>
+                     <option value="03" ${currentM==='03'?'selected':''}>Marzo</option>
+                     <option value="04" ${currentM==='04'?'selected':''}>Abril</option>
+                     <option value="05" ${currentM==='05'?'selected':''}>Mayo</option>
+                     <option value="06" ${currentM==='06'?'selected':''}>Junio</option>
+                     <option value="07" ${currentM==='07'?'selected':''}>Julio</option>
+                     <option value="08" ${currentM==='08'?'selected':''}>Agosto</option>
+                     <option value="09" ${currentM==='09'?'selected':''}>Septiembre</option>
+                     <option value="10" ${currentM==='10'?'selected':''}>Octubre</option>
+                     <option value="11" ${currentM==='11'?'selected':''}>Noviembre</option>
+                     <option value="12" ${currentM==='12'?'selected':''}>Diciembre</option>
+                 </select>
+                 <input type="month" id="provFilData" class="form-input" value="${currentD}" onchange="window._provHistFiltro.data=this.value; ProductosModule.showProveedorHistorial('${prov.id}')" title="Filtrar por Fecha Específica">
+             </div>
+             <table class="data-table" style="width:100%;font-size:12px;">
+               <thead class="data-table__head"><tr><th>Factura</th><th>Fecha</th><th>Método</th><th>Total</th><th>Saldo</th><th>Estado</th><th>Acc</th></tr></thead>
+               <tbody class="data-table__body">${totalRow}</tbody>
+             </table>
+          </div>
+        </div></div>`;
+    };
+    renderContent();
+  };
+
+  // ========== SUB: PROVEEDORES ==========
+  let provFiltro = { search: '', tipo: 'all' };
+  const setProvFiltro = (key, val) => { provFiltro[key] = val; provSelectedRow = -1; App.refreshCurrentModule(); };
+  const selectProvRow = (idx) => { provSelectedRow = idx; App.refreshCurrentModule(); };
+
+  const renderProveedores = () => {
+    let provs = getData('proveedores');
+    const compras = getData('compras');
+    
+    // Calcular historial y mejores proveedores
+    const statsP = {};
+    provs.forEach(p => {
+        statsP[p.id] = { comprosNum: 0, total: 0 };
+    });
+    compras.forEach(c => {
+        const pId = c.proveedorId || c.proveedor;
+        if(pId && statsP[pId]) {
+            statsP[pId].comprosNum += 1;
+            statsP[pId].total += (c.total || 0);
+        }
+    });
+
+    // Encontrar mejor proveedor (mayor total de compras)
+    let mejorProvId = null;
+    let maxTotal = 0;
+    Object.keys(statsP).forEach(pid => {
+        if(statsP[pid].total > maxTotal) { maxTotal = statsP[pid].total; mejorProvId = pid; }
+    });
+
+    // Filtros
+    if (provFiltro.tipo !== 'all') {
+        provs = provs.filter(p => (p.tipoProveedor || p.tipo_proveedor || p.tipo || '') === provFiltro.tipo);
+    }
+    if (provFiltro.search) {
+        const q = provFiltro.search.toLowerCase();
+        provs = provs.filter(p => 
+            (p.razonSocial || p.razon_social || '').toLowerCase().includes(q) ||
+            (p.ruc || '').toLowerCase().includes(q) ||
+            (p.numero_proveedor || '').toLowerCase().includes(q)
+        );
+    }
+    
+    const selProv = provSelectedRow >= 0 && provSelectedRow < provs.length ? provs[provSelectedRow] : null;
+
+    const rightPanelContent = `
+      <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);padding:4px 0;border-bottom:1px solid var(--border-color);margin-bottom:4px;">Acciones</div>
+        ${[['openProveedorModal()','➕','Nuevo Proveedor'], 
+           [`openProveedorModal('${selProv?.id||''}')`,'✏️','Editar Proveedor'], 
+           [`deleteProveedor('${selProv?.id||''}')`,'🗑️','Eliminar Proveedor'], 
+           [`showProveedorHistorial('${selProv?.id||''}')`,'📋','Historial de Compras']].map(([fn, ic, lb], i) => `<button class="btn btn--ghost slide-btn" style="justify-content:flex-start;gap:8px;font-size:13px;width:100%;padding:8px 10px;transition: transform 0.1s ease, background 0.2s ease;" onclick="ProductosModule.${fn}" ${(i>0 && !selProv)?'disabled':''}>${ic} ${lb}</button>`).join('')}
+        
+        ${selProv ? `
+        <div class="fade-in-right" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-color);flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;">
+            <div>
+                <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;">Detalles Rápidos</div>
+                <div style="font-size:11px;margin-bottom:4px;"><strong>RUC:</strong> ${selProv.ruc || 'N/A'}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><strong>Teléfono:</strong> ${selProv.telefono || 'N/A'}</div>
+                <div style="font-size:11px;margin-bottom:4px;"><strong>Ciudad:</strong> ${selProv.ciudad || 'N/A'}</div>
+                <div style="padding-top:8px;border-top:1px dashed var(--border-color);font-size:11px;color:var(--color-primary-600);font-weight:700;">
+                   Compras: ${statsP[selProv.id]?.comprosNum || 0}
+                   <br>Gastado: C$${_fmtNum(statsP[selProv.id]?.total || 0)}
+                </div>
+            </div>
+            <div style="border-top:1px solid var(--border-color);padding-top:8px;">
+                <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;">Últimas 5 Facturas</div>
+                ${(() => {
+                    const facturas = getData('compras')
+                        .filter(c => c.proveedorId === selProv.id || c.proveedor === selProv.id)
+                        .sort((a,b) => new Date(b.fecha) - new Date(a.fecha))
+                        .slice(0, 5);
+                    if(facturas.length === 0) return '<div style="font-size:10px;color:var(--text-muted);">Sin facturas recientes</div>';
+                    return facturas.map(f => {
+                        const s = f.saldoPendiente || 0;
+                        return `<div style="font-size:10px;padding:6px;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:4px;margin-bottom:4px;">
+                            <div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:2px;"><span>${f.numFactura}</span><span>C$${_fmtNum(f.total)}</span></div>
+                            <div style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:9px;"><span>${fmtD(f.fecha)}</span><span style="color:${s>0?'#ef4444':'#10b981'};${s>0?'font-weight:700;':''} ">${s>0?'Pendiente':'Pagada'}</span></div>
+                        </div>`;
+                    }).join('');
+                })()}
+            </div>
+        </div>` : ''}
+      </div>`;
+
+    const unicosTipos = [...new Set(getData('proveedores').map(p => p.tipoProveedor || p.tipo_proveedor || p.tipo || ''))].filter(Boolean);
+
+    return `${backBtn()}
+    <style>
+      .fade-in-right { animation: fadeInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+      @keyframes fadeInRight { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+      .data-table__body tr { transition: background-color 0.15s ease, transform 0.1s ease; }
+      .data-table__body tr:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 10; position: relative; }
+      .slide-btn:active { transform: scale(0.97); }
+    </style>
+    
+    <div style="margin-bottom:1rem;display:flex;gap:1rem;">
+      <div style="background:linear-gradient(135deg, #10b981 0%, #059669 100%);color:white;padding:1.2rem;border-radius:8px;flex:1;box-shadow: 0 4px 10px rgba(16, 185, 129, 0.2);display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:0.8rem;color:rgba(255,255,255,0.8);font-weight:700;letter-spacing:1px;margin-bottom:4px;">🌟 MEJOR PROVEEDOR</div>
+          <div style="font-size:1.3rem;font-weight:800;color:white;text-shadow:0 1px 2px rgba(0,0,0,0.1);">
+            ${mejorProvId ? (getData('proveedores').find(x=>x.id===mejorProvId)?.razonSocial || 'N/A') : 'Aún sin compras'} 
+          </div>
+        </div>
+        <div style="background:rgba(255,255,255,0.2);padding:10px 16px;border-radius:8px;text-align:right;">
+            <div style="font-size:0.75rem;color:rgba(255,255,255,0.9);text-transform:uppercase;font-weight:600;">Total Compras</div>
+            <div style="font-size:1.2rem;font-weight:800;color:white;">C$${_fmtNum(maxTotal)}</div>
+        </div>
+      </div>
+    </div>
+    
+    <div style="display:flex;gap:0;height:calc(100vh - 220px);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;background:var(--bg-secondary);box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+            <div style="padding:12px;background:var(--bg-primary);border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;">
+                <div style="display:flex; gap:0.5rem; flex:1;">
+                    <div style="position:relative;flex:1;min-width:200px;max-width:350px;">
+                      <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);opacity:0.5;">${Icons.search}</span>
+                      <input type="text" class="form-input" style="padding-left:36px;height:36px;transition:all 0.2s;" placeholder="Buscar RUC, Nombre o No." value="${provFiltro.search}" oninput="ProductosModule.setProvFiltro('search', this.value)">
+                    </div>
+                    <select class="form-select" style="height:36px;" onchange="ProductosModule.setProvFiltro('tipo', this.value)">
+                        <option value="all">Todos los Tipos</option>
+                        ${unicosTipos.map(t => `<option value="${t}" ${provFiltro.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            
+            <div style="flex:1;overflow-y:auto;scroll-behavior: smooth;">
+               <table class="data-table" style="width:100%;font-size:12px;border-collapse: separate;border-spacing: 0;">
+                  <thead class="data-table__head" style="position: sticky; top: 0; z-index: 20; background: var(--bg-body);">
+                     <tr><th>No.</th><th>Tipo</th><th>RUC</th><th>Razón Social</th><th>Compras</th><th>Total Gastado</th><th>Ciudad</th></tr>
+                  </thead>
+                  <tbody class="data-table__body">
+                     ${provs.length === 0 ? '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--text-muted);">No hay proveedores aquí</td></tr>' : provs.map((p, i) => { 
+                         const bestBadge = (p.id === mejorProvId && maxTotal > 0) ? '<span class="badge badge--success" style="margin-left:4px;">⭐ Mejor</span>' : '';
+                         return `<tr style="cursor:pointer;${provSelectedRow === i ? 'background:rgba(56,189,248,0.15); border-left: 3px solid #38bdf8;' : 'border-left: 3px solid transparent;'}" onclick="ProductosModule.selectProvRow(${i})" ondblclick="ProductosModule.openProveedorModal('${p.id}')">
+                            <td style="font-weight:700;color:var(--color-primary-600);">${p.numero_proveedor || p.numeroProveedor || p.codigo_proveedor || '-'}</td>
+                            <td><span class="badge badge--neutral">${p.tipoProveedor || p.tipo_proveedor || p.tipo || '-'}</span></td>
+                            <td style="font-family:monospace;">${p.ruc || '-'}</td>
+                            <td style="font-weight:600;">${p.razonSocial || p.razon_social || '-'}${bestBadge}</td>
+                            <td onclick="ProductosModule.showProveedorHistorial('${p.id}'); event.stopPropagation()"><span class="badge badge--info" style="cursor:pointer;">${statsP[p.id]?.comprosNum || 0} compras</span></td>
+                            <td style="font-weight:700;">C$${_fmtNum(statsP[p.id]?.total || 0)}</td>
+                            <td>${p.ciudad || '-'}</td>
+                         </tr>`;
+                     }).join('')}
+                  </tbody>
+               </table>
+            </div>
+        </div>
+        <div style="width:220px;padding:12px;border-left:1px solid var(--border-color);background:var(--bg-primary);display:flex;flex-direction:column;">
+            ${rightPanelContent}
+        </div>
+    </div>
+    <div id="productosModal">${modalContent}</div>`;
   };
 
   // ========== SUB: CUENTAS POR PAGAR ==========
@@ -1217,6 +1548,7 @@ const ProductosModule = (() => {
     } catch (e) { alert('Error: ' + e.message); }
   };
 
+
   // ========== DEPARTAMENTOS ==========
   const openDeptosModal = () => {
     const deptos = getPosData('prod_departamentos');
@@ -1996,7 +2328,7 @@ const ProductosModule = (() => {
     App.refreshCurrentModule();
   };
 
-  const saveCompra = () => {
+  const saveCompra = async () => {
     if (compraCart.length === 0) { alert('Agregue al menos un producto.'); return; }
     if (!compraProveedor) { alert('Seleccione un proveedor.'); return; }
     const provs = getData('proveedores');
@@ -2006,24 +2338,48 @@ const ProductosModule = (() => {
     const total = subtotal - descTotal;
     const numFact = compraNumFactura || ('CMP-' + Date.now().toString(36).toUpperCase());
     const compra = {
-      id: Date.now().toString(36),
       numFactura: numFact,
+      numero_factura_proveedor: numFact,
       proveedor: compraProveedor,
+      proveedorId: compraProveedor,
+      proveedor_id: compraProveedor,
       proveedorNombre: provObj?.razonSocial || compraProveedor,
+      proveedor_nombre: provObj?.razonSocial || compraProveedor,
       fecha: compraFecha || new Date().toISOString(),
       metodo: compraMetodo,
+      metodo_pago: compraMetodo,
       items: compraCart,
       subtotal, descTotal, total,
       comentarios: compraComentarios,
       transfBanco: compraTransfBanco,
       transfRef: compraTransfRef,
       fechaVencimiento: compraFechaVenc,
+      fecha_vencimiento: compraFechaVenc,
       saldoPendiente: compraMetodo === 'credito' ? total : 0,
+      tipo_compra: compraMetodo === 'credito' ? 'credito' : 'contado',
       usuario: user()?.name || 'Sistema'
     };
-    const compras = getData('compras');
-    compras.push(compra);
-    setData('compras', compras);
+
+    // Save to Supabase via DataService
+    try {
+      if (typeof DataService !== 'undefined' && DataService.createCompra) {
+        const saved = await DataService.createCompra(compra);
+        if (saved) compra.id = saved.id;
+      } else {
+        // Fallback localStorage
+        compra.id = Date.now().toString(36);
+        const compras = getData('compras');
+        compras.push(compra);
+        setData('compras', compras);
+      }
+    } catch(e) {
+      console.error('Error guardando compra:', e);
+      // Fallback localStorage
+      compra.id = compra.id || Date.now().toString(36);
+      const compras = getData('compras');
+      compras.push(compra);
+      setData('compras', compras);
+    }
 
     // Actualizar stock por bodega
     compraCart.forEach(it => {
@@ -2172,10 +2528,24 @@ const ProductosModule = (() => {
         <div class="form-group"><label class="form-label">RUC</label><input type="text" name="ruc" class="form-input" value="${p.ruc || ''}"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Tipo de Proveedor</label><select name="tipoProveedor" class="form-select">
-          <option value="Nacional" ${(p.tipoProveedor || p.tipo_proveedor) === 'Nacional' ? 'selected' : ''}>Nacional</option>
-          <option value="Extranjero" ${(p.tipoProveedor || p.tipo_proveedor) === 'Extranjero' ? 'selected' : ''}>Extranjero</option>
-        </select></div>
+        <div class="form-group"><label class="form-label">Tipo de Proveedor</label>
+        <div style="display:flex;gap:4px;">
+          <select name="tipoProveedor" class="form-select" style="flex:1;">
+            <option value="">Seleccionar...</option>
+            ${(() => {
+                let r = '';
+                const baseTypes = [];
+                let t = (p.tipoProveedor || p.tipo_proveedor || '');
+                const custom = getData('prov_tipos'); 
+                const allTypes = [...new Set([...baseTypes, ...custom.map(x=>x.nombre)])];
+                if (t && !allTypes.includes(t)) allTypes.push(t);
+                allTypes.forEach(x => { r += `<option value="${x}" ${t === x ? 'selected' : ''}>${x}</option>`; });
+                return r;
+            })()}
+          </select>
+          <button type="button" class="btn btn--ghost btn--sm" onclick="ProductosModule.addProvTipo()" title="Nuevo Tipo">+</button>
+        </div>
+        </div>
         <div class="form-group"><label class="form-label">Teléfono</label><input type="text" name="telefono" class="form-input" value="${p.telefono || ''}"></div>
       </div>
       <div class="form-row">
@@ -2228,6 +2598,14 @@ const ProductosModule = (() => {
   };
 
   const deleteProveedor = async (id) => {
+    const comprasProv = getData('compras').filter(c => c.proveedorId === id);
+    const pendingCredits = comprasProv.filter(c => c.metodo === 'credito' && (c.saldoPendiente || 0) > 0);
+    
+    if (pendingCredits.length > 0) {
+        alert(`No se puede borrar este proveedor. Tiene ${pendingCredits.length} factura(s) de crédito con saldo pendiente.`);
+        return;
+    }
+
     if (!confirm('¿Eliminar este proveedor?')) return;
     try {
         if (typeof DataService !== 'undefined' && DataService.deleteProveedor) {
@@ -2241,7 +2619,36 @@ const ProductosModule = (() => {
         alert('Error eliminando: ' + err.message);
     }
   };
-   const addProvTipo = () => openProveedorModal();
+  const addProvTipo = () => {
+    const pData = getData('prov_tipos');
+    const existing = [...pData.map(x => x.nombre)];
+    
+    const modal = document.getElementById('productosModal'); if (!modal) return;
+    modal.innerHTML = `<div class="modal-overlay open"><div class="modal" onclick="event.stopPropagation()" style="max-width:400px;"><div class="modal__header"><h3 class="modal__title">Gestión de Tipos</h3><button type="button" class="modal__close" onclick="ProductosModule.openProveedorModal()">${Icons.x}</button></div>
+    <div class="modal__body" style="padding:16px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:8px;">TIPOS EXISTENTES</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+             ${existing.length === 0 ? '<span style="color:var(--text-muted);font-size:12px;">Sin tipos adicionales.</span>' : existing.map(e => `<span class="badge badge--neutral">${e}</span>`).join('')}
+        </div>
+        <div class="form-group"><label class="form-label form-label--required">Registrar Nuevo Tipo</label><input type="text" id="nuevoTipoInput" class="form-input" placeholder="Ej: Importador, Local, Preferencial..." ></div>
+        <div class="modal__footer"><button type="button" class="btn btn--secondary" onclick="ProductosModule.openProveedorModal()">⬅ Volver</button><button type="button" class="btn btn--primary" onclick="ProductosModule.confirmAddProvTipo()">Agregar y Seleccionar</button></div>
+    </div>
+    </div></div>`;
+    setTimeout(()=>document.getElementById('nuevoTipoInput')?.focus(), 100);
+  };
+
+  const confirmAddProvTipo = () => {
+    const input = document.getElementById('nuevoTipoInput');
+    const v = input ? input.value.trim() : '';
+    if (!v) { if (input) input.focus(); return; }
+    const p = getData('prov_tipos');
+    if (p.some(x => x.nombre.toLowerCase() === v.toLowerCase())) { alert('Ese tipo ya existe.'); return; }
+    p.push({ id: Date.now().toString(), nombre: v });
+    setData('prov_tipos', p);
+    closeModal();
+    openProveedorModal();
+    setTimeout(() => { const sel = document.querySelector('select[name=tipoProveedor]'); if (sel) sel.value = v; }, 200);
+  };
 
   const registrarPagoCompra = (compraId) => {
     const c = getData('compras').find(x => x.id === compraId);
@@ -2413,11 +2820,12 @@ const ProductosModule = (() => {
     handleFotosUpload, removeFoto, renderProductImageCarousel, nextImage, openImageFullscreen,
     openDeptosModal, addDepto, removeDepto,
     setCompraField, searchCompraProduct, handleCompraSearchKeydown, highlightCompraSearchItem, addCompraProduct, confirmAddCompra, removeCompraItem, editCompraItem, confirmEditCompraItem, setCompraDescGlobal, applyCompraDescGlobal, saveCompra, selectCompraItem, calcBodegaDistrib, toggleSerialPanel, addSerialToList, removeSerialFromList,
-    openProveedorModal, addProvTipo, saveProveedor, deleteProveedor,
+    openProveedorModal, addProvTipo, confirmAddProvTipo, saveProveedor, deleteProveedor, setProvFiltro, selectProvRow, showProveedorHistorial,
     registrarPagoCompra, confirmPagoCompra, viewCompraDetail, editCompraFactura, saveEditCompraFactura, setHistFiltro,
     openPromoModal, savePromo, deletePromo,
     setTrasladoField, updateBodegasDestino, searchTrasladoProduct, addTrasladoProduct, removeTrasladoItem, updateTrasladoQty, realizarTraslado, verHistorialTraslados,
     cxpSetFiltro, cxpLimpiarFiltros, cxpToggleAgrupada, cxpExportarExcel, cxpExportarPDF, cxpToggleBancoField,
+    getData, setData,
     handleTipoFilter: (v) => setFilter('tipo', v),
     handleEstadoFilter: (v) => setFilter('estado', v)
   };

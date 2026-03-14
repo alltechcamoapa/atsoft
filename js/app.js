@@ -13,8 +13,6 @@ const App = (() => {
     const menuItems = [
       { id: 'dashboard', label: 'Inicio', icon: Icons.home },
       { id: 'ventas', label: 'Gestión de Ventas', icon: Icons.shoppingBag },
-
-      { id: 'pedidos', label: 'Pedidos', icon: Icons.shoppingCart },
       { id: 'productos', label: 'Gestión de Compras', icon: Icons.package },
       { id: 'recepciones', label: 'Recepción de Equipos', icon: Icons.inbox },
       { id: 'visitas', label: 'Visitas / Servicios', icon: Icons.wrench },
@@ -92,9 +90,9 @@ const App = (() => {
         };
 
         visibleItems.forEach(item => {
-          if (['ventas', 'proformas', 'clientes', 'pedidos', 'productos'].includes(item.id)) {
+          if (['ventas', 'clientes', 'productos'].includes(item.id)) {
             groups['VENTAS'].push(item);
-          } else if (['recepciones', 'visitas', 'equipos', 'software', 'contratos', 'calendario'].includes(item.id)) {
+          } else if (['proformas', 'recepciones', 'visitas', 'equipos', 'software', 'contratos', 'calendario'].includes(item.id)) {
             groups['Servicios Técnicos'].push(item);
           } else if (['gestion-financiera', 'prestaciones', 'gestion-tecnicos', 'reportes', 'configuracion'].includes(item.id)) {
             groups['Administración'].push(item);
@@ -175,7 +173,6 @@ const App = (() => {
       clientes: 'Clientes',
       contratos: 'Contratos',
       visitas: 'Visitas / Servicios',
-      pedidos: 'Pedidos',
       proformas: 'Proformas / Cotizaciones',
       productos: 'Gestión de Compras',
       equipos: 'Equipos',
@@ -187,6 +184,7 @@ const App = (() => {
       calendario: 'Calendarios de Trabajos',
       reportes: 'Reportes',
       'gestion-tecnicos': 'Gestión de Técnicos',
+      'gestion-vehiculos': 'Gestión de Vehículos',
       configuracion: 'Configuración'
     };
 
@@ -777,9 +775,6 @@ const App = (() => {
       case 'proformas':
         moduleContent = ProformasModule.render();
         break;
-      case 'pedidos':
-        moduleContent = PedidosModule.render();
-        break;
       case 'productos':
         moduleContent = ProductosModule.render();
         break;
@@ -807,11 +802,14 @@ const App = (() => {
       case 'gestion-tecnicos':
         moduleContent = GestionTecnicosModule.render();
         break;
+      case 'gestion-vehiculos':
+        moduleContent = typeof GestionVehiculosModule !== 'undefined' ? GestionVehiculosModule.render() : renderModulePlaceholder(currentModule);
+        break;
       case 'reportes':
         moduleContent = ReportesModule.render();
         break;
       case 'configuracion':
-        moduleContent = ConfigModule.render();
+        moduleContent = typeof ConfigModule !== 'undefined' ? ConfigModule.render() : renderModulePlaceholder(currentModule);
         break;
       default:
         moduleContent = renderModulePlaceholder(currentModule);
@@ -833,6 +831,7 @@ const App = (() => {
       calendario: 'Calendario',
       reportes: 'Reportes',
       'gestion-tecnicos': 'Gestión de Técnicos',
+      'gestion-vehiculos': 'Gestión de Vehículos',
       configuracion: 'Configuración'
     };
 

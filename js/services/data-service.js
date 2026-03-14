@@ -145,7 +145,9 @@ const DataService = (() => {
                 clientes, contratos, equipos, visitas, productos, proformas, pedidos,
                 empleados, nominas, software, users, pagosTecnicos, ausencias,
                 horasExtras, bonificaciones, adelantos, feriadosTrabajados, prestamosEmpleados, abonosPrestamos,
-                recepciones, empresas, bodegas, proveedores
+                recepciones, empresas, bodegas, proveedores,
+                finIngresos, finGastos, finCategorias, finCuentasCobrar, finCuentasPagar, finPresupuestos,
+                ventasDB, comprasDB
             ] = await Promise.all([
                 SupabaseDataService.getClientesSync(),
                 SupabaseDataService.getContratosSync(),
@@ -169,8 +171,16 @@ const DataService = (() => {
                 SupabaseDataService.getRecepcionesSync?.() || Promise.resolve([]),
                 SupabaseDataService.getEmpresasSync?.() || Promise.resolve([]),
                 SupabaseDataService.getBodegasSync?.() || Promise.resolve([]),
-                SupabaseDataService.getProveedoresSync?.() || Promise.resolve([])
+                SupabaseDataService.getProveedoresSync?.() || Promise.resolve([]),
+                SupabaseDataService.getFinIngresosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getFinGastosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getFinCategoriasSync?.() || Promise.resolve([]),
+                SupabaseDataService.getFinCuentasCobrarSync?.() || Promise.resolve([]),
+                SupabaseDataService.getCuentasPagarSync?.() || Promise.resolve([]),
+                SupabaseDataService.getFinPresupuestosSync?.() || Promise.resolve([]),
+                SupabaseDataService.getVentasSync?.() || Promise.resolve([]),
             ]);
+
 
             // Normalizar y almacenar en caché
             cache.empresas = empresas || [];
@@ -249,6 +259,16 @@ const DataService = (() => {
             cache.feriadosTrabajados = feriadosTrabajados || [];
             cache.prestamosEmpleados = prestamosEmpleados || [];
             cache.abonosPrestamos = abonosPrestamos || [];
+
+            // Financial data
+            cache.finIngresos = finIngresos || [];
+            cache.finGastos = finGastos || [];
+            cache.finCategorias = finCategorias || [];
+            cache.finCuentasCobrar = finCuentasCobrar || [];
+            cache.finCuentasPagar = finCuentasPagar || [];
+            cache.finPresupuestos = finPresupuestos || [];
+            cache.ventas = ventasDB || [];
+            cache.compras = comprasDB || [];
 
             // Cargar permisos por defecto (hardcoded por seguridad)
             cache.permissions = loadDefaultPermissions();
@@ -3561,7 +3581,137 @@ return {
         },
 
         // ---- Obtener caché interno ----
-        getCache: () => cache
+        getCache: () => cache,
+
+        // ======== FINANCIAL MODULE METHODS ========
+        addFinIngreso: async (record) => {
+            try {
+                record.id = record.id || crypto.randomUUID();
+                record.created_at = record.created_at || new Date().toISOString();
+                const res = await SupabaseDataService.createFinIngreso(record);
+                if (res.success) { cache.finIngresos = cache.finIngresos || []; cache.finIngresos.unshift(res.data); return res.data; }
+                cache.finIngresos = cache.finIngresos || []; cache.finIngresos.unshift(record); return record;
+            } catch(e) { console.error('addFinIngreso error:', e); cache.finIngresos = cache.finIngresos || []; cache.finIngresos.unshift(record); return record; }
+        },
+        addFinGasto: async (record) => {
+            try {
+                record.id = record.id || crypto.randomUUID();
+                record.created_at = record.created_at || new Date().toISOString();
+                const res = await SupabaseDataService.createFinGasto(record);
+                if (res.success) { cache.finGastos = cache.finGastos || []; cache.finGastos.unshift(res.data); return res.data; }
+                cache.finGastos = cache.finGastos || []; cache.finGastos.unshift(record); return record;
+            } catch(e) { console.error('addFinGasto error:', e); cache.finGastos = cache.finGastos || []; cache.finGastos.unshift(record); return record; }
+        },
+        getFinIngresosSync: () => [...(cache.finIngresos || [])],
+        getFinGastosSync: () => [...(cache.finGastos || [])],
+        getFinCategoriasSync: () => [...(cache.finCategorias || [])],
+        getFinCuentasCobrarSync: () => [...(cache.finCuentasCobrar || [])],
+        getFinCuentasPagarSync: () => [...(cache.finCuentasPagar || [])],
+        getFinPresupuestosSync: () => [...(cache.finPresupuestos || [])],
+
+        getFinMetrics: (period = 'month') => {
+            const ingresos = cache.finIngresos || [];
+            const gastos = cache.finGastos || [];
+            const now = new Date();
+            const ms = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+            const ys = new Date(now.getFullYear(), 0, 1).toISOString();
+            const ingresosMes = ingresos.filter(i => i.fecha >= ms).reduce((s, i) => s + parseFloat(i.monto || 0), 0);
+            const gastosMes = gastos.filter(g => g.fecha >= ms).reduce((s, g) => s + parseFloat(g.monto || 0), 0);
+            const ingresosAnio = ingresos.filter(i => i.fecha >= ys).reduce((s, i) => s + parseFloat(i.monto || 0), 0);
+            const gastosAnio = gastos.filter(g => g.fecha >= ys).reduce((s, g) => s + parseFloat(g.monto || 0), 0);
+            const cxc = (cache.finCuentasCobrar || []).filter(c => c.estado === 'pendiente' || c.estado === 'parcial').reduce((s, c) => s + parseFloat(c.saldo_pendiente || 0), 0);
+            const cxp = (cache.finCuentasPagar || []).filter(c => c.estado === 'pendiente' || c.estado === 'parcial').reduce((s, c) => s + parseFloat(c.saldo_pendiente || 0), 0);
+            return { ingresosMes, gastosMes, utilidadMes: ingresosMes - gastosMes, ingresosAnio, gastosAnio, utilidadAnio: ingresosAnio - gastosAnio, cxc, cxp, balance: ingresosMes - gastosMes };
+        },
+
+        getFinAlertas: () => {
+            const alertas = [];
+            const now = new Date();
+            (cache.finCuentasCobrar || []).filter(c => c.estado === 'pendiente' && c.fecha_vencimiento && new Date(c.fecha_vencimiento) < now).forEach(c => {
+                alertas.push({ tipo: 'cxc_vencida', mensaje: `CxC vencida: ${c.cliente_nombre || 'Cliente'} - C$${parseFloat(c.saldo_pendiente || 0).toFixed(2)}`, nivel: 'warning', data: c });
+            });
+            (cache.finCuentasPagar || []).filter(c => c.estado === 'pendiente' && c.fecha_vencimiento && new Date(c.fecha_vencimiento) < now).forEach(c => {
+                alertas.push({ tipo: 'cxp_vencida', mensaje: `CxP vencida: ${c.proveedor_nombre || 'Proveedor'} - C$${parseFloat(c.saldo_pendiente || 0).toFixed(2)}`, nivel: 'danger', data: c });
+            });
+            return alertas;
+        },
+
+        // ======== VENTAS METHODS ========
+        getVentasSync: () => [...(cache.ventas || [])],
+        createVenta: async (ventaData) => {
+            try {
+                const res = await SupabaseDataService.createVenta(ventaData);
+                if (res.success) {
+                    cache.ventas = cache.ventas || []; cache.ventas.unshift(res.data);
+                    if (parseFloat(res.data.total) > 0) {
+                        DataService.addFinIngreso({ categoria: 'Ventas de Productos', concepto: `Venta ${res.data.numero_factura || res.data.codigo_venta}`, monto: parseFloat(res.data.total), fecha: res.data.fecha, metodo_pago: res.data.metodo_pago, cliente_id: res.data.cliente_id, cliente_nombre: res.data.cliente_nombre, venta_id: res.data.id, origen: 'venta_pos' });
+                    }
+                    if (res.data.tipo_venta === 'credito' && parseFloat(res.data.total) > 0) {
+                        SupabaseDataService.createFinCuentaCobrar({ cliente_id: res.data.cliente_id, cliente_nombre: res.data.cliente_nombre, venta_id: res.data.id, numero_factura: res.data.numero_factura, monto_original: parseFloat(res.data.total), saldo_pendiente: parseFloat(res.data.total), fecha_emision: res.data.fecha });
+                    }
+                    return res.data;
+                }
+                throw new Error(res.error);
+            } catch(e) { console.error('createVenta error:', e); throw e; }
+        },
+        updateVenta: async (id, u) => { const r = await SupabaseDataService.updateVenta(id, u); return r.success ? r.data : null; },
+        deleteVenta: async (id) => { const r = await SupabaseDataService.deleteVenta(id); return r.success; },
+
+        // ======== COMPRAS METHODS ========
+        getComprasSync: () => [...(cache.compras || [])],
+        createCompra: async (compraData) => {
+            try {
+                const res = await SupabaseDataService.createCompra(compraData);
+                if (res.success) {
+                    cache.compras = cache.compras || []; cache.compras.unshift(res.data);
+                    if (parseFloat(res.data.total) > 0) {
+                        DataService.addFinGasto({ categoria: 'Compra de Inventario', concepto: `Compra ${res.data.numero_factura_proveedor || res.data.codigo_compra}`, monto: parseFloat(res.data.total), fecha: res.data.fecha, metodo_pago: res.data.metodo_pago, proveedor_id: res.data.proveedor_id, proveedor_nombre: res.data.proveedor_nombre, compra_id: res.data.id, origen: 'compra' });
+                    }
+                    if (res.data.tipo_compra === 'credito' && parseFloat(res.data.total) > 0) {
+                        SupabaseDataService.createCuentaPagar({ compra_id: res.data.id, proveedor_id: res.data.proveedor_id, proveedor_nombre: res.data.proveedor_nombre, numero_factura: res.data.numero_factura_proveedor, monto_original: parseFloat(res.data.total), saldo_pendiente: parseFloat(res.data.total), fecha_emision: res.data.fecha, fecha_vencimiento: res.data.fecha_vencimiento });
+                    }
+                    return res.data;
+                }
+                throw new Error(res.error);
+            } catch(e) { console.error('createCompra error:', e); throw e; }
+        },
+        updateCompra: async (id, u) => { const r = await SupabaseDataService.updateCompra(id, u); return r.success ? r.data : null; },
+        deleteCompra: async (id) => { const r = await SupabaseDataService.deleteCompra(id); return r.success; },
+
+        // ======== TURNOS CAJA ========
+        getTurnoActivo: async () => await SupabaseDataService.getTurnoActivo?.() || null,
+        createTurnoCaja: async (d) => { const r = await SupabaseDataService.createTurnoCaja(d); return r.success ? r.data : null; },
+        updateTurnoCaja: async (id, d) => { const r = await SupabaseDataService.updateTurnoCaja(id, d); return r.success ? r.data : null; },
+        getCajaMovimientosSync: async (turnoId) => await SupabaseDataService.getCajaMovimientosSync?.(turnoId) || [],
+        createCajaMovimiento: async (d) => { const r = await SupabaseDataService.createCajaMovimiento(d); return r.success ? r.data : null; },
+
+        // ======== DEVOLUCIONES ========
+        getDevolucionesSync: async () => await SupabaseDataService.getDevolucionesSync?.() || [],
+        createDevolucion: async (d) => { const r = await SupabaseDataService.createDevolucion(d); return r.success ? r.data : null; },
+
+        // ======== ABONOS CLIENTES ========
+        getAbonosClientesSync: async (ventaId) => await SupabaseDataService.getAbonosClientesSync?.(ventaId) || [],
+        createAbonoCliente: async (d) => { const r = await SupabaseDataService.createAbonoCliente(d); return r.success ? r.data : null; },
+
+        // ======== COTIZACIONES POS ========
+        getCotizacionesPosSync: async () => await SupabaseDataService.getCotizacionesPosSync?.() || [],
+        createCotizacionPos: async (d) => { const r = await SupabaseDataService.createCotizacionPos(d); return r.success ? r.data : null; },
+        deleteCotizacionPos: async (id) => { const r = await SupabaseDataService.deleteCotizacionPos(id); return r.success; },
+
+        // ======== CUENTAS POR PAGAR ========
+        getCuentasPagarSync: async () => await SupabaseDataService.getCuentasPagarSync?.() || [],
+        createCuentaPagar: async (d) => { const r = await SupabaseDataService.createCuentaPagar(d); if (r.success) { cache.finCuentasPagar = cache.finCuentasPagar || []; cache.finCuentasPagar.unshift(r.data); } return r.success ? r.data : null; },
+
+        // ======== ABONOS PROVEEDORES ========
+        getAbonosProveedoresSync: async (cId) => await SupabaseDataService.getAbonosProveedoresSync?.(cId) || [],
+        createAbonoProveedor: async (d) => { const r = await SupabaseDataService.createAbonoProveedor(d); return r.success ? r.data : null; },
+
+        // ======== PROVEEDOR TIPOS ========
+        getProveedorTiposSync: async () => await SupabaseDataService.getProveedorTiposSync?.() || [],
+        createProveedorTipo: async (d) => { const r = await SupabaseDataService.createProveedorTipo(d); return r.success ? r.data : null; },
+        deleteProveedorTipo: async (id) => { const r = await SupabaseDataService.deleteProveedorTipo(id); return r.success; },
+
+        getFacturasByCliente: (clienteId) => (cache.ventas || []).filter(v => v.cliente_id === clienteId)
     };
 })();
 

@@ -2405,164 +2405,498 @@ const SupabaseDataService = (() => {
             throw e;
         }
     };
+
+    // ========== VENTAS (Sales/Invoices) ==========
+    const getVentasSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('ventas').select('*, cliente:clientes(id,nombre_cliente,empresa)');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) { console.error('Error fetching ventas:', error); return []; }
+        return data || [];
+    };
+    const getVentaById = async (id) => {
+        if (!client) return null;
+        const { data, error } = await client.from('ventas').select('*, cliente:clientes(*), items:venta_items(*, producto:productos(id,nombre,codigo))').eq('id', id).single();
+        if (error) { console.error('Error fetching venta:', error); return null; }
+        return data;
+    };
+    const createVenta = async (ventaData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !ventaData.empresa_id) ventaData.empresa_id = empresaId;
+        if (!ventaData.codigo_venta) ventaData.codigo_venta = await generateCode('ventas', 'VNT-', 6, 'codigo_venta');
+        const user = await getCurrentUser();
+        if (user && !ventaData.created_by) ventaData.created_by = user.id;
+        const { items, ...ventaSinItems } = ventaData;
+        const { data, error } = await client.from('ventas').insert([ventaSinItems]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createVenta') };
+        if (items && items.length > 0) {
+            const rows = items.map(it => ({ ...it, venta_id: data.id }));
+            await client.from('venta_items').insert(rows);
+        }
+        return { data, success: true };
+    };
+    const updateVenta = async (id, updates) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('ventas').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateVenta') };
+        return { data, success: true };
+    };
+    const deleteVenta = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('ventas').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteVenta') };
+        return { success: true };
+    };
+    const createVentaItems = async (ventaId, items) => {
+        if (!client) return { error: 'Not initialized' };
+        const rows = items.map(it => ({ ...it, venta_id: ventaId }));
+        const { data, error } = await client.from('venta_items').insert(rows).select();
+        if (error) return { error: handleSupabaseError(error, 'createVentaItems') };
+        return { data, success: true };
+    };
+
+    // ========== TURNOS DE CAJA ==========
+    const getTurnosCajaSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('turnos_caja').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha_apertura', { ascending: false });
+        if (error) { console.error('Error fetching turnos:', error); return []; }
+        return data || [];
+    };
+    const getTurnoActivo = async () => {
+        if (!client) return null;
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('turnos_caja').select('*').eq('estado', 'abierto');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.limit(1).maybeSingle();
+        if (error) return null;
+        return data;
+    };
+    const createTurnoCaja = async (turnoData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !turnoData.empresa_id) turnoData.empresa_id = empresaId;
+        if (!turnoData.codigo_turno) turnoData.codigo_turno = await generateCode('turnos_caja', 'TRN-', 5, 'codigo_turno');
+        const { data, error } = await client.from('turnos_caja').insert([turnoData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createTurnoCaja') };
+        return { data, success: true };
+    };
+    const updateTurnoCaja = async (id, updates) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('turnos_caja').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateTurnoCaja') };
+        return { data, success: true };
+    };
+
+    // ========== CAJA MOVIMIENTOS ==========
+    const getCajaMovimientosSync = async (turnoId) => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('caja_movimientos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        if (turnoId) query = query.eq('turno_id', turnoId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createCajaMovimiento = async (movData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !movData.empresa_id) movData.empresa_id = empresaId;
+        const { data, error } = await client.from('caja_movimientos').insert([movData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createCajaMovimiento') };
+        return { data, success: true };
+    };
+
+    // ========== DEVOLUCIONES ==========
+    const getDevolucionesSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('devoluciones').select('*, venta:ventas(id,numero_factura), cliente:clientes(id,nombre_cliente)');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createDevolucion = async (devData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !devData.empresa_id) devData.empresa_id = empresaId;
+        if (!devData.codigo_devolucion) devData.codigo_devolucion = await generateCode('devoluciones', 'DEV-', 5, 'codigo_devolucion');
+        const { data, error } = await client.from('devoluciones').insert([devData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createDevolucion') };
+        return { data, success: true };
+    };
+
+    // ========== ABONOS CLIENTES ==========
+    const getAbonosClientesSync = async (ventaId) => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('abonos_clientes').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        if (ventaId) query = query.eq('venta_id', ventaId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createAbonoCliente = async (abonoData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !abonoData.empresa_id) abonoData.empresa_id = empresaId;
+        const { data, error } = await client.from('abonos_clientes').insert([abonoData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createAbonoCliente') };
+        return { data, success: true };
+    };
+
+    // ========== COTIZACIONES POS ==========
+    const getCotizacionesPosSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('cotizaciones_pos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.eq('estado', 'pendiente').order('created_at', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createCotizacionPos = async (cotData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !cotData.empresa_id) cotData.empresa_id = empresaId;
+        const { data, error } = await client.from('cotizaciones_pos').insert([cotData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createCotizacionPos') };
+        return { data, success: true };
+    };
+    const updateCotizacionPos = async (id, updates) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('cotizaciones_pos').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateCotizacionPos') };
+        return { data, success: true };
+    };
+    const deleteCotizacionPos = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('cotizaciones_pos').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteCotizacionPos') };
+        return { success: true };
+    };
+
+    // ========== COMPRAS ==========
+    const getComprasSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('compras').select('*, proveedor:proveedores(id,razon_social,ruc)');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const getCompraById = async (id) => {
+        if (!client) return null;
+        const { data, error } = await client.from('compras').select('*, proveedor:proveedores(*), items:compra_items(*, producto:productos(id,nombre,codigo))').eq('id', id).single();
+        if (error) return null;
+        return data;
+    };
+    const createCompra = async (compraData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !compraData.empresa_id) compraData.empresa_id = empresaId;
+        if (!compraData.codigo_compra) compraData.codigo_compra = await generateCode('compras', 'CMP-', 5, 'codigo_compra');
+        const user = await getCurrentUser();
+        if (user && !compraData.created_by) compraData.created_by = user.id;
+        const { items, ...compraSinItems } = compraData;
+        const { data, error } = await client.from('compras').insert([compraSinItems]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createCompra') };
+        if (items && items.length > 0) {
+            const rows = items.map(it => ({ ...it, compra_id: data.id }));
+            await client.from('compra_items').insert(rows);
+        }
+        return { data, success: true };
+    };
+    const updateCompra = async (id, updates) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('compras').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateCompra') };
+        return { data, success: true };
+    };
+    const deleteCompra = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('compras').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteCompra') };
+        return { success: true };
+    };
+
+    // ========== CUENTAS POR PAGAR ==========
+    const getCuentasPagarSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('cuentas_pagar').select('*, proveedor:proveedores(id,razon_social)');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha_emision', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createCuentaPagar = async (cxpData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !cxpData.empresa_id) cxpData.empresa_id = empresaId;
+        const { data, error } = await client.from('cuentas_pagar').insert([cxpData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createCuentaPagar') };
+        return { data, success: true };
+    };
+    const updateCuentaPagar = async (id, updates) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('cuentas_pagar').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateCuentaPagar') };
+        return { data, success: true };
+    };
+
+    // ========== ABONOS PROVEEDORES ==========
+    const getAbonosProveedoresSync = async (cuentaId) => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('abonos_proveedores').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        if (cuentaId) query = query.eq('cuenta_pagar_id', cuentaId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createAbonoProveedor = async (abonoData) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !abonoData.empresa_id) abonoData.empresa_id = empresaId;
+        const { data, error } = await client.from('abonos_proveedores').insert([abonoData]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createAbonoProveedor') };
+        return { data, success: true };
+    };
+
+    // ========== FIN_INGRESOS ==========
+    const getFinIngresosSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('fin_ingresos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createFinIngreso = async (d) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !d.empresa_id) d.empresa_id = empresaId;
+        const user = await getCurrentUser();
+        if (user && !d.created_by) d.created_by = user.id;
+        const { data, error } = await client.from('fin_ingresos').insert([d]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createFinIngreso') };
+        return { data, success: true };
+    };
+    const updateFinIngreso = async (id, u) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('fin_ingresos').update({ ...u, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateFinIngreso') };
+        return { data, success: true };
+    };
+    const deleteFinIngreso = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('fin_ingresos').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteFinIngreso') };
+        return { success: true };
+    };
+
+    // ========== FIN_GASTOS ==========
+    const getFinGastosSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('fin_gastos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createFinGasto = async (d) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !d.empresa_id) d.empresa_id = empresaId;
+        const user = await getCurrentUser();
+        if (user && !d.created_by) d.created_by = user.id;
+        const { data, error } = await client.from('fin_gastos').insert([d]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createFinGasto') };
+        return { data, success: true };
+    };
+    const updateFinGasto = async (id, u) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('fin_gastos').update({ ...u, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateFinGasto') };
+        return { data, success: true };
+    };
+    const deleteFinGasto = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('fin_gastos').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteFinGasto') };
+        return { success: true };
+    };
+
+    // ========== FIN_CATEGORIAS ==========
+    const getFinCategoriasSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('fin_categorias').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('nombre', { ascending: true });
+        if (error) return [];
+        return data || [];
+    };
+    const createFinCategoria = async (d) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !d.empresa_id) d.empresa_id = empresaId;
+        const { data, error } = await client.from('fin_categorias').insert([d]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createFinCategoria') };
+        return { data, success: true };
+    };
+
+    // ========== FIN_CUENTAS_COBRAR ==========
+    const getFinCuentasCobrarSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('fin_cuentas_cobrar').select('*, cliente:clientes(id,nombre_cliente)');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('fecha_emision', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createFinCuentaCobrar = async (d) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !d.empresa_id) d.empresa_id = empresaId;
+        const { data, error } = await client.from('fin_cuentas_cobrar').insert([d]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createFinCuentaCobrar') };
+        return { data, success: true };
+    };
+    const updateFinCuentaCobrar = async (id, u) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('fin_cuentas_cobrar').update({ ...u, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateFinCuentaCobrar') };
+        return { data, success: true };
+    };
+
+    // ========== FIN_PRESUPUESTOS ==========
+    const getFinPresupuestosSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('fin_presupuestos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('created_at', { ascending: false });
+        if (error) return [];
+        return data || [];
+    };
+    const createFinPresupuesto = async (d) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !d.empresa_id) d.empresa_id = empresaId;
+        const user = await getCurrentUser();
+        if (user && !d.created_by) d.created_by = user.id;
+        const { data, error } = await client.from('fin_presupuestos').insert([d]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createFinPresupuesto') };
+        return { data, success: true };
+    };
+    const updateFinPresupuesto = async (id, u) => {
+        if (!client) return { error: 'Not initialized' };
+        const { data, error } = await client.from('fin_presupuestos').update({ ...u, updated_at: new Date().toISOString() }).eq('id', id).select().single();
+        if (error) return { error: handleSupabaseError(error, 'updateFinPresupuesto') };
+        return { data, success: true };
+    };
+    const deleteFinPresupuesto = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('fin_presupuestos').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteFinPresupuesto') };
+        return { success: true };
+    };
+
+    // ========== PROVEEDOR TIPOS ==========
+    const getProveedorTiposSync = async () => {
+        if (!client) return [];
+        const empresaId = getActiveEmpresaId();
+        let query = client.from('proveedor_tipos').select('*');
+        if (empresaId) query = query.eq('empresa_id', empresaId);
+        const { data, error } = await query.order('nombre', { ascending: true });
+        if (error) return [];
+        return data || [];
+    };
+    const createProveedorTipo = async (d) => {
+        if (!client) return { error: 'Not initialized' };
+        const empresaId = getActiveEmpresaId();
+        if (empresaId && !d.empresa_id) d.empresa_id = empresaId;
+        const { data, error } = await client.from('proveedor_tipos').insert([d]).select().single();
+        if (error) return { error: handleSupabaseError(error, 'createProveedorTipo') };
+        return { data, success: true };
+    };
+    const deleteProveedorTipo = async (id) => {
+        if (!client) return { error: 'Not initialized' };
+        const { error } = await client.from('proveedor_tipos').delete().eq('id', id);
+        if (error) return { error: handleSupabaseError(error, 'deleteProveedorTipo') };
+        return { success: true };
+    };
+
 return {
         getRecepcionesFiltered,
-        // Multi-Empresa
         getActiveEmpresaId,
-        // Inicialización
         init,
-        subscribeToChanges, // Exportar función
-
-        // Auth
-        authenticateUser,
-        createUser, // Exportar createUser
-        updateUser,
-        deleteUser,
-        getUsersSync,
-
-        // Empresas y Bodegas
-        getEmpresasSync,
-        createEmpresa,
-        updateEmpresa,
-        getBodegasSync,
-        createBodega,
-        updateBodega,
-        deleteBodega,
-
-        // Dashboard
+        subscribeToChanges,
+        authenticateUser, createUser, updateUser, deleteUser, getUsersSync,
+        getEmpresasSync, createEmpresa, updateEmpresa,
+        getBodegasSync, createBodega, updateBodega, deleteBodega,
         getDashboardStats,
-
-        // Clientes
-        getClientesSync,
-        getClientesFiltered,
-        getClienteById,
-        createCliente,
-        updateCliente,
-        deleteCliente,
-
-        // Contratos
-        getContratosSync,
-        getContratosFiltered,
-        getContratoById,
-        createContrato,
-        updateContrato,
-        deleteContrato,
-
-        // Software
-        getSoftwareSync,
-        getSoftwareFiltered,
-        getSoftwareById,
-        createSoftware,
-        updateSoftware,
-        deleteSoftware,
-
-        // Equipos
-        getEquiposSync,
-        getEquiposFiltered,
-        getEquipoById,
-        createEquipo,
-        updateEquipo,
-        deleteEquipo,
-
-        // Visitas
-        getVisitasSync,
-        createVisita,
-        updateVisita,
-        deleteVisita,
-
-        // Productos
-        getProductosSync,
-        getProductoById,
-        getProductoByCodigoAndEmpresa,
-        createProducto,
-        updateProducto,
-        deleteProducto,
-
-        // Proformas
-        getProformasSync,
-        getProformaById,
-        createProforma,
-        createProformaItems,
-        updateProforma,
-        deleteProforma,
-
-        // Pedidos
-        getPedidosSync,
-        getPedidoById,
-        createPedido,
-        updatePedido,
-        deletePedido,
-
-        // Empleados
-        getEmpleadosSync,
-        getEmpleadoById,
-        createEmpleado,
-        updateEmpleado,
-        deleteEmpleado,
-
-        // Prestaciones
-        getVacacionesByEmpleado,
-        createVacacion,
-        updateVacacion,
-        deleteVacacion,
-
-        getAguinaldosByEmpleado,
-        createAguinaldo,
-        deleteAguinaldo,
-
-        getNominasByEmpleado,
-        createNomina,
-        getRecentNominas,
-        getAllNominas,
-        deleteNomina,
-
-        // Prestaciones Complementos
+        getClientesSync, getClientesFiltered, getClienteById, createCliente, updateCliente, deleteCliente,
+        getContratosSync, getContratosFiltered, getContratoById, createContrato, updateContrato, deleteContrato,
+        getSoftwareSync, getSoftwareFiltered, getSoftwareById, createSoftware, updateSoftware, deleteSoftware,
+        getEquiposSync, getEquiposFiltered, getEquipoById, createEquipo, updateEquipo, deleteEquipo,
+        getVisitasSync, createVisita, updateVisita, deleteVisita,
+        getProductosSync, getProductoById, getProductoByCodigoAndEmpresa, createProducto, updateProducto, deleteProducto,
+        getProformasSync, getProformaById, createProforma, createProformaItems, updateProforma, deleteProforma,
+        getPedidosSync, getPedidoById, createPedido, updatePedido, deletePedido,
+        getEmpleadosSync, getEmpleadoById, createEmpleado, updateEmpleado, deleteEmpleado,
+        getVacacionesByEmpleado, createVacacion, updateVacacion, deleteVacacion,
+        getAguinaldosByEmpleado, createAguinaldo, deleteAguinaldo,
+        getNominasByEmpleado, createNomina, getRecentNominas, getAllNominas, deleteNomina,
         getHorasExtrasSync, createHoraExtra, updateHoraExtra, deleteHoraExtra,
         getBonificacionesSync, createBonificacion, updateBonificacion, deleteBonificacion,
         getAdelantosSync, createAdelanto, updateAdelanto, deleteAdelanto,
         getFeriadosTrabajadosSync, createFeriadoTrabajado, updateFeriadoTrabajado, deleteFeriadoTrabajado,
         getPrestamosSync, createPrestamo, updatePrestamo, deletePrestamo,
         getAbonosPrestamosSync, createAbonoPrestamo, updateAbonoPrestamo, deleteAbonoPrestamo,
-
-        // Ausencias
-        getAusenciasByEmpleado,
-        getAllAusencias,
-        createAusencia,
-        updateAusencia,
-        deleteAusencia,
-
-        // Gestión de Técnicos
-        getPagosTecnicos,
-        createPagoTecnico,
-        deletePagoTecnico,
-        marcarVisitasComoPagadas,
-        marcarRecepcionesComoPagadas,
-        getVisitasPorTecnico,
-        getAntiguedadTecnico,
-
-        // Recepciones de Equipos
-        getRecepcionesSync,
-        createRecepcion,
-        updateRecepcion,
-        deleteRecepcion,
-
-        // Configuracion POS
-        getConfiguracionPosSync,
-        createConfiguracionPos,
-        deleteConfiguracionPos,
-
-        // Empresas & Bodegas
-        getEmpresasSync,
-        createEmpresa,
-        updateEmpresa,
-        getBodegasSync,
-        createBodega,
-        updateBodega,
-        deleteBodega,
-
-        // Helpers & Storage
-        generateCode,
-        uploadImage
+        getAusenciasByEmpleado, getAllAusencias, createAusencia, updateAusencia, deleteAusencia,
+        getPagosTecnicos, createPagoTecnico, deletePagoTecnico,
+        marcarVisitasComoPagadas, marcarRecepcionesComoPagadas,
+        getVisitasPorTecnico, getAntiguedadTecnico,
+        getRecepcionesSync, createRecepcion, updateRecepcion, deleteRecepcion,
+        getConfiguracionPosSync, createConfiguracionPos, deleteConfiguracionPos,
+        // Ventas & POS
+        getVentasSync, getVentaById, createVenta, updateVenta, deleteVenta, createVentaItems,
+        getTurnosCajaSync, getTurnoActivo, createTurnoCaja, updateTurnoCaja,
+        getCajaMovimientosSync, createCajaMovimiento,
+        getDevolucionesSync, createDevolucion,
+        getAbonosClientesSync, createAbonoCliente,
+        getCotizacionesPosSync, createCotizacionPos, updateCotizacionPos, deleteCotizacionPos,
+        // Compras
+        getComprasSync, getCompraById, createCompra, updateCompra, deleteCompra,
+        getCuentasPagarSync, createCuentaPagar, updateCuentaPagar,
+        getAbonosProveedoresSync, createAbonoProveedor,
+        // Gestión Financiera
+        getFinIngresosSync, createFinIngreso, updateFinIngreso, deleteFinIngreso,
+        getFinGastosSync, createFinGasto, updateFinGasto, deleteFinGasto,
+        getFinCategoriasSync, createFinCategoria,
+        getFinCuentasCobrarSync, createFinCuentaCobrar, updateFinCuentaCobrar,
+        getFinPresupuestosSync, createFinPresupuesto, updateFinPresupuesto, deleteFinPresupuesto,
+        getProveedorTiposSync, createProveedorTipo, deleteProveedorTipo,
+        // Proveedores
+        getProveedoresSync, createProveedor, updateProveedor, deleteProveedor,
+        // Helpers
+        generateCode, uploadImage
     };
 })();
 

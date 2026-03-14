@@ -73,10 +73,76 @@ const VentasModule = (() => {
   // Refrescar SK cuando cambie la empresa (al re-renderizar)
   const refreshSK = () => { SK = getSK(); };
 
-  const getData = (k) => { refreshSK(); try { return JSON.parse(localStorage.getItem(SK[k]) || '[]'); } catch { return []; } };
-  const setData = (k, d) => { refreshSK(); localStorage.setItem(SK[k], JSON.stringify(d)); };
-  const genId = () => Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-  const addRec = (k, r) => { const d = getData(k); r.id = genId(); r.created_at = new Date().toISOString(); d.unshift(r); setData(k, d); return r; };
+  const getData = (k) => {
+    refreshSK();
+    try {
+      // Read from Supabase-backed DataService cache instead of localStorage
+      const cache = typeof DataService !== 'undefined' ? DataService.getCache() : null;
+      if (cache) {
+        switch(k) {
+          case 'ventas': return [...(cache.ventas || [])];
+          case 'items': {
+            // venta_items are embedded in ventas via Supabase joins, flatten them
+            const allItems = [];
+            (cache.ventas || []).forEach(v => { if (v.items) allItems.push(...v.items); });
+            return allItems;
+          }
+          case 'cajaMovs': return typeof DataService.getCajaMovimientosSync === 'function' ? [] : []; // loaded on demand
+          case 'cortes': return typeof DataService.getTurnosCajaSync === 'function' ? [] : []; // loaded on demand
+          case 'devoluciones': return [];  // loaded on demand
+          case 'abonos': return []; // loaded on demand
+          case 'suspended': return []; // loaded on demand
+          case 'cotizaciones': return []; // loaded on demand
+        }
+      }
+      // Fallback to localStorage for backward compatibility during migration
+      return JSON.parse(localStorage.getItem(SK[k]) || '[]');
+    } catch { return []; }
+  };
+  const setData = (k, d) => {
+    refreshSK();
+    // Write to localStorage as fallback backup, Supabase writes happen via DataService methods
+    try { localStorage.setItem(SK[k], JSON.stringify(d)); } catch(e) { console.warn('localStorage write failed:', e); }
+  };
+  const genId = () => crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  const addRec = async (k, r) => {
+    r.id = genId();
+    r.created_at = new Date().toISOString();
+    try {
+      // Route through DataService/Supabase based on record type
+      switch(k) {
+        case 'ventas': {
+          const result = await DataService.createVenta(r);
+          if (result) return result;
+          break;
+        }
+        case 'cajaMovs': {
+          const result = await DataService.createCajaMovimiento(r);
+          if (result) return result;
+          break;
+        }
+        case 'devoluciones': {
+          const result = await DataService.createDevolucion(r);
+          if (result) return result;
+          break;
+        }
+        case 'abonos': {
+          const result = await DataService.createAbonoCliente(r);
+          if (result) return result;
+          break;
+        }
+        case 'suspended':
+        case 'cotizaciones': {
+          const result = await DataService.createCotizacionPos(r);
+          if (result) return result;
+          break;
+        }
+      }
+    } catch(e) { console.error(`Supabase addRec(${k}) error:`, e); }
+    // Fallback: save to localStorage
+    const d = getData(k); d.unshift(r); setData(k, d);
+    return r;
+  };
   const fmt = (n) => parseFloat(n || 0).toLocaleString('es-NI', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtD = (d) => d ? new Date(d).toLocaleDateString('es-NI') : 'N/A';
   const today = () => new Date().toISOString().split('T')[0];
